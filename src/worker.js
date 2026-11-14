@@ -49,22 +49,32 @@ export default {
       return send({dayUTC:today,dailyLimit:5,used,remaining:Math.max(0,5-used)});
     }catch {return send({error:'No se pudo leer el consumo actual'},503)}
   }
-  // Read-only NVIDIA credential and catalog check. This performs no inference.
+  // This catalog is publicly readable. A successful request proves network
+  // reachability and model listing, NOT authentication or chat inference.
   if(url.pathname==='/api/provider-check') {
-   if(request.method!=='GET') return send({error:'Método no permitido'},405);
-   if(!env.NVIDIA_API_KEY) return send({credentialPresent:false,credentialAccepted:false,generationVerified:false,error:'Falta el secreto NVIDIA_API_KEY'},503);
-   const ctrl=new AbortController();
-   const timer=setTimeout(()=>ctrl.abort(),15000);
-   try {
-    const upstream=await fetch('https://integrate.api.nvidia.com/v1/models',{
-     method:'GET',signal:ctrl.signal,headers:{'Authorization':`Bearer ${env.NVIDIA_API_KEY}`,'Accept':'application/json'},redirect:'error'
-    });
-    if(!upstream.ok) return send({credentialPresent:true,credentialAccepted:false,nvidiaStatus:upstream.status,generationVerified:false,error:'NVIDIA ha rechazado la consulta del catálogo'},502);
-    const models=await upstream.json();
-    const listed=Array.isArray(models?.data) && models.data.some(x=>x.id===MODEL);
-    return send({credentialPresent:true,credentialAccepted:true,nvidiaStatus:upstream.status,model:MODEL,modelListed:listed,generationVerified:false,message:'NVIDIA acepta la clave para consultar modelos. La inferencia todavía requiere una prueba corta.'});
-   } catch(e) {return send({credentialPresent:true,credentialAccepted:false,generationVerified:false,error:e?.name==='AbortError'?'NVIDIA no respondió en 15 segundos':'Error al conectar con el catálogo NVIDIA'},504)}
-   finally {clearTimeout(timer)}
+    if(request.method!=='GET') return send({error:'Método no permitido'},405);
+    if(!env.NVIDIA_API_KEY) return send({credentialPresent:false,catalogReachable:false,generationVerified:false,error:'El secreto NVIDIA_API_KEY no existe'},503);
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),30000);
+    try {
+      const upstream=await fetch('https://integrate.api.nvidia.com/v1/models',{
+        method:'GET',signal:ctrl.signal,redirect:'manual',headers:{
+          'Authorization':'Bearer '+env.NVIDIA_API_KEY,
+          'Accept':'application/json'
+        }
+      });
+      if(upstream.status>=300&&upstream.status<400)
+        return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,nvidiaStatus:upstream.status,error:'NVIDIA devolvió una redirección; no se ha seguido para proteger la API key.'},502);
+      if(!upstream.ok)
+        return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,nvidiaStatus:upstream.status,error:'El catálogo de NVIDIA respondió HTTP '+upstream.status},502);
+      let models;
+      try{models=await upstream.json()}
+      catch{return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,error:'El catálogo de NVIDIA no devolvió JSON válido.'},502)}
+      const modelListed=Array.isArray(models?.data)&&models.data.some(item=>item.id===MODEL);
+      return send({credentialPresent:true,catalogReachable:true,credentialVerified:false,generationVerified:false,nvidiaStatus:upstream.status,model:MODEL,modelListed,message:'Catálogo accesible; la clave de generación todavía no se ha verificado. Esta consulta no consume inferencia.'});
+    } catch(e){
+      return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,diagnostic:e?.name==='AbortError'?'timeout':e instanceof TypeError?'network_error':'unknown',error:e?.name==='AbortError'?'El catálogo de NVIDIA no respondió en 30 segundos.':'Falló la comunicación con el catálogo NVIDIA; no se pudo verificar la conexión.'},504);
+    } finally {clearTimeout(timer)}
   }
   if(!['/api/generate','/api/refine','/api/generate-stream','/api/refine-stream'].includes(url.pathname)) return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
