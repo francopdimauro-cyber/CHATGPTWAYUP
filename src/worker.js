@@ -135,7 +135,7 @@ async function chargeCall(env,day,projectKey,model,action){
 async function requestOpenRouter(env,model,messages,maxTokens,signal){
  return fetch(OPENROUTER_URL,{
    method:'POST',signal,redirect:'manual',
-   headers:{Authorization:'Bearer '+env.OPEN_ROUTER_API_KEY,'Content-Type':'application/json',
+   headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,'Content-Type':'application/json',
      Accept:'application/json','HTTP-Referer':'https://wayup-webcreator.francopdimauro.workers.dev/','X-Title':'WayUp WebCreator'},
    body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature:model===MODELS.builder?0.45:0.1,stream:false})
  });
@@ -187,7 +187,7 @@ export default {
   }
   if(url.pathname==='/api/health') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
-   return send({status:'ok',model:MODEL,configured:Boolean(env.OPEN_ROUTER_API_KEY),models:MODELS,provider:'OpenRouter',accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
+   return send({status:'ok',model:MODEL,configured:Boolean(env.OPENROUTER_API_KEY),models:MODELS,provider:'OpenRouter',accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
   }
   // Usage meter does not call NVIDIA or consume a generation.
   if(url.pathname==='/api/quota') {
@@ -203,11 +203,11 @@ export default {
   // Check the OpenRouter key without invoking any paid or free model.
   if(url.pathname==='/api/provider-check') {
     if(request.method!=='GET')return send({error:'Método no permitido'},405);
-    if(!env.OPEN_ROUTER_API_KEY)return send({credentialPresent:false,error:'Falta OPEN_ROUTER_API_KEY'},503);
+    if(!env.OPENROUTER_API_KEY)return send({credentialPresent:false,error:'Falta OPENROUTER_API_KEY'},503);
     const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),20000);
     try{
       const upstream=await fetch('https://openrouter.ai/api/v1/key',{method:'GET',signal:ctrl.signal,
-        redirect:'manual',headers:{Authorization:'Bearer '+env.OPEN_ROUTER_API_KEY,Accept:'application/json'}});
+        redirect:'manual',headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,Accept:'application/json'}});
       return send({credentialPresent:true,credentialVerified:upstream.ok,catalogReachable:upstream.ok,
         generationVerified:false,openRouterStatus:upstream.status,nvidiaStatus:upstream.status,
         model:MODEL,models:MODELS,provider:'OpenRouter',
@@ -232,7 +232,7 @@ export default {
   }
   if(!['/api/generate','/api/refine','/api/generate-stream','/api/refine-stream'].includes(url.pathname)) return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
-  if(!env.OPEN_ROUTER_API_KEY) return send({error:'Falta OPEN_ROUTER_API_KEY en Cloudflare.'},503);
+  if(!env.OPENROUTER_API_KEY) return send({error:'Falta OPENROUTER_API_KEY en Cloudflare.'},503);
   const origin=request.headers.get('origin');
   if(origin && origin!==url.origin) return send({error:'Origen no autorizado'},403);
   // No browser-managed API token: all routes are protected by verified ctx.access.
@@ -348,7 +348,7 @@ export default {
             if(!bill){failureCode='budget_exhausted';emit('error',{error:'Presupuesto agotado (50 llamadas/día o 10 por proyecto). El borrador queda guardado.',recoverable:true,jobId:hash});return}
             const upstream=await fetch(OPENROUTER_URL,{
               method:'POST',signal:aborter.signal,redirect:'manual',
-              headers:{Authorization:'Bearer '+env.OPEN_ROUTER_API_KEY,'Content-Type':'application/json',
+              headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,'Content-Type':'application/json',
                 Accept:'text/event-stream','HTTP-Referer':'https://wayup-webcreator.francopdimauro.workers.dev/','X-Title':'WayUp WebCreator'},
               body:JSON.stringify({
                 model:MODEL,messages:[{role:'system',content:instructions},{role:'user',content:promptForCall}],
