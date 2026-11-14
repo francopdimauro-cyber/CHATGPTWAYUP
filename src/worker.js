@@ -104,6 +104,19 @@ function auditHtml(html){
  if(/href=["']#["']/i.test(html))issues.push('Enlaces con href="#" sin destino real.');
  if(!/<meta\s+name=["']viewport["']/i.test(html))issues.push('Falta meta viewport responsive.');
  if(!/<h1\b/i.test(html))issues.push('Falta h1 principal.');
+ if(!/<html\b[^>]*\blang\s*=/i.test(html))issues.push('Falta indicar el idioma del documento en <html lang>.');
+ if(!/<title\b[^>]*>[^<\s][\s\S]*?<\/title\s*>/i.test(html))issues.push('Falta un título de página no vacío.');
+ const repeated=new Set(),seenIds=new Set();
+ for(const match of html.matchAll(/\bid\s*=\s*["']([^"']+)["']/gi)){
+   if(seenIds.has(match[1]))repeated.add(match[1]);else seenIds.add(match[1]);
+ }
+ if(repeated.size)issues.push('IDs duplicados: '+[...repeated].slice(0,3).join(', ')+'.');
+ const images=[...html.matchAll(/<img\b[^>]*>/gi)].map(x=>x[0]);
+ const missingAlt=images.filter(x=>!/\balt\s*=/i.test(x)).length;
+ if(missingAlt)issues.push(missingAlt+' imagen(es) sin atributo alt.');
+ if(/<script\b[^>]*\bsrc\s*=/i.test(html))issues.push('El documento carga JavaScript externo: revisar origen y permisos.');
+ if(/(?:src|href)\s*=\s*["']javascript:/i.test(html))issues.push('Enlace o recurso con esquema javascript: inseguro.');
+ if(/<form\b/i.test(html))issues.push('Los formularios requieren una integración de backend antes de publicar.');
  return issues.slice(0,10);
 }
 function parsePatchJson(txt){
