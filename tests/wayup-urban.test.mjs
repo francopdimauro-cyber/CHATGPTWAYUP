@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+import {test} from 'node:test';
+const file=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
+const html=file('public/index.html');
+const urban=file('public/wayup-urban-type.css');
+const vibrant=file('public/wayup-vibrant.css');
+const toggle=file('public/theme-toggle.js');
+const build=file('scripts/build.mjs');
+const bundle=file('dist/worker.js');
+
+test('WAYUP has an original art-directed urban title and wordmark',()=>{
+ assert.match(html,/class="wc-urban-headline"/);
+ assert.match(html,/class="wc-urban-overline"/);
+ assert.match(html,/class="wc-urban-power"/);
+ assert.match(html,/class="wc-urban-outline"/);
+ assert.match(html,/class="wc-urban-accent"/);
+ assert.match(html,/class="wc-wordmark"/);
+ assert.match(html,/Bricolage\+Grotesque/);
+ assert.match(urban,/Bricolage Grotesque/);
+ assert.match(urban,/@supports\(-webkit-text-stroke/);
+ assert.match(urban,/@media\(forced-colors:active\)/);
+ assert.match(urban,/Arial Black/);
+});
+test('light and precision dark are both available and switch persists',()=>{
+ assert.match(html,/data-wc-theme="light"/);
+ assert.match(html,/id="wcThemeToggle"/);
+ assert.match(vibrant,/:root\[data-wc-theme="light"\]/);
+ assert.match(vibrant,/#wcStudio/);
+ assert.match(toggle,/wc-theme-mode/);
+ assert.match(toggle,/localStorage\.setItem/);
+ assert.match(toggle,/aria-pressed/);
+ assert.match(toggle,/theme-color/);
+ assert.doesNotThrow(()=>new vm.Script(toggle));
+});
+test('strong typography does not alter generated-site HTML or Multi-IA code',()=>{
+ assert.match(html,/id="generate"/);
+ assert.match(html,/id="preview"/);
+ assert.match(html,/id="progress"/);
+ assert.match(html,/id="recoverProject"/);
+ assert.match(html,/id="wcThemeToggle"/);
+ assert.match(build,/precision-dark\.css/);
+ assert.match(build,/wayup-vibrant\.css/);
+ assert.match(build,/wayup-urban-type\.css/);
+ assert.match(bundle,/wc-urban-headline/);
+ assert.match(bundle,/wayup-vibrant/);
+ assert.match(bundle,/OPENROUTER_API_KEY/);
+ assert.match(bundle,/handleStudio/);
+});
