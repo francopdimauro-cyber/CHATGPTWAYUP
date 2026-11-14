@@ -1,0 +1,181 @@
+/* Compact, viewport-first WebCreator workspace.
+   Above 900px with sufficient height, the entire six-step WIZARD SHELL fits in one viewport.
+   Long step content scrolls inside its own panel; no content is discarded or hidden. */
+@media (min-width:900px) and (min-height:650px) {
+  html,body{height:100%;overscroll-behavior-y:none}
+  body>.wrap{
+    box-sizing:border-box;
+    height:100dvh;min-height:0;max-width:1560px;
+    display:flex;flex-direction:column;gap:11px;
+    padding:13px clamp(14px,2vw,28px) 14px;
+    overflow:hidden;
+  }
+  .wrap>header{
+    flex:0 0 auto;min-height:57px;
+    padding:9px 16px;border-radius:14px;gap:14px;
+  }
+  .wrap>header .brand{font-size:21px;gap:8px}
+  .wrap>header .brand-icon{width:31px;height:31px;border-radius:9px}
+  .wrap>header .brand-icon svg{width:21px;height:21px}
+  .wrap>header .brand-sub{font-size:12px;margin-left:3px}
+  .wrap>header .pill{padding:6px 10px;font-size:10px;letter-spacing:.035em}
+  .wrap>header .wc-open-btn{min-height:36px;padding:7px 12px;font-size:12px}
+  .intro{
+    display:block;flex:0 0 auto;min-height:0;
+    margin:0;padding:12px 22px;border-radius:15px;overflow:hidden;
+    box-shadow:0 8px 28px -20px #09172f88;
+  }
+  .intro::after{display:none}
+  .intro .intro-copy{
+    display:grid;grid-template-columns:max-content minmax(0,1fr);
+    column-gap:24px;row-gap:4px;align-items:center;
+    max-width:none;
+  }
+  .intro .eyebrow{
+    grid-column:1/-1;font-size:9px;letter-spacing:.13em;line-height:1.1;
+  }
+  .intro .eyebrow::before{width:14px}
+  .intro h1{
+    grid-column:1;margin:0;max-width:none;
+    font-size:clamp(22px,2.05vw,31px);line-height:1.12;
+    letter-spacing:-.052em;white-space:nowrap;
+  }
+  .intro p{
+    grid-column:2;margin:0;color:#c0cde0;
+    font-size:12px;line-height:1.4;max-width:620px;
+  }
+  .intro .trust,.intro-visual{display:none}
+  .layout{
+    flex:1 1 auto;min-height:0;
+    grid-template-columns:minmax(0,1.62fr) minmax(265px,.78fr);
+    gap:12px;align-items:stretch;
+  }
+  .layout>main.panel{
+    min-height:0;display:grid;
+    grid-template-rows:auto minmax(0,1fr) auto;
+    padding:17px 21px 15px;gap:0;
+    border-radius:17px;
+  }
+  .layout>main.panel::before{height:3px}
+  .steps{margin:3px 0 12px;gap:6px}
+  .step-dot{height:6px}
+  .step.current{
+    display:block;min-width:0;min-height:0;
+    overflow-x:hidden;overflow-y:auto;
+    padding:1px 8px 8px 2px;
+    scrollbar-width:thin;scrollbar-color:#b7c5e0 transparent;
+    overscroll-behavior:contain;
+  }
+  .step.current:focus-visible{outline:2px solid #86a0ff;outline-offset:-2px}
+  .section-kicker{font-size:10px;letter-spacing:.09em;line-height:1.3}
+  .question{font-size:clamp(19px,1.65vw,25px);margin:6px 0 3px;line-height:1.17}
+  .hint{font-size:12px;line-height:1.45;margin:0 0 11px}
+  .options{gap:8px}
+  .option{
+    min-height:64px;padding:10px 13px;border-radius:11px;
+    box-shadow:none;justify-content:center;
+  }
+  .option strong{font-size:13px;line-height:1.25}
+  .option small{font-size:11px;line-height:1.28;margin-top:3px}
+  .option.selected::after{top:8px;right:9px;width:17px;height:17px}
+  .fields{gap:9px}
+  .field label{font-size:12px;margin-bottom:4px}
+  .field input,.field select,.field textarea{
+    min-height:36px;padding:8px 10px;border-radius:9px;
+    font-size:13px;
+  }
+  .field textarea{min-height:72px}
+  .step.current>.field{margin-top:12px!important}
+  .check-grid{gap:7px}
+  .check{min-height:42px;padding:8px 11px;font-size:12px;border-radius:10px}
+  .check input{width:16px;height:16px}
+  .footer-actions#navigation{
+    flex:0 0 auto;margin:8px 0 0;padding-top:11px;
+    border-top:1px solid #e1e8f2;justify-content:space-between;
+    background:#fff;
+  }
+  .footer-actions#navigation .btn{min-height:39px;padding:8px 14px;font-size:13px}
+  .layout>.aside.panel{
+    min-height:0;overflow:auto;overscroll-behavior:contain;
+    position:static;order:0;
+    padding:19px 19px 16px;border-radius:17px;
+    scrollbar-width:thin;scrollbar-color:#4d6187 transparent;
+  }
+  .aside h3{margin:0 0 7px;font-size:17px;letter-spacing:-.03em}
+  .aside .summary-line{padding:10px 0}
+  .aside .summary-line small{font-size:10px;margin:0 0 3px}
+  .aside .summary-line strong{font-size:13px}
+  .aside .tag{margin:2px;font-size:11px;padding:3px 7px}
+  .aside .status{font-size:12px;padding:10px;margin-top:13px;border-radius:10px}
+  .aside .note{font-size:11px;margin-top:12px}
+  .prompt-box{max-height:170px}
+  #engineLog{max-height:100px!important}
+  #resultPanel #preview{height:450px}
+}
+@media (min-width:900px) and (max-width:1150px) and (min-height:650px) {
+  .intro .intro-copy{grid-template-columns:1fr;row-gap:5px}
+  .intro h1,.intro p{grid-column:1}
+  .intro p{max-width:100%;line-height:1.2}
+  .intro{padding:9px 17px}
+  .layout{grid-template-columns:minmax(0,1.5fr) minmax(252px,.82fr)}
+  .layout>main.panel{padding:14px 15px}
+  .option{min-height:58px}
+}
+/* Short screens: retain the compact design without trapping content in an unusably small pane. */
+@media (min-width:900px) and (max-height:649px) {
+  .wrap{max-width:1560px;padding:13px 20px 28px}
+  .wrap>header{min-height:55px;padding:9px 16px;border-radius:14px}
+  .intro{display:block;min-height:0;padding:12px 19px;margin:11px 0 13px;border-radius:15px}
+  .intro h1{font-size:27px;letter-spacing:-.045em;line-height:1.15;margin:5px 0}
+  .intro p{font-size:12px;line-height:1.4}
+  .intro .trust,.intro-visual{display:none}
+  .layout{gap:12px}
+  .panel{padding:16px;border-radius:16px}
+  .options{gap:8px}
+  .option{min-height:60px;padding:10px}
+  .aside .summary-line{padding:9px 0}
+}
+/* Tablet and phones: progressive disclosure and natural scrolling remain accessible. */
+@media (max-width:899px) {
+  .wrap{padding:12px 12px 38px;max-width:740px}
+  .wrap>header{padding:12px 13px;min-height:0;gap:9px;border-radius:14px}
+  .wrap>header .brand{font-size:20px}
+  .wrap>header .brand-icon{width:30px;height:30px}
+  .wrap>header .brand-sub{font-size:12px}
+  .wrap>header .wc-open-btn{min-height:37px;padding:7px 11px;font-size:12px}
+  .intro{display:block;margin:11px 0 14px;padding:20px 19px;min-height:0;border-radius:18px}
+  .intro::after{display:none}
+  .intro .eyebrow{font-size:9px}
+  .intro h1{font-size:clamp(26px,5vw,36px);line-height:1.1;margin:9px 0}
+  .intro p{font-size:13px;line-height:1.45;margin:0}
+  .intro .trust{margin-top:11px;gap:5px}
+  .intro .trust span{font-size:10px;padding:5px 7px}
+  .intro-visual{display:none}
+  .layout{grid-template-columns:1fr;gap:12px;align-items:start}
+  .panel{padding:18px;border-radius:16px}
+  .layout>.aside.panel{order:2;position:static;padding:16px}
+  .steps{margin-bottom:15px}
+  .question{font-size:23px;margin:6px 0}
+  .hint{font-size:13px;margin-bottom:14px}
+  .options{gap:8px}
+  .option{min-height:71px;padding:11px;border-radius:12px}
+  .option strong{font-size:13px}
+  .option small{font-size:11px;margin-top:3px}
+  .footer-actions#navigation{margin-top:18px}
+}
+@media (max-width:520px) {
+  .wrap>header .pill{display:none}
+  .wrap>header .brand{flex:1 1 auto}
+  .wrap>header .wc-open-btn{flex:0 0 auto;width:auto;max-width:100%}
+  .intro{padding:17px 16px}
+  .intro .trust{display:none}
+  .options{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .option{min-height:88px}
+  .option strong{font-size:12px}
+  .option small{font-size:10px}
+  .panel{padding:15px 14px}
+  .footer-actions#navigation{display:flex}
+}
+@media (max-width:360px) {
+  .options{grid-template-columns:1fr}
+}
