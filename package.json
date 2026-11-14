@@ -1,0 +1,13 @@
+{
+  "name": "wayup-webcreator",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build && node --check dist/worker.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
