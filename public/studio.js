@@ -18,6 +18,10 @@ const shell=[
 '<label>Tamaño de letra (px)<input id="wcFont" type="number" min="8" max="160"></label>',
 '<label>Alineación<select id="wcAlign"><option value="">Sin cambios</option><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option><option value="justify">Justificado</option></select></label><button id="wcApplyStyle">Aplicar estilos</button>',
 '<label id="wcSrcWrap" class="wc-hidden">URL de imagen<input id="wcSrc" type="text"></label><label id="wcAltWrap" class="wc-hidden">Texto alternativo<input id="wcAlt" type="text"></label><button id="wcApplyImage" class="wc-hidden">Cambiar imagen</button>',
+'<button id="wcMediaPick" class="wc-hidden wc-primary" type="button">▧ Elegir de mi biblioteca</button>',
+'<label id="wcFitWrap" class="wc-hidden">Ajuste de imagen<select id="wcFit"><option value="">Automático</option><option value="cover">Rellenar y recortar</option><option value="contain">Ajustar entera</option><option value="fill">Estirar</option></select></label>',
+'<label id="wcPositionWrap" class="wc-hidden">Posición del encuadre<select id="wcPosition"><option value="">Sin cambios</option><option value="center">Centro</option><option value="top">Arriba</option><option value="bottom">Abajo</option><option value="left">Izquierda</option><option value="right">Derecha</option></select></label>',
+'<label id="wcWidthWrap" class="wc-hidden">Ancho máximo (px)<input id="wcWidth" type="number" min="40" max="2400" placeholder="Sin límite"></label><button id="wcImageStyle" class="wc-hidden">Aplicar encuadre</button>',
 '<label id="wcHrefWrap" class="wc-hidden">Enlace<input id="wcHref" type="text"></label><button id="wcApplyLink" class="wc-hidden">Cambiar enlace</button>',
 '<p class="wc-hint">Doble clic sobre un texto sencillo para editarlo directamente. También puedes seleccionar un elemento y cambiarlo desde este panel.</p>',
 '<hr class="wc-divider"><h3>Proyecto</h3><button id="wcDownload">↓ Descargar HTML</button><button id="wcZip">↓ Descargar ZIP</button><button id="wcAudit">◎ Auditoría HTML · sin IA</button><div id="wcAuditResult" class="wc-history" role="status" aria-live="polite"></div><button id="wcHistory">Historial de versiones</button><div class="wc-history" id="wcVersions"></div><button id="wcArchive" style="color:#a12030">Archivar proyecto</button>',
@@ -116,6 +120,7 @@ function canvasHtml(){
     for(const a of [...node.attributes])if(/^on/i.test(a.name)||a.name==='srcdoc')node.removeAttribute(a.name);
     node.removeAttribute('contenteditable');
   }
+  clone.querySelectorAll('img[src^="/api/media/file/"]').forEach(img=>{const resolved=window.WebCreatorMedia?.previewURL(img.getAttribute('src'));if(resolved)img.src=resolved});
   clone.querySelectorAll(selector).forEach((node,index)=>node.setAttribute('data-wc-index',String(index)));
   const style=clone.createElement('style');
   style.textContent='[data-wc-index]:hover{outline:2px dashed #3061ef!important;outline-offset:2px!important;cursor:crosshair!important}[data-wc-selected]{outline:3px solid #2553ef!important;outline-offset:3px!important}[contenteditable="true"]{outline:2px solid #16a66c!important}';
@@ -152,7 +157,10 @@ function selectIndex(index){
   el('wcColor').value=color(node.style.color,'#111111');el('wcBackground').value=color(node.style.backgroundColor,'#ffffff');
   el('wcColor').dataset.touched='false';el('wcBackground').dataset.touched='false';
   const img=node.tagName==='IMG',link=node.tagName==='A';
-  for(const id of ['wcSrcWrap','wcAltWrap','wcApplyImage'])el(id).classList.toggle('wc-hidden',!img);
+  for(const id of ['wcSrcWrap','wcAltWrap','wcApplyImage','wcMediaPick','wcFitWrap','wcPositionWrap','wcWidthWrap','wcImageStyle'])el(id).classList.toggle('wc-hidden',!img);
+  el('wcFit').value=img?(node.style.objectFit||''):'';
+  el('wcPosition').value=img?(node.style.objectPosition||''):'';
+  el('wcWidth').value=img?(parseInt(node.style.maxWidth,10)||''):'';
   for(const id of ['wcHrefWrap','wcApplyLink'])el(id).classList.toggle('wc-hidden',!link);
   el('wcSrc').value=img?node.getAttribute('src')||'':'';el('wcAlt').value=img?node.getAttribute('alt')||'':'';
   el('wcHref').value=link?node.getAttribute('href')||'':'';
@@ -236,6 +244,16 @@ el('wcApplyImage').addEventListener('click',()=>{
   if(src.length>500000||!/^(https?:\/\/|\/(?!\/)|\.\/|\.\.\/|data:image\/(?:jpeg|png|webp);base64,)/i.test(src))return status('URL de imagen inválida o demasiado larga.',true);
   update(()=>{node.setAttribute('src',src);node.setAttribute('alt',el('wcAlt').value.slice(0,200))},'Imagen sustituida.');
 });
+el('wcMediaPick').addEventListener('click',()=>window.WebCreatorMedia?.open());
+el('wcImageStyle').addEventListener('click',()=>{
+  const node=currentNode();if(node?.tagName!=='IMG')return;
+  update(()=>{
+    if(el('wcFit').value)node.style.objectFit=el('wcFit').value;
+    if(el('wcPosition').value)node.style.objectPosition=el('wcPosition').value;
+    const width=Number(el('wcWidth').value);
+    if(width>=40&&width<=2400){node.style.maxWidth=width+'px';node.style.width='100%'}
+  },'Encuadre de imagen actualizado.');
+});
 el('wcApplyLink').addEventListener('click',()=>{
   const node=currentNode();if(node?.tagName!=='A')return;
   const href=el('wcHref').value.trim();
@@ -300,11 +318,18 @@ el('wcArchive').addEventListener('click',async()=>{
   try{await api('/api/projects/'+state.id,{method:'DELETE'});state.id='';state.doc=null;state.name='';state.version=0;state.saved='';state.dirty=false;state.undo=[];state.redo=[];sync();render();await list();status('Proyecto archivado.')}
   catch(e){status(e.message,true)}
 });
-el('wcDownload').addEventListener('click',()=>{if(check()&&applyCode())download(serialize(state.doc),filename(state.name)+'.html')});
-el('wcZip').addEventListener('click',()=>{
+el('wcDownload').addEventListener('click',async()=>{
+  if(!check()||!applyCode())return;
+  try{const html=await (window.WebCreatorMedia?.portableHTML(serialize(state.doc))||serialize(state.doc));download(html,filename(state.name)+'.html')}
+  catch(e){status('No se pudo preparar la exportación con imágenes: '+e.message,true)}
+});
+el('wcZip').addEventListener('click',async()=>{
   if(!check()||!applyCode())return;
   if(typeof window.webcreatorStudioMakeZip!=='function')return status('Exportador ZIP no disponible. Descarga el HTML.',true);
-  try{download(window.webcreatorStudioMakeZip(serialize(state.doc)),filename(state.name)+'.zip','application/zip')}catch(e){status('Error ZIP: '+e.message,true)}
+  try{
+    const html=await (window.WebCreatorMedia?.portableHTML(serialize(state.doc))||serialize(state.doc));
+    download(window.webcreatorStudioMakeZip(html),filename(state.name)+'.zip','application/zip');
+  }catch(e){status('Error ZIP: '+e.message,true)}
 });
 el('wcImport').addEventListener('click',()=>el('wcFile').click());
 el('wcFile').addEventListener('change',async()=>{
@@ -327,6 +352,26 @@ addEventListener('wc-studio-current-html',async event=>{
   }catch(e){await open();status('No se pudo importar resultado: '+e.message,true)}
 });
 addEventListener('beforeunload',event=>{if(state.dirty&&el('wcStudio').classList.contains('open')){event.preventDefault();event.returnValue=''}});
-window.WebCreatorStudio={open,refresh:list};
+window.WebCreatorStudio={
+  open,refresh:list,
+  hasProject:()=>Boolean(state.doc&&state.id),
+  applyAsset:(src,label='Imagen')=>{
+    if(!check()||typeof src!=='string'||!/^\/api\/media\/file\/[a-f0-9-]{36}\.(?:jpg|png|webp)$/.test(src))
+      return false;
+    const node=currentNode();
+    if(node?.tagName==='IMG'){
+      update(()=>{node.setAttribute('src',src);node.setAttribute('alt',label.slice(0,180))},'Imagen cambiada desde la biblioteca.');
+    }else{
+      const target=node?.closest('section,article,main,header,footer')||state.doc.querySelector('main')||state.doc.body;
+      update(()=>{
+        const img=state.doc.createElement('img');
+        img.src=src;img.alt=label.slice(0,180);img.loading='lazy';
+        img.style.cssText='display:block;width:100%;max-width:100%;height:auto;object-fit:cover';
+        target.append(img);
+      },'Imagen añadida a la sección del Canvas.');
+    }
+    return true;
+  }
+};
 sync();
 })();
