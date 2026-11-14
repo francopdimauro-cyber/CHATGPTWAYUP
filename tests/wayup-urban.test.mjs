@@ -44,7 +44,7 @@ test('strong typography does not alter generated-site HTML or Multi-IA code',()=
  assert.match(build,/wayup-vibrant\.css/);
  assert.match(build,/wayup-urban-type\.css/);
  assert.match(bundle,/wc-urban-headline/);
- assert.match(bundle,/wayup-vibrant/);
+ assert.match(bundle,/--bg:#f3f6ff/);
  assert.match(bundle,/OPENROUTER_API_KEY/);
  assert.match(bundle,/handleStudio/);
 });
