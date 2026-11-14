@@ -6,6 +6,7 @@ on:
       - feature/compact-one-screen
       - feature/precision-dark-ui
       - feature/wayup-vibrant-ui
+      - feature/official-wayup-logo
   pull_request:
     branches:
       - main
