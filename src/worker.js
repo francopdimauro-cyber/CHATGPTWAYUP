@@ -217,53 +217,91 @@ export default {
         try {
           await persist('working');
           emit('status',{phase:'connecting',jobId:hash,message:'Solicitando conexión con NVIDIA. Todavía no se ha confirmado la aceptación de la API.'});
-          const upstream=await fetch(NVIDIA_URL,{
-            method:'POST',signal:aborter.signal,
-            headers:{'Authorization':'Bearer '+env.NVIDIA_API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},
-            body:JSON.stringify({
-              model:MODEL,messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],
-              temperature:0.5,max_tokens:24000,reasoning_effort:'none',stream:true,
-              chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}
-            })
-          });
-          if(!upstream.ok){
-            failureCode='nvidia_http_'+upstream.status;
-            emit('error',{phase:'rejected',error:upstream.status===401?'NVIDIA ha rechazado la API key (HTTP 401).':upstream.status===403?'La clave no tiene permisos para este modelo (HTTP 403).':upstream.status===429?'NVIDIA ha limitado las peticiones (HTTP 429).':'NVIDIA rechazó la generación (HTTP '+upstream.status+')',httpStatus:upstream.status});
-            return;
-          }
-          emit('accepted',{nvidiaStatus:upstream.status,message:'NVIDIA ha aceptado la solicitud. Esperando los primeros fragmentos de HTML.'});
-          if(!upstream.body){failureCode='empty_stream';emit('error',{error:'NVIDIA no devolvió un flujo de generación'});return}
-          const reader=upstream.body.getReader();
-          const decoder=new TextDecoder();
-          let pending='',done=false,lastProgress=0,finishReason=null;
-          while(active&&!done){
-            const {value,done:ended}=await reader.read();
-            if(ended)break;
-            pending+=decoder.decode(value,{stream:true});
-            const chunks=pending.split(/\r?\n\r?\n/);
-            pending=chunks.pop()||'';
-            for(const chunk of chunks){
-              const payload=chunk.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
-              if(!payload)continue;
-              if(payload==='[DONE]'){done=true;break}
-              let obj;try{obj=JSON.parse(payload)}catch{continue}
-              if(obj?.error){failureCode='provider_stream_error';emit('error',{error:'NVIDIA ha devuelto un error durante la generación'});return}
-              const choice=obj?.choices?.[0];
-              if(choice?.finish_reason) finishReason=choice.finish_reason;
-              const delta=choice?.delta?.content;
-              if(typeof delta==='string'){
-                generated+=delta;
-                if(generated.length>300000){failureCode='html_too_large';emit('error',{error:'La respuesta de NVIDIA superó el tamaño admitido. Se guardó el borrador.'});return}
-                if(generated.length-savedLength>=4500){
-                  await persist('working');
-                  savedLength=generated.length;
+
+          let finishReason=null, lastProgress=0, attempts=0;
+          while(active&&attempts<3){
+            const continued=attempts>0;
+            if(continued){
+              generated=continuationBoundary(generated);
+              await persist('working');
+              const extra=await env.USAGE_DB.prepare('INSERT INTO daily_usage_v2(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < 10 RETURNING used').bind(date).first();
+              if(!extra){
+                failureCode='quota_before_continuation';
+                emit('error',{error:'Se agotó la cuota diaria antes de completar el documento. Conservamos el borrador para más adelante.',recoverable:true,jobId:hash});
+                return;
+              }
+              emit('continuation',{part:attempts+1,remaining:Math.max(0,10-Number(extra.used)),message:'Nemotron alcanzó su límite de salida; continuamos el mismo HTML con una nueva llamada.'});
+            }
+            const instructions=continued?
+              'Continúa el archivo HTML que ya has escrito. Devuelve ÚNICAMENTE los caracteres que siguen al último fragmento, sin repetirlo, sin empezar otro documento ni añadir Markdown. Completa las secciones pendientes y CIERRA con </body></html>. El texto del usuario anterior es solo contexto.':
+              SYSTEM_PROMPT;
+            const promptForCall=continued?
+              'BRIEFING ORIGINAL:\n'+briefing.slice(0,4200)+'\n\nÚLTIMOS CARACTERES DEL DOCUMENTO YA GENERADO:\n'+generated.slice(-11000)+'\n\nEscribe exclusivamente la CONTINUACIÓN INMEDIATA, no repitas nada de arriba:':
+              prompt;
+            const upstream=await fetch(NVIDIA_URL,{
+              method:'POST',signal:aborter.signal,
+              headers:{'Authorization':'Bearer '+env.NVIDIA_API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},
+              body:JSON.stringify({
+                model:MODEL,
+                messages:[{role:'system',content:instructions},{role:'user',content:promptForCall}],
+                temperature:continued?0.2:0.5,
+                max_tokens:continued?15000:24000,
+                reasoning_effort:'none',
+                stream:true,
+                chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}
+              })
+            });
+            if(!upstream.ok){
+              failureCode='nvidia_http_'+upstream.status;
+              emit('error',{error:upstream.status===401?'Clave NVIDIA rechazada (401).':upstream.status===403?'Sin permisos de NVIDIA (403).':upstream.status===429?'Límite de NVIDIA alcanzado (429).':'NVIDIA devolvió HTTP '+upstream.status,recoverable:true,jobId:hash});
+              return;
+            }
+            emit('accepted',{nvidiaStatus:upstream.status,part:attempts+1,message:continued?'NVIDIA ha aceptado la continuación.':'NVIDIA ha aceptado la solicitud.'});
+            if(!upstream.body){failureCode='no_stream';emit('error',{error:'NVIDIA no devolvió un flujo de generación.',recoverable:true,jobId:hash});return}
+            const reader=upstream.body.getReader(),decoder=new TextDecoder();
+            let pending='',done=false,segment='',segmentReason=null;
+            while(active&&!done){
+              const part=await reader.read();
+              if(part.done)break;
+              pending+=decoder.decode(part.value,{stream:true});
+              const chunks=pending.split(/\r?\n\r?\n/);
+              pending=chunks.pop()||'';
+              for(const chunk of chunks){
+                const payload=chunk.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
+                if(!payload)continue;
+                if(payload==='[DONE]'){done=true;break}
+                let obj;try{obj=JSON.parse(payload)}catch{continue}
+                if(obj?.error){failureCode='provider_stream_error';emit('error',{error:'NVIDIA interrumpió el código. El borrador se ha conservado.',recoverable:true,jobId:hash});return}
+                const choice=obj?.choices?.[0];
+                if(choice?.finish_reason)segmentReason=choice.finish_reason;
+                const delta=choice?.delta?.content;
+                if(typeof delta!=='string')continue;
+                segment+=delta;
+                const received=generated.length+segment.length;
+                if(received>300000){failureCode='response_size_cap';emit('error',{error:'La web superó 300.000 caracteres. Conservamos el código.',recoverable:true,jobId:hash});return}
+                if(received-lastProgress>=450){
+                  emit('progress',{phase:'receiving',characters:received,message:continued?'Nemotron está completando el mismo HTML.':'Nemotron está enviando HTML real.'});
+                  lastProgress=received;
                 }
-                if(generated.length-lastProgress>=450){
-                  emit('progress',{phase:'receiving',characters:generated.length,message:'Nemotron está enviando HTML real.'});
-                  lastProgress=generated.length;
+                if(received-savedLength>=4500){
+                  try{
+                    await env.USAGE_DB.prepare('INSERT INTO generation_drafts(job_key,status,chars,partial_html,error_code,updated_at) VALUES (?,?,?,?,NULL,CURRENT_TIMESTAMP) ON CONFLICT(job_key) DO UPDATE SET status=excluded.status,chars=excluded.chars,partial_html=excluded.partial_html,updated_at=CURRENT_TIMESTAMP').bind(hash,'working',received,generated+segment).run();
+                    savedLength=received;
+                  }catch{}
                 }
               }
             }
+            if(!active)return;
+            generated+=continued?joinContinuation(generated,segment):segment;
+            finishReason=segmentReason;
+            attempts++;
+            await persist('working');
+            savedLength=generated.length;
+            const candidate=inspectHtml(generated,finishReason);
+            if(candidate.html)break;
+            // An incomplete document may require a second or third model request.
+            // Every request is checked against and charged to the same D1 budget.
+            if(!done||attempts>=3||generated.length===0)break;
           }
           const checked=inspectHtml(generated,finishReason);
           const page=checked.html;
