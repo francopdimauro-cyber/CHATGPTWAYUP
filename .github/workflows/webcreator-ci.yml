@@ -4,6 +4,7 @@ on:
     branches:
       - feature/studio-reliability-hardening
       - feature/compact-one-screen
+      - feature/precision-dark-ui
   pull_request:
     branches:
       - main
