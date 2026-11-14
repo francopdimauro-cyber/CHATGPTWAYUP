@@ -209,7 +209,7 @@ export default {
     const keyDiagnostic={
       correctPrefix:secret.startsWith('sk-or-v1-'),
       hasEllipsis:secret.includes('...')||secret.includes('…'),
-      hasWhitespace:/\\s/.test(secret),
+      hasWhitespace:/\s/.test(secret),
       hasQuotes:secret.startsWith('"')||secret.startsWith("'"),
       plausibleLength:secret.length>=60&&secret.length<=200
     };
