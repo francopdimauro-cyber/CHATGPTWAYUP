@@ -12,16 +12,57 @@ const SYSTEM_PROMPT = [
 'No inventes contactos, direcciones, precios, reseñas, testimonios, licencias ni cifras. Usa marcadores evidentes cuando falten datos.',
 'Nunca simules formularios, pagos, compras o reservas como si funcionasen realmente: indica que requieren backend.',
 'No incluyas claves, inyección de scripts, iframes, redirecciones automáticas, seguimientos ni envío de datos a terceros.',
-'Para acelerar, produce HTML/CSS/JS compactos: no repitas estilos ni información, evita comentarios y explicaciones. Prioriza un resultado completo y visualmente excelente en 6000-10000 tokens si es posible.',
+'Prioriza un diseño completo, funcional, cuidado y original. No acortes secciones por ahorrar tokens; evita únicamente explicaciones fuera del HTML y duplicaciones innecesarias.',
 'Devuelve solamente el HTML completo desde <!DOCTYPE html> hasta </html>, sin Markdown.'
 ].join(' ');
-function parseHtml(v) {
- if(typeof v!=='string') return null;
- const matched=v.match(/<!doctype html[\s\S]*?<\/html\s*>/i);
- if(!matched||matched[0].length>260000) return null;
- const html=matched[0];
- if(/<iframe\b|<object\b|<embed\b|<base\b|<script\b[^>]*\bsrc\s*=|<meta\b[^>]*http-equiv\s*=\s*["']?refresh/i.test(html)) return null;
- return html;
+// The model's document may be wrapped in Markdown, omit a doctype,
+// or contain legitimate embeds (for example, a Google Maps iframe).
+// Normalize trivial HTML5 omissions; never discard the original response.
+function inspectHtml(v, finishReason=null) {
+  const issue=(code)=>({html:null,repaired:false,warnings:[],error:code});
+  if(typeof v!=='string'||!v.trim()) return issue('empty_output');
+  if(v.length>300000) return issue('output_too_large');
+  const raw=v.trim();
+  const doctype=raw.search(/<!doctype\s+html\b/i);
+  const htmlStart=raw.search(/<html(?:\s|>)/i);
+  const start=doctype>=0&&htmlStart>=0?Math.min(doctype,htmlStart):Math.max(doctype,htmlStart);
+  if(start<0) return issue('missing_html_root');
+  let html=raw.slice(start).trim();
+  const warnings=[];
+  const lastClose=Array.from(html.matchAll(/<\/html\s*>/gi)).pop();
+  const hasClose=Boolean(lastClose);
+  if(hasClose && lastClose.index+lastClose[0].length<html.length) {
+    html=html.slice(0,lastClose.index+lastClose[0].length);
+    warnings.push('Se retiró texto adicional después del documento HTML.');
+  }
+  if(!/^<!doctype\s+html\b/i.test(html)){
+    html='<!DOCTYPE html>\n'+html;
+    warnings.push('Se añadió DOCTYPE HTML5.');
+  }
+  if(!/<html(?:\s|>)/i.test(html)||!/<body(?:\s|>)/i.test(html)) return issue('missing_html_structure');
+  // Never report a half-written script or style as a finished document.
+  const count=(pattern)=>(html.match(pattern)||[]).length;
+  if(count(/<script\b/gi)>count(/<\/script\s*>/gi)) return issue('unclosed_script');
+  if(count(/<style\b/gi)>count(/<\/style\s*>/gi)) return issue('unclosed_style');
+  // The output can be safe to display even with embedded maps, scripts or
+  // forms: the preview runs in an opaque-origin sandbox, and users review
+  // generated source before publishing externally.
+  if(!/<\/html\s*>\s*$/i.test(html)){
+    if(/<\/body\s*>\s*$/i.test(html)){
+      html+='\n</html>';
+      warnings.push('Se añadió el cierre final de HTML.');
+    }else if(finishReason!=='length'&&/>\s*$/.test(html)){
+      html+='\n</body>\n</html>';
+      warnings.push('Se añadieron cierres HTML5; revisa el final de la página.');
+    }else return issue('truncated_html');
+  }
+  // If the provider explicitly reports a length limit, do not claim success
+  // unless the model actually closed its document.
+  if(finishReason==='length'&&!hasClose) return issue('output_token_limit');
+  return {html,repaired:warnings.length>0,warnings,error:null};
+}
+function parseHtml(v){
+  return inspectHtml(v).html;
 }
 export default {
  async fetch(request,env,ctx) {
@@ -206,17 +247,21 @@ export default {
               }
             }
           }
-          const page=parseHtml(generated);
+          const checked=inspectHtml(generated,finishReason);
+          const page=checked.html;
           if(!page){
-            failureCode=finishReason==='length'?'output_token_limit':!done?'stream_interrupted':'incomplete_html';
-            emit('error',{error:failureCode==='output_token_limit'?'Nemotron alcanzó el máximo de tokens antes de cerrar el HTML. El borrador se ha conservado.':failureCode==='stream_interrupted'?'NVIDIA cerró el flujo antes de completar el HTML. Se ha conservado el borrador.':'NVIDIA terminó sin un documento HTML completo. El borrador se ha conservado.',characters:generated.length,finishReason});
+            failureCode=finishReason==='length'?'output_token_limit':checked.error||(!done?'stream_interrupted':'incomplete_html');
+            emit('error',{error:failureCode==='output_token_limit'?'Nemotron alcanzó el límite de salida sin completar el HTML. El código queda guardado como borrador.':failureCode==='unclosed_script'?'Nemotron no cerró un bloque JavaScript. Puedes recuperar el HTML generado como borrador.':failureCode==='unclosed_style'?'Nemotron no cerró un bloque CSS. Puedes recuperar el HTML generado como borrador.':'El HTML necesita revisión ('+failureCode+'). Se ha conservado el código sin descartarlo.',characters:generated.length,finishReason,jobId:hash,recoverable:true});
             return;
           }
           try {await env.USAGE_DB.prepare('INSERT OR IGNORE INTO generation_cache(cache_key,html) VALUES (?,?)').bind(hash,page).run()}
           catch { /* The completed document remains available through the draft store. */ }
           completed=true;
+          // Persist the actual finalized page, including harmless HTML5 repairs,
+          // so recovery serves exactly the document we showed to the user.
+          generated=page;
           await persist('complete');
-          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason});
+          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason,repaired:checked.repaired,warnings:checked.warnings});
         } catch(e){
           failureCode=e?.name==='AbortError'?'abort_or_timeout':'stream_exception';
           emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o alcanzó el límite de tiempo. Se ha intentado conservar el borrador.':'Conexión con NVIDIA interrumpida. Se ha intentado conservar el borrador.'});
