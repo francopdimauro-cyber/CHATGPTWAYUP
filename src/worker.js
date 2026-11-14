@@ -204,6 +204,7 @@ export default {
    return new Response(HTML, {headers:{'content-type':'text/html; charset=utf-8','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','cache-control':'public, max-age=120'}});
   }
   if(url.pathname==='/api/projects'||url.pathname.startsWith('/api/projects/'))return handleStudio(request,env,url);
+  if(url.pathname==='/api/media'||url.pathname.startsWith('/api/media/'))return handleStudioMedia(request,env,url);
   if(url.pathname==='/api/health') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
    return send({status:'ok',model:MODEL,configured:Boolean(env.OPENROUTER_API_KEY),models:MODELS,provider:'OpenRouter',accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
