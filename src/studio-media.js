@@ -4,7 +4,7 @@
 const STUDIO_MEDIA_PREFIX='studio/images/';
 const STUDIO_MEDIA_MAX=5*1024*1024;
 const STUDIO_MEDIA_MODEL='@cf/black-forest-labs/flux-1-schnell';
-const STUDIO_MEDIA_DAILY_AI=5;
+const STUDIO_MEDIA_DAILY_AI=10;
 const STUDIO_MEDIA_TYPES=new Set(['image/jpeg','image/png','image/webp']);
 const studioMediaKey=id=>STUDIO_MEDIA_PREFIX+id;
 const studioMediaImageURL=id=>'/api/media/file/'+encodeURIComponent(id);
