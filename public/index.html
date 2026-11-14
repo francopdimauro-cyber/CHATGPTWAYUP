@@ -366,6 +366,8 @@ function packageProject(html){const doc=new DOMParser().parseFromString(html,'te
  const readme=`WEB GENERADA CON WAYUP WEBCREATOR\n\n1. Abre index.html en el navegador.\n2. Para usar un servidor local: python -m http.server 8000\n3. Edita styles.css para personalizar el diseño.\n4. Edita script.js para modificar las interacciones.\n\nIMPORTANTE: elementos que requieren backend (reservas, contacto, pagos) pueden ser demostraciones. Verifica los enlaces, textos y datos antes de publicar.\n\nRecursos remotos referenciados: ${external.length}. Las imágenes externas no se incluyen físicamente en este ZIP y podrían necesitar conexión a Internet o permisos de licencia.\n`;
  const files={'index.html':index,'README.txt':readme};if(css.trim())files['styles.css']=css;if(js.trim())files['script.js']=js;return files;
 }
+// Reuse the tested ZIP exporter in Studio, without copying or modifying the generator.
+window.webcreatorStudioMakeZip=html=>makeZip(packageProject(html));
 function saveBlob(blob,filename){const u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
 $('downloadZip').addEventListener('click',()=>{if(!currentHtml)return;try{const zip=makeZip(packageProject(currentHtml));saveBlob(zip,'wayup-webcreator-proyecto.zip');stat('Proyecto ZIP descargado: archivos editables y README.')}catch(e){stat('No se pudo crear el ZIP: '+e.message,true)}});
 $('previewMobile').addEventListener('click',()=>{$('preview').style.maxWidth='390px';$('preview').style.display='block';$('preview').style.margin='14px auto';$('preview').scrollIntoView({behavior:'smooth',block:'center'})});
