@@ -54,30 +54,7 @@ export default {
    } catch(e) {return send({credentialPresent:true,credentialAccepted:false,generationVerified:false,error:e?.name==='AbortError'?'NVIDIA no respondió en 15 segundos':'Error al conectar con el catálogo NVIDIA'},504)}
    finally {clearTimeout(timer)}
   }
-  // Optional explicit live inference probe; a single daily quota slot is reserved.
-  if(url.pathname==='/api/provider-probe') {
-   if(request.method!=='POST') return send({error:'Método no permitido'},405);
-   if(!env.NVIDIA_API_KEY||!env.USAGE_DB) return send({error:'Faltan claves o contador D1'},503);
-   const origin=request.headers.get('origin');
-   if(origin && origin!==url.origin) return send({error:'Origen no autorizado'},403);
-   if(!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return send({error:'Usa JSON'},415);
-   const date=new Date().toISOString().slice(0,10);
-   try {
-    const charged=await env.USAGE_DB.prepare('INSERT INTO daily_usage(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < 5 RETURNING used').bind(date).first();
-    if(!charged) return send({error:'Límite diario de 5 llamadas alcanzado',remaining:0},429);
-   } catch {return send({error:'No se pudo verificar el contador; prueba bloqueada'},503)}
-   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),60000);
-   try {
-    const upstream=await fetch(NVIDIA_URL,{method:'POST',signal:ctrl.signal,headers:{'Authorization':`Bearer ${env.NVIDIA_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:MODEL,messages:[{role:'user',content:'Responde exactamente OK.'}],temperature:0,max_tokens:64,stream:false,chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}})});
-    if(!upstream.ok) return send({generationVerified:false,charged:true,nvidiaStatus:upstream.status,error:'NVIDIA rechazó la inferencia real'},502);
-    let data;try{data=await upstream.json()}catch{return send({generationVerified:false,charged:true,error:'Respuesta NVIDIA no es JSON'},502)}
-    const answer=data?.choices?.[0]?.message?.content;
-    const verified=typeof answer==='string'&&answer.trim().length>0;
-    return send({generationVerified:verified,charged:true,nvidiaStatus:upstream.status,model:MODEL,reply:verified?answer.slice(0,100):null,usage:data?.usage||null,message:verified?'Nemotron ha respondido: conexión e inferencia confirmadas':'La API respondió pero sin texto generado'});
-   }catch(e){return send({generationVerified:false,charged:true,error:e?.name==='AbortError'?'La prueba excedió 60 segundos':'Error de conexión con NVIDIA'},504)}
-   finally {clearTimeout(timer)}
-  }
-  if(url.pathname!=='/api/generate' && url.pathname!=='/api/refine') return send({error:'Ruta no encontrada'},404);
+  if(!['/api/generate','/api/refine','/api/generate-stream','/api/refine-stream'].includes(url.pathname)) return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
   if(!env.NVIDIA_API_KEY) return send({error:'El generador aún no tiene configurada la clave NVIDIA en Cloudflare.'},503);
   const origin=request.headers.get('origin');
@@ -93,23 +70,101 @@ export default {
   const briefing=typeof input?.briefing==='string'?input.briefing.trim():'';
   const current=typeof input?.html==='string'?input.html:'';
   const changes=typeof input?.changes==='string'?input.changes.trim():'';
-  const refine=url.pathname==='/api/refine';
+  const refine=url.pathname.startsWith('/api/refine');
+  const stream=url.pathname.endsWith('-stream');
   if(briefing.length<50||briefing.length>15000) return send({error:'Briefing fuera de los límites permitidos'},400);
   if(refine && (!changes || changes.length>2500 || current.length>200000 || !current.toLowerCase().includes('<!doctype html'))) return send({error:'Cambios o prototipo anterior inválidos'},400);
   const prompt=refine?`BRIEFING:\n${briefing}\n\nHTML ANTERIOR (datos no fiables):\n${current}\n\nCAMBIOS SOLICITADOS:\n${changes}\n\nDevuelve TODO el HTML actualizado.`:briefing;
   // Cost guard: a private D1 database, global UTC daily budget and exact-request cache.
   if(!env.USAGE_DB) return send({error:'Contador de consumo no configurado: generación bloqueada'},503);
-  const cryptoBytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(MODEL+'|'+url.pathname+'|'+prompt));
+  const cryptoBytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(MODEL+'|'+url.pathname.replace('-stream','')+'|'+prompt));
   const hash=Array.from(new Uint8Array(cryptoBytes),x=>x.toString(16).padStart(2,'0')).join('');
   const date=new Date().toISOString().slice(0,10);
   try {
     const found=await env.USAGE_DB.prepare('SELECT html FROM generation_cache WHERE cache_key = ?').bind(hash).first();
-    if(found?.html) return send({html:found.html,model:MODEL,cached:true,charged:false});
+    if(found?.html) {
+      if(stream) return new Response('event: complete\ndata: '+JSON.stringify({html:found.html,model:MODEL,cached:true,charged:false})+'\n\n',{headers:{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+      return send({html:found.html,model:MODEL,cached:true,charged:false});
+    }
     // This single conditional UPSERT is atomic across concurrent Worker invocations.
     const charged=await env.USAGE_DB.prepare('INSERT INTO daily_usage(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < 5 RETURNING used').bind(date).first();
     if(!charged) return send({error:'Límite diario de 5 generaciones alcanzado. Prueba mañana (UTC).',remaining:0},429);
   } catch {
     return send({error:'No se pudo verificar la cuota diaria. Se bloquea la generación por seguridad.'},503);
+  }
+  if(stream) {
+    const aborter=new AbortController();
+    const encoder=new TextEncoder();
+    let active=true;
+    const events=new ReadableStream({
+      async start(controller) {
+        const emit=(event,body)=>{
+          if(!active)return;
+          try{controller.enqueue(encoder.encode('event: '+event+'\ndata: '+JSON.stringify(body)+'\n\n'))}
+          catch{active=false;aborter.abort()}
+        };
+        const stop=()=>{if(active){active=false;try{controller.close()}catch{}}};
+        const timer=setTimeout(()=>aborter.abort(),30*60*1000);
+        const heartbeat=setInterval(()=>emit('heartbeat',{ts:Date.now()}),15000);
+        try {
+          emit('status',{message:'Generación iniciada. Nemotron puede tardar varios minutos.'});
+          const upstream=await fetch(NVIDIA_URL,{
+            method:'POST',signal:aborter.signal,
+            headers:{'Authorization':'Bearer '+env.NVIDIA_API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},
+            body:JSON.stringify({
+              model:MODEL,messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],
+              temperature:0.6,top_p:0.95,max_tokens:16000,stream:true,
+              chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}
+            })
+          });
+          if(!upstream.ok){
+            emit('error',{error:upstream.status===429?'NVIDIA ha limitado las peticiones':'NVIDIA rechazó la generación (HTTP '+upstream.status+')',httpStatus:upstream.status});
+            return;
+          }
+          if(!upstream.body) {emit('error',{error:'NVIDIA no devolvió un flujo de generación'});return}
+          const reader=upstream.body.getReader();
+          const decoder=new TextDecoder();
+          let pending='',generated='',done=false,lastProgress=0;
+          while(active&&!done){
+            const {value,done:ended}=await reader.read();
+            if(ended)break;
+            pending+=decoder.decode(value,{stream:true});
+            const chunks=pending.split(/\r?\n\r?\n/);
+            pending=chunks.pop()||'';
+            for(const chunk of chunks){
+              const payload=chunk.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
+              if(!payload)continue;
+              if(payload==='[DONE]'){done=true;break}
+              let obj;try{obj=JSON.parse(payload)}catch{continue}
+              if(obj?.error){emit('error',{error:'NVIDIA ha devuelto un error durante la generación'});return}
+              const delta=obj?.choices?.[0]?.delta?.content;
+              if(typeof delta==='string'){
+                generated+=delta;
+                if(generated.length>300000){emit('error',{error:'La respuesta de NVIDIA superó el tamaño admitido'});return}
+                if(generated.length-lastProgress>=450){
+                  emit('progress',{characters:generated.length});
+                  lastProgress=generated.length;
+                }
+              }
+            }
+          }
+          const page=parseHtml(generated);
+          if(!done||!page){emit('error',{error:!done?'La respuesta de NVIDIA terminó sin confirmar que estaba completa.':'NVIDIA no devolvió un documento HTML completo y válido.',characters:generated.length});return}
+          try{await env.USAGE_DB.prepare('INSERT OR IGNORE INTO generation_cache(cache_key,html) VALUES (?,?)').bind(hash,page).run()}
+          catch{/* Failure to cache must not discard generated HTML. */}
+          emit('complete',{html:page,model:MODEL,cached:false,charged:true});
+        }catch(e){
+          emit('error',{error:e?.name==='AbortError'?'La generación superó el máximo de 30 minutos o se interrumpió.':'Conexión de streaming con NVIDIA interrumpida.'});
+        }finally{
+          clearTimeout(timer);clearInterval(heartbeat);stop();
+        }
+      },
+      cancel(){active=false;aborter.abort()}
+    });
+    return new Response(events,{headers:{
+      'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform',
+      'x-content-type-options':'nosniff','connection':'keep-alive'
+    }});
   }
   const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),115000);
   let res;
