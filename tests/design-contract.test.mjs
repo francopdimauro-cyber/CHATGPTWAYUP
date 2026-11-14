@@ -44,7 +44,7 @@ test('bundled Worker includes Studio, theme and original application',()=>{
   assert.match(built,/--ink-2/);
   assert.match(built,/cloudflare-zero-trust/);
   assert.match(built,/OPENROUTER_API_KEY/);
-  assert.doesNotThrow(()=>new vm.Script(built,{filename:'dist/worker.js'}));
+  assert.doesNotThrow(()=>new vm.Script(built.replace('export default {','const worker = {'),{filename:'dist/worker.js'}));
 });
 test('inline frontend and Studio scripts parse without JavaScript errors',()=>{
   const re=/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi;
