@@ -53,3 +53,13 @@ test('inline frontend and Studio scripts parse without JavaScript errors',()=>{
     else for(const match of code.matchAll(re))assert.doesNotThrow(()=>new vm.Script(match[1]));
   }
 });
+
+test('no-token project quality report remains wired to Studio and API',()=>{
+  const server=file('src/studio.js');
+  assert.match(studio,/id="wcAudit"/);
+  assert.match(studio,/id="wcAuditResult"/);
+  assert.match(studio,/\/api\/projects\/.*quality/);
+  assert.match(server,/quality==='quality'/);
+  assert.match(worker,/IDs duplicados/);
+  assert.match(worker,/sin atributo alt/);
+});
