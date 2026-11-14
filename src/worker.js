@@ -175,6 +175,7 @@ async function requestRepair(env,html,issues,instruction,signal){
  return applyExactPatches(html,payload);
 }
 
+/*__WEBCREATOR_STUDIO_SERVER__*/
 export default {
  async fetch(request,env,ctx) {
   // Fail closed: only requests authenticated by Cloudflare Zero Trust may use this private Worker.
@@ -187,6 +188,7 @@ export default {
   if(request.method==='GET' && (url.pathname==='/' || url.pathname==='/index.html')) {
    return new Response(HTML, {headers:{'content-type':'text/html; charset=utf-8','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','cache-control':'public, max-age=120'}});
   }
+  if(url.pathname==='/api/projects'||url.pathname.startsWith('/api/projects/'))return handleStudio(request,env,url);
   if(url.pathname==='/api/health') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
    return send({status:'ok',model:MODEL,configured:Boolean(env.OPENROUTER_API_KEY),models:MODELS,provider:'OpenRouter',accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
@@ -281,7 +283,8 @@ export default {
   try {
     const found=await env.USAGE_DB.prepare('SELECT html FROM generation_cache WHERE cache_key = ?').bind(hash).first();
     if(found?.html) {
-      if(stream) return new Response('event: complete\ndata: '+JSON.stringify({html:found.html,model:MODEL,cached:true,charged:false})+'\n\n',{headers:{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
+      const projectId=await saveProjectForJob(env.USAGE_DB,hash,found.html);
+      if(stream) return new Response('event: complete\ndata: '+JSON.stringify({html:found.html,model:MODEL,cached:true,charged:false,projectId})+'\n\n',{headers:{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
       return send({html:found.html,model:MODEL,cached:true,charged:false});
     }
     // Charge each individual API call immediately before sending it; no charge on cache hits.
@@ -328,7 +331,8 @@ export default {
               const review=await requestRepair(env,base,issues,changes,aborter.signal);
               generated=review.html;
               completed=true;await persist('complete');
-              emit('complete',{html:review.html,model:MODELS.repair,cached:false,charged:true,jobId:hash,apiCalls:1,
+              const projectId=await saveProjectForJob(env.USAGE_DB,hash,review.html);
+              emit('complete',{html:review.html,model:MODELS.repair,cached:false,charged:true,projectId,jobId:hash,apiCalls:1,
                 warnings:[review.applied+' cambios aplicados; '+review.rejected+' parches rechazados.',...review.issues,
                   ...(review.applied===0?['El reparador no aplicó modificaciones verificables; conservamos el documento original.']:[])],
                 repaired:review.applied>0,repair:review});
@@ -459,7 +463,8 @@ export default {
           // so recovery serves exactly the document we showed to the user.
           generated=page;
           await persist('complete');
-          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason,repaired:checked.repaired,warnings:[...checked.warnings,...reviewWarnings,...remainingIssues],apiCalls:attempts+(imageData?1:0)+(billRepair?1:0)});
+          const projectId=await saveProjectForJob(env.USAGE_DB,hash,page);
+          emit('complete',{html:page,model:MODEL,cached:false,charged:true,projectId,jobId:hash,finishReason,repaired:checked.repaired,warnings:[...checked.warnings,...reviewWarnings,...remainingIssues],apiCalls:attempts+(imageData?1:0)+(billRepair?1:0)});
         } catch(e){
           failureCode=e?.name==='AbortError'?'abort_or_timeout':'stream_exception';
           emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o alcanzó el límite de tiempo. Se ha intentado conservar el borrador.':'Conexión con OpenRouter interrumpida. Se ha intentado conservar el borrador.'});
