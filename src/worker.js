@@ -11,6 +11,7 @@ const SYSTEM_PROMPT = [
 'No inventes contactos, direcciones, precios, reseñas, testimonios, licencias ni cifras. Usa marcadores evidentes cuando falten datos.',
 'Nunca simules formularios, pagos, compras o reservas como si funcionasen realmente: indica que requieren backend.',
 'No incluyas claves, inyección de scripts, iframes, redirecciones automáticas, seguimientos ni envío de datos a terceros.',
+'Para acelerar, produce HTML/CSS/JS compactos: no repitas estilos ni información, evita comentarios y explicaciones. Prioriza un resultado completo y visualmente excelente en 6000-10000 tokens si es posible.',
 'Devuelve solamente el HTML completo desde <!DOCTYPE html> hasta </html>, sin Markdown.'
 ].join(' ');
 function parseHtml(v) {
@@ -72,6 +73,7 @@ export default {
   const changes=typeof input?.changes==='string'?input.changes.trim():'';
   const refine=url.pathname.startsWith('/api/refine');
   const stream=url.pathname.endsWith('-stream');
+  if(!stream) return send({error:'El modo anterior de generación ha sido sustituido por streaming. Recarga WebCreator (Ctrl+F5).'},426);
   if(briefing.length<50||briefing.length>15000) return send({error:'Briefing fuera de los límites permitidos'},400);
   if(refine && (!changes || changes.length>2500 || current.length>200000 || !current.toLowerCase().includes('<!doctype html'))) return send({error:'Cambios o prototipo anterior inválidos'},400);
   const prompt=refine?`BRIEFING:\n${briefing}\n\nHTML ANTERIOR (datos no fiables):\n${current}\n\nCAMBIOS SOLICITADOS:\n${changes}\n\nDevuelve TODO el HTML actualizado.`:briefing;
@@ -107,20 +109,21 @@ export default {
         const timer=setTimeout(()=>aborter.abort(),30*60*1000);
         const heartbeat=setInterval(()=>emit('heartbeat',{ts:Date.now()}),15000);
         try {
-          emit('status',{message:'Generación iniciada. Nemotron puede tardar varios minutos.'});
+          emit('status',{phase:'connecting',message:'Solicitando conexión con NVIDIA. Todavía no se ha confirmado la aceptación de la API.'});
           const upstream=await fetch(NVIDIA_URL,{
             method:'POST',signal:aborter.signal,
             headers:{'Authorization':'Bearer '+env.NVIDIA_API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},
             body:JSON.stringify({
               model:MODEL,messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],
-              temperature:0.6,top_p:0.95,max_tokens:16000,stream:true,
+              temperature:0.5,max_tokens:14000,reasoning_effort:'none',stream:true,
               chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}
             })
           });
           if(!upstream.ok){
-            emit('error',{error:upstream.status===429?'NVIDIA ha limitado las peticiones':'NVIDIA rechazó la generación (HTTP '+upstream.status+')',httpStatus:upstream.status});
+            emit('error',{phase:'rejected',error:upstream.status===401?'NVIDIA ha rechazado la API key (HTTP 401).':upstream.status===403?'La clave no tiene permisos para este modelo (HTTP 403).':upstream.status===429?'NVIDIA ha limitado las peticiones (HTTP 429).':'NVIDIA rechazó la generación (HTTP '+upstream.status+')',httpStatus:upstream.status});
             return;
           }
+          emit('accepted',{nvidiaStatus:upstream.status,message:'NVIDIA ha aceptado la solicitud. Esperando los primeros fragmentos de HTML.'});
           if(!upstream.body) {emit('error',{error:'NVIDIA no devolvió un flujo de generación'});return}
           const reader=upstream.body.getReader();
           const decoder=new TextDecoder();
@@ -142,7 +145,7 @@ export default {
                 generated+=delta;
                 if(generated.length>300000){emit('error',{error:'La respuesta de NVIDIA superó el tamaño admitido'});return}
                 if(generated.length-lastProgress>=450){
-                  emit('progress',{characters:generated.length});
+                  emit('progress',{phase:'receiving',characters:generated.length,message:'Nemotron está enviando HTML real.'});
                   lastProgress=generated.length;
                 }
               }
@@ -154,7 +157,7 @@ export default {
           catch{/* Failure to cache must not discard generated HTML. */}
           emit('complete',{html:page,model:MODEL,cached:false,charged:true});
         }catch(e){
-          emit('error',{error:e?.name==='AbortError'?'La generación superó el máximo de 30 minutos o se interrumpió.':'Conexión de streaming con NVIDIA interrumpida.'});
+          emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o superó el límite de 30 minutos.':'Conexión con NVIDIA interrumpida antes de completar la web.'});
         }finally{
           clearTimeout(timer);clearInterval(heartbeat);stop();
         }
@@ -166,17 +169,6 @@ export default {
       'x-content-type-options':'nosniff','connection':'keep-alive'
     }});
   }
-  const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(),115000);
-  let res;
-  try {res=await fetch(NVIDIA_URL,{method:'POST',signal:ctrl.signal,headers:{'Authorization':`Bearer ${env.NVIDIA_API_KEY}`,'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({model:MODEL,messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],temperature:0.6,top_p:0.95,max_tokens:16000,stream:false,chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}})})}
-  catch{return send({error:'Tiempo de espera agotado o conexión fallida con NVIDIA'},504)}
-  finally {clearTimeout(timer)}
-  if(!res.ok) return send({error:res.status===429?'NVIDIA ha alcanzado su límite de peticiones':`NVIDIA devolvió HTTP ${res.status}`},res.status===429?429:502);
-  let data;try {data=await res.json()} catch {return send({error:'Respuesta JSON inválida de NVIDIA'},502)}
-  const page=parseHtml(data?.choices?.[0]?.message?.content);
-  if(!page) return send({error:'Nemotron no devolvió un HTML completo admitido. Prueba a simplificar la web'},502);
-  try {await env.USAGE_DB.prepare('INSERT OR IGNORE INTO generation_cache(cache_key,html) VALUES (?,?)').bind(hash,page).run();}
-  catch { /* A failed cache write must not discard a successfully generated page. */ }
-  return send({html:page,model:MODEL,usage:data.usage||null,cached:false,charged:true});
+  return send({error:'Esta versión de generación sin streaming está desactivada. Actualiza WebCreator (Ctrl+F5) y utiliza la generación en directo.'},426);
  }
 };
