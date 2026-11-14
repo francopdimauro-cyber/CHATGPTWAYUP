@@ -21,3 +21,16 @@ CREATE TABLE IF NOT EXISTS webcreator_project_versions (
   PRIMARY KEY(project_id, version),
   FOREIGN KEY(project_id) REFERENCES webcreator_projects(id)
 );
+
+-- Optional idempotent backfill: only previously completed pages.
+INSERT OR IGNORE INTO webcreator_projects(id,name,html,source_job_key)
+SELECT lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-'||hex(randomblob(2))||'-'||hex(randomblob(2))||'-'||hex(randomblob(6))),
+       'Web recuperada · '||substr(created_at,1,10),html,cache_key
+FROM generation_cache WHERE length(html)>40;
+INSERT OR IGNORE INTO webcreator_projects(id,name,html,source_job_key)
+SELECT lower(hex(randomblob(4))||'-'||hex(randomblob(2))||'-'||hex(randomblob(2))||'-'||hex(randomblob(2))||'-'||hex(randomblob(6))),
+       'Web recuperada · '||substr(updated_at,1,10),partial_html,job_key
+FROM generation_drafts
+WHERE status='complete' AND instr(lower(partial_html),'</html>')>0;
+INSERT OR IGNORE INTO webcreator_project_versions(project_id,version,html,label)
+SELECT id,1,html,'Generación recuperada' FROM webcreator_projects;
