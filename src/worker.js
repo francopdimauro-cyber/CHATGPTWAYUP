@@ -37,6 +37,46 @@ export default {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
    return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:5});
   }
+  // Read-only NVIDIA credential and catalog check. This performs no inference.
+  if(url.pathname==='/api/provider-check') {
+   if(request.method!=='GET') return send({error:'Método no permitido'},405);
+   if(!env.NVIDIA_API_KEY) return send({credentialPresent:false,credentialAccepted:false,generationVerified:false,error:'Falta el secreto NVIDIA_API_KEY'},503);
+   const ctrl=new AbortController();
+   const timer=setTimeout(()=>ctrl.abort(),15000);
+   try {
+    const upstream=await fetch('https://integrate.api.nvidia.com/v1/models',{
+     method:'GET',signal:ctrl.signal,headers:{'Authorization':`Bearer ${env.NVIDIA_API_KEY}`,'Accept':'application/json'},redirect:'error'
+    });
+    if(!upstream.ok) return send({credentialPresent:true,credentialAccepted:false,nvidiaStatus:upstream.status,generationVerified:false,error:'NVIDIA ha rechazado la consulta del catálogo'},502);
+    const models=await upstream.json();
+    const listed=Array.isArray(models?.data) && models.data.some(x=>x.id===MODEL);
+    return send({credentialPresent:true,credentialAccepted:true,nvidiaStatus:upstream.status,model:MODEL,modelListed:listed,generationVerified:false,message:'NVIDIA acepta la clave para consultar modelos. La inferencia todavía requiere una prueba corta.'});
+   } catch(e) {return send({credentialPresent:true,credentialAccepted:false,generationVerified:false,error:e?.name==='AbortError'?'NVIDIA no respondió en 15 segundos':'Error al conectar con el catálogo NVIDIA'},504)}
+   finally {clearTimeout(timer)}
+  }
+  // Optional explicit live inference probe; a single daily quota slot is reserved.
+  if(url.pathname==='/api/provider-probe') {
+   if(request.method!=='POST') return send({error:'Método no permitido'},405);
+   if(!env.NVIDIA_API_KEY||!env.USAGE_DB) return send({error:'Faltan claves o contador D1'},503);
+   const origin=request.headers.get('origin');
+   if(origin && origin!==url.origin) return send({error:'Origen no autorizado'},403);
+   if(!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return send({error:'Usa JSON'},415);
+   const date=new Date().toISOString().slice(0,10);
+   try {
+    const charged=await env.USAGE_DB.prepare('INSERT INTO daily_usage(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < 5 RETURNING used').bind(date).first();
+    if(!charged) return send({error:'Límite diario de 5 llamadas alcanzado',remaining:0},429);
+   } catch {return send({error:'No se pudo verificar el contador; prueba bloqueada'},503)}
+   const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),60000);
+   try {
+    const upstream=await fetch(NVIDIA_URL,{method:'POST',signal:ctrl.signal,headers:{'Authorization':`Bearer ${env.NVIDIA_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:MODEL,messages:[{role:'user',content:'Responde exactamente OK.'}],temperature:0,max_tokens:64,stream:false,chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}})});
+    if(!upstream.ok) return send({generationVerified:false,charged:true,nvidiaStatus:upstream.status,error:'NVIDIA rechazó la inferencia real'},502);
+    let data;try{data=await upstream.json()}catch{return send({generationVerified:false,charged:true,error:'Respuesta NVIDIA no es JSON'},502)}
+    const answer=data?.choices?.[0]?.message?.content;
+    const verified=typeof answer==='string'&&answer.trim().length>0;
+    return send({generationVerified:verified,charged:true,nvidiaStatus:upstream.status,model:MODEL,reply:verified?answer.slice(0,100):null,usage:data?.usage||null,message:verified?'Nemotron ha respondido: conexión e inferencia confirmadas':'La API respondió pero sin texto generado'});
+   }catch(e){return send({generationVerified:false,charged:true,error:e?.name==='AbortError'?'La prueba excedió 60 segundos':'Error de conexión con NVIDIA'},504)}
+   finally {clearTimeout(timer)}
+  }
   if(url.pathname!=='/api/generate' && url.pathname!=='/api/refine') return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
   if(!env.NVIDIA_API_KEY) return send({error:'El generador aún no tiene configurada la clave NVIDIA en Cloudflare.'},503);
