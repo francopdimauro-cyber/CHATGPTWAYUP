@@ -187,9 +187,13 @@ const streamRequest=async(path,payload)=>{
         getQuota();
         updateEngine('connecting',data.message||'Solicitando conexión con NVIDIA.');
         engineLog('Petición enviada al servidor. Esperando confirmación de NVIDIA.');
+      }else if(event==='continuation'){
+        updateEngine('accepted','El modelo alcanzó su límite por respuesta. WebCreator ha iniciado una continuación automática del MISMO HTML.');
+        engineLog('Continuación automática: parte '+data.part+' de 3; se ha utilizado otra petición de NVIDIA.');
+        if(Number.isFinite(data.remaining))$('engineQuota').textContent='Cuota diaria: '+data.remaining+' de 10 disponibles (UTC)';
       }else if(event==='accepted'){
-        updateEngine('accepted','NVIDIA respondió HTTP '+data.nvidiaStatus+'. El modelo está preparando el HTML; todavía no han llegado fragmentos.');
-        engineLog('NVIDIA aceptó la solicitud (HTTP '+data.nvidiaStatus+').');
+        updateEngine('accepted',data.part>1?'NVIDIA ha aceptado la continuación de la página (HTTP '+data.nvidiaStatus+').':'NVIDIA respondió HTTP '+data.nvidiaStatus+'. Está preparando el HTML.');
+        engineLog('NVIDIA aceptó la solicitud (HTTP '+data.nvidiaStatus+')'+(data.part>1?', parte '+data.part:'')+'.');
       }else if(event==='progress'){
         bytesReceived=Math.max(bytesReceived,Number(data.characters)||0);
         $('engineCharacters').textContent='HTML recibido: '+formatChars(bytesReceived)+' caracteres';
