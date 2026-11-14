@@ -20,7 +20,7 @@ const shell=[
 '<label id="wcSrcWrap" class="wc-hidden">URL de imagen<input id="wcSrc" type="text"></label><label id="wcAltWrap" class="wc-hidden">Texto alternativo<input id="wcAlt" type="text"></label><button id="wcApplyImage" class="wc-hidden">Cambiar imagen</button>',
 '<label id="wcHrefWrap" class="wc-hidden">Enlace<input id="wcHref" type="text"></label><button id="wcApplyLink" class="wc-hidden">Cambiar enlace</button>',
 '<p class="wc-hint">Doble clic sobre un texto sencillo para editarlo directamente. También puedes seleccionar un elemento y cambiarlo desde este panel.</p>',
-'<hr class="wc-divider"><h3>Proyecto</h3><button id="wcDownload">↓ Descargar HTML</button><button id="wcZip">↓ Descargar ZIP</button><button id="wcHistory">Historial de versiones</button><div class="wc-history" id="wcVersions"></div><button id="wcArchive" style="color:#a12030">Archivar proyecto</button>',
+'<hr class="wc-divider"><h3>Proyecto</h3><button id="wcDownload">↓ Descargar HTML</button><button id="wcZip">↓ Descargar ZIP</button><button id="wcAudit">◎ Auditoría HTML · sin IA</button><div id="wcAuditResult" class="wc-history" role="status" aria-live="polite"></div><button id="wcHistory">Historial de versiones</button><div class="wc-history" id="wcVersions"></div><button id="wcArchive" style="color:#a12030">Archivar proyecto</button>',
 '</div></aside></div></div>'
 ].join('');
 document.body.insertAdjacentHTML('beforeend',shell);
@@ -245,6 +245,33 @@ el('wcApplyLink').addEventListener('click',()=>{
 el('wcRename').addEventListener('click',async()=>{
   if(!check())return;const name=prompt('Nombre del proyecto:',state.name);if(!name?.trim())return;
   try{await mutate('/api/projects/'+state.id+'/name','PATCH',{name});state.name=name.trim();sync();await list();status('Proyecto renombrado.')}catch(e){status(e.message,true)}
+});
+el('wcAudit').addEventListener('click',async()=>{
+  if(!check())return;
+  if(state.dirty){status('Guarda primero los cambios para auditar esa versión.',true);return}
+  const report=el('wcAuditResult');report.replaceChildren();
+  const title=document.createElement('strong');
+  title.textContent='Comprobando estructura y accesibilidad básica…';
+  report.append(title);
+  try{
+    const result=await api('/api/projects/'+state.id+'/quality');
+    report.replaceChildren();
+    const h=document.createElement('strong');
+    h.textContent=result.issues.length?'Revisión requerida · '+result.issues.length+' aviso(s)':'Sin incidencias en las comprobaciones estáticas';
+    report.append(h);
+    if(result.issues.length){
+      for(const warning of result.issues){
+        const item=document.createElement('p');
+        item.className='wc-hint';
+        item.textContent='• '+warning;
+        report.append(item);
+      }
+    }
+    const note=document.createElement('p');note.className='wc-hint';
+    note.textContent='Auditoría estática, no pruebas visuales o de navegador.';
+    report.append(note);
+    status(result.issues.length?'Informe de calidad generado sin IA. Revisa los avisos.':'Auditoría estática completada sin avisos; aún falta prueba en navegador.');
+  }catch(e){report.replaceChildren();status('No se pudo auditar: '+e.message,true)}
 });
 el('wcHistory').addEventListener('click',async()=>{
   if(!check())return;
