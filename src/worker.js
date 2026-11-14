@@ -204,11 +204,20 @@ export default {
   if(url.pathname==='/api/provider-check') {
     if(request.method!=='GET')return send({error:'Método no permitido'},405);
     if(!env.OPENROUTER_API_KEY)return send({credentialPresent:false,error:'Falta OPENROUTER_API_KEY'},503);
+    // Format-only check. Never return the secret, a prefix, a suffix or its hash.
+    const secret=env.OPENROUTER_API_KEY;
+    const keyDiagnostic={
+      correctPrefix:secret.startsWith('sk-or-v1-'),
+      hasEllipsis:secret.includes('...')||secret.includes('…'),
+      hasWhitespace:/\\s/.test(secret),
+      hasQuotes:secret.startsWith('"')||secret.startsWith("'"),
+      plausibleLength:secret.length>=60&&secret.length<=200
+    };
     const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),20000);
     try{
       const upstream=await fetch('https://openrouter.ai/api/v1/key',{method:'GET',signal:ctrl.signal,
         redirect:'manual',headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,Accept:'application/json'}});
-      return send({credentialPresent:true,credentialVerified:upstream.ok,catalogReachable:upstream.ok,
+      return send({credentialPresent:true,credentialVerified:upstream.ok,catalogReachable:upstream.ok,keyDiagnostic,
         generationVerified:false,openRouterStatus:upstream.status,nvidiaStatus:upstream.status,
         model:MODEL,models:MODELS,provider:'OpenRouter',
         message:upstream.ok?'Clave OpenRouter validada sin generar tokens.':'La clave de OpenRouter no se pudo verificar.'},upstream.ok?200:502);
