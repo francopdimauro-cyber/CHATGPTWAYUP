@@ -46,3 +46,12 @@ El enlace público puede tardar en propagarse tras activar el subdominio. El Wor
 ## Pruebas desde móvil
 
 El navegador móvil puede suspender una pestaña y cortar una respuesta SSE. El aumento de cuota a diez peticiones por día **no evita** que se pierda una generación en curso. La caché actual solo recupera páginas que llegaron a completarse y guardarse. Para reanudar trabajos de 20 minutos sin dejar el navegador abierto es necesario un proceso duradero independiente del navegador (por ejemplo, Cloudflare Workflows + D1), aún no implementado.
+
+## Recuperación de borradores (V4.2)
+
+- Durante el streaming, el Worker guarda en D1 el código parcial aproximadamente cada 4.500 caracteres y registra el estado final del trabajo.
+- La interfaz recuerda el ID del trabajo en el almacenamiento local del navegador y ofrece **Recuperar último proyecto**, sin gastar una petición de NVIDIA. Si el HTML terminó, puede abrirse y descargarse; si terminó incompleto, permite descargar únicamente el **borrador HTML incompleto**.
+- La barra de porcentaje usa como **referencia de tamaño** los 37.278 caracteres de Aura Estética. Es comparativa, NO una estimación del porcentaje real de generación.
+- Nemotron tiene un máximo configurado de 24.000 tokens de salida en streaming. NVIDIA documenta que el modelo admite hasta 32.768; el aumento busca evitar cortes prematuros por longitud.
+- **Limitación conocida:** el proceso de generación sigue vinculado a la conexión de streaming. Cambiar de pestaña o cerrar la aplicación puede cancelar la llamada y no garantiza que la IA siga trabajando. La recuperación solo permite leer el HTML que el servidor alcanzó a guardar. La ejecución verdaderamente independiente del navegador requiere migrar el motor a Cloudflare Workflows o una arquitectura durable equivalente.
+- Los proyectos generados **antes de habilitar los borradores** no se pueden recuperar si no llegaron a terminar y cachearse.
