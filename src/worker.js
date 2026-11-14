@@ -18,6 +18,24 @@ const SYSTEM_PROMPT = [
 // The model's document may be wrapped in Markdown, omit a doctype,
 // or contain legitimate embeds (for example, a Google Maps iframe).
 // Normalize trivial HTML5 omissions; never discard the original response.
+
+function continuationBoundary(raw){
+ if(typeof raw!=='string')return '';
+ const lower=raw.toLowerCase();
+ const article=lower.lastIndexOf('</article>');
+ if(article>=0&&raw.length-article<3200)return raw.slice(0,article+10);
+ const section=lower.lastIndexOf('</section>');
+ if(section>=0&&raw.length-section<1800)return raw.slice(0,section+10);
+ const lt=raw.lastIndexOf('<'),gt=raw.lastIndexOf('>');
+ return lt>gt?raw.slice(0,lt):raw;
+}
+function joinContinuation(previous,next){
+ next=String(next||'').replace(/^\s*`{3}(?:html)?\s*/i,'').replace(/`{3}\s*$/,'');
+ if(/^\s*(?:<!doctype\s+html|<html(?:\s|>))/i.test(next))return '';
+ const a=previous.slice(-1200),b=next.slice(0,1200);
+ for(let k=Math.min(a.length,b.length);k>=24;k--){if(a.endsWith(b.slice(0,k)))return next.slice(k)}
+ return next;
+}
 function inspectHtml(v, finishReason=null) {
   const issue=(code)=>({html:null,repaired:false,warnings:[],error:code});
   if(typeof v!=='string'||!v.trim()) return issue('empty_output');
