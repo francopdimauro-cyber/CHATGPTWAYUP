@@ -2,6 +2,7 @@
 const HTML = __WEBCREATOR_HTML__;
 const MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
 const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
+const DAILY_LIMIT = 10;
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const send = (body, status=200) => new Response(JSON.stringify(body), {status,headers});
 const SYSTEM_PROMPT = [
@@ -36,7 +37,7 @@ export default {
   }
   if(url.pathname==='/api/health') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
-   return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:5});
+   return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
   }
   // Usage meter does not call NVIDIA or consume a generation.
   if(url.pathname==='/api/quota') {
@@ -44,9 +45,9 @@ export default {
     if(!env.USAGE_DB) return send({error:'Contador D1 no disponible'},503);
     const today=new Date().toISOString().slice(0,10);
     try {
-      const row=await env.USAGE_DB.prepare('SELECT used FROM daily_usage WHERE day = ?').bind(today).first();
+      const row=await env.USAGE_DB.prepare('SELECT used FROM daily_usage_v2 WHERE day = ?').bind(today).first();
       const used=Math.max(0,Number(row?.used||0));
-      return send({dayUTC:today,dailyLimit:5,used,remaining:Math.max(0,5-used)});
+      return send({dayUTC:today,dailyLimit:DAILY_LIMIT,used,remaining:Math.max(0,DAILY_LIMIT-used)});
     }catch {return send({error:'No se pudo leer el consumo actual'},503)}
   }
   // This catalog is publicly readable. A successful request proves network
@@ -110,8 +111,8 @@ export default {
       return send({html:found.html,model:MODEL,cached:true,charged:false});
     }
     // This single conditional UPSERT is atomic across concurrent Worker invocations.
-    const charged=await env.USAGE_DB.prepare('INSERT INTO daily_usage(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < 5 RETURNING used').bind(date).first();
-    if(!charged) return send({error:'Límite diario de 5 generaciones alcanzado. Prueba mañana (UTC).',remaining:0},429);
+    const charged=await env.USAGE_DB.prepare('INSERT INTO daily_usage_v2(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < '+DAILY_LIMIT+' RETURNING used').bind(date).first();
+    if(!charged) return send({error:'Límite diario de '+DAILY_LIMIT+' generaciones alcanzado. Prueba mañana (UTC).',remaining:0},429);
   } catch {
     return send({error:'No se pudo verificar la cuota diaria. Se bloquea la generación por seguridad.'},503);
   }
