@@ -172,8 +172,8 @@ async function load(id){
   if(state.dirty&&!confirm('Hay cambios sin guardar. ¿Descartarlos y abrir otra web?'))return;
   try{
     const data=await api('/api/projects/'+id);
-    state.id=data.id;state.name=data.name;state.version=data.version;state.saved=data.html;
-    state.doc=parse(data.html);state.selected=-1;state.undo=[];state.redo=[];state.mode='edit';state.code=false;
+    state.id=data.id;state.name=data.name;state.version=data.version;
+    state.doc=parse(data.html);state.saved=serialize(state.doc);state.selected=-1;state.undo=[];state.redo=[];state.mode='edit';state.code=false;
     sync();render();await list();el('wcVersions').replaceChildren();el('wcTag').textContent='Sin selección';
     status('Abierto '+state.name+'. Puedes guardar nuevas versiones cuando quieras.');
   }catch(e){status('No se pudo abrir: '+e.message,true)}
