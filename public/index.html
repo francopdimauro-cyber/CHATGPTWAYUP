@@ -21,9 +21,19 @@ header{display:flex;align-items:center;justify-content:space-between;gap:20px;pa
 <section class="step" data-step="2"><div class="section-kicker">PASO 3 DE 6 · ESTILO</div><h2 class="question">¿Qué personalidad tendrá tu web?</h2><p class="hint">Podrás pulir los detalles más adelante.</p><div class="options" data-single="style"><button class="option" data-value="Minimalista y elegante"><strong>Minimalista</strong><small>Espacios amplios, tonos suaves</small></button><button class="option" data-value="Moderno y tecnológico"><strong>Moderno</strong><small>Contrastes, precisión, movimiento</small></button><button class="option" data-value="Cálido y natural"><strong>Natural</strong><small>Colores orgánicos, cercano</small></button><button class="option" data-value="Atrevido y creativo"><strong>Atrevido</strong><small>Tipografía potente, color</small></button></div><div class="fields" style="margin-top:20px"><div class="field"><label for="colors">Colores favoritos (opcional)</label><input id="colors" placeholder="Ej.: verde oliva, crema y blanco"></div><div class="field"><label for="reference">Web de referencia (opcional)</label><input id="reference" placeholder="https://... (solo referencia de estilo)"></div></div></section>
 <section class="step" data-step="3"><div class="section-kicker">PASO 4 DE 6 · DATOS</div><h2 class="question">Háblanos de tu negocio</h2><p class="hint">Cuanto más concreto seas, más personalizada será la propuesta.</p><div class="fields"><div class="field"><label for="businessName">Nombre del negocio *</label><input id="businessName" placeholder="Ej.: Aura Estética" required></div><div class="field"><label for="description">¿A qué te dedicas? *</label><textarea id="description" placeholder="Ej.: tratamientos faciales y corporales personalizados con productos ecológicos"></textarea></div><div class="field"><label for="location">Ubicación (opcional)</label><input id="location" placeholder="Ej.: Salamanca, España"></div><div class="field"><label for="services">Servicios o productos principales (opcional)</label><textarea id="services" placeholder="Ej.: limpieza facial, masajes, depilación láser..."></textarea></div><div class="field"><label for="contact">Contacto público (opcional)</label><input id="contact" placeholder="Teléfono, email o WhatsApp comercial"></div><div class="field"><label for="assets">Logotipo y fotografías</label><input id="assets" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" multiple><div class="mini">En esta demo solo guardamos los nombres de archivo; no se sube nada.</div></div></div></section>
 <section class="step" data-step="4"><div class="section-kicker">PASO 5 DE 6 · FUNCIONES</div><h2 class="question">¿Qué quieres incluir?</h2><p class="hint">Elige tantas opciones como necesites.</p><div class="check-grid" id="features"><label class="check"><input type="checkbox" value="Botón de WhatsApp" checked> WhatsApp</label><label class="check"><input type="checkbox" value="Formulario de contacto" checked> Formulario</label><label class="check"><input type="checkbox" value="Galería de imágenes"> Galería</label><label class="check"><input type="checkbox" value="Solicitud de reservas o citas"> Reservas</label><label class="check"><input type="checkbox" value="Mapa de ubicación"> Mapa</label><label class="check"><input type="checkbox" value="Lista de servicios y precios" checked> Servicios y precios</label><label class="check"><input type="checkbox" value="Preguntas frecuentes"> Preguntas frecuentes</label><label class="check"><input type="checkbox" value="Testimonios de clientes"> Testimonios</label></div><p class="note">Las funciones que requieren servidor, pagos o API se describirán como pendientes hasta su integración real.</p></section>
-<section class="step" data-step="5"><div class="section-kicker">PASO 6 DE 6 · TU PROYECTO</div><h2 class="question">¡Listo para crear!</h2><p class="finish">Tu briefing está preparado. Este es el prompt estructurado que WebCreator enviaría al motor de IA.</p><div id="prompt" class="prompt-box"></div><div class="footer-actions"><button class="btn" id="copyPrompt">Copiar prompt</button><button class="btn" id="downloadPrompt">Descargar briefing</button></div><p class="note" style="margin:16px 0 0">🔒 Acceso privado verificado por Cloudflare Zero Trust. No necesitas introducir claves.</p><div style="margin:18px 0 12px;padding:17px;border:1px solid #d6e3ff;border-radius:15px;background:#f5f8ff">
+<section class="step" data-step="5"><div class="section-kicker">PASO 6 DE 6 · TU PROYECTO</div><h2 class="question">¡Listo para crear!</h2><p class="finish">Tu briefing está preparado. Este es el prompt estructurado que WebCreator enviaría al motor de IA.</p><div id="prompt" class="prompt-box"></div>
+<div class="field" style="margin-top:16px;padding:17px;border:1px solid #d6e3ff;background:#f7faff;border-radius:15px">
+  <label for="designReference"><strong>📸 Captura de referencia visual (opcional)</strong></label>
+  <p class="note" style="margin:5px 0 10px">Si añades una captura, Nemotron Super VL analizará su composición antes de que Ultra construya tu web. Sin captura, vamos directamente a Ultra.</p>
+  <input id="designReference" type="file" accept="image/png,image/jpeg,image/webp" style="max-width:100%" aria-describedby="imageNotice">
+  <div id="designReferenceInfo" style="font-size:13px;color:#34528d;margin-top:7px">Sin captura adjunta.</div>
+  <img id="designReferencePreview" alt="Referencia visual seleccionada" hidden style="max-width:280px;max-height:180px;object-fit:contain;border:1px solid #d6e3ff;border-radius:10px;margin-top:10px">
+  <p id="imageNotice" class="note" style="margin:10px 0 0">⚠️ En los modelos gratuitos el proveedor puede registrar las solicitudes. Usa capturas sin datos personales, caras ni información confidencial.</p>
+  <button type="button" class="btn" id="removeDesignReference" style="margin-top:8px" hidden>Quitar captura</button>
+</div>
+<div class="footer-actions"><button class="btn" id="copyPrompt">Copiar prompt</button><button class="btn" id="downloadPrompt">Descargar briefing</button></div><p class="note" style="margin:16px 0 0">🔒 Acceso privado verificado por Cloudflare Zero Trust. No necesitas introducir claves.</p><div style="margin:18px 0 12px;padding:17px;border:1px solid #d6e3ff;border-radius:15px;background:#f5f8ff">
   <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
-    <strong style="color:#16368b">Estado real de Nemotron</strong>
+    <strong style="color:#16368b">Estado real de WebCreator Multi-IA</strong>
     <span id="engineBadge" style="font-weight:700;color:#65738f">Sin comprobar</span>
   </div>
   <p class="note" id="engineDetail" aria-live="polite" style="margin:8px 0">Todavía no hemos solicitado una generación. Puedes comprobar la conexión sin consumir tu cuota.</p>
@@ -45,9 +55,9 @@ header{display:flex;align-items:center;justify-content:space-between;gap:20px;pa
     <button class="btn" id="recoverProject" type="button">Recuperar último proyecto</button>
     <button class="btn" id="downloadDraft" type="button" hidden>Descargar borrador incompleto</button>
   </div>
-  <button class="btn" id="checkProvider" type="button" style="margin:12px 0 0">Comprobar conexión NVIDIA (sin generar)</button>
+  <button class="btn" id="checkProvider" type="button" style="margin:12px 0 0">Comprobar clave OpenRouter (sin generar)</button>
   <div id="engineLog" aria-live="polite" style="margin-top:12px;font:12px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#526587;max-height:130px;overflow:auto">Sin actividad.</div>
-</div><button class="btn primary" style="width:100%;margin-top:18px" id="generate">✦ Generar mi web con Nemotron</button><p class="note" id="generationStatus" role="status" aria-live="polite"></p><div id="resultPanel" class="hidden"><h3>Tu primera web</h3><p id="htmlReviewWarning" class="note" style="color:#986400;background:#fff7e6;border-radius:9px;padding:10px 12px" hidden></p><div class="footer-actions" style="flex-wrap:wrap"><button class="btn primary" id="downloadZip">⬇ Descargar proyecto ZIP</button><button class="btn" id="downloadHtml">HTML único</button><button class="btn" id="openPreview">Ver prototipo ↓</button><button class="btn" id="previewMobile">Vista móvil</button><button class="btn" id="previewDesktop">Vista escritorio</button></div><iframe id="preview" title="Vista previa aislada de la web generada" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:600px;border:1px solid #dfe6f5;border-radius:12px;background:white;margin-top:14px"></iframe><p class="note">La vista previa ejecuta interacciones del navegador, pero formularios, reservas y pagos necesitan integración real para operar.</p><div class="field" style="margin-top:18px"><label for="changeRequest">¿Qué quieres mejorar?</label><textarea id="changeRequest" placeholder="Ej.: cambia el hero a una fotografía más grande y usa tonos crema"></textarea></div><button class="btn primary" id="refine">Aplicar cambios con IA</button></div><p class="note">Pulsa «Generar mi web» para solicitar el primer prototipo. Tu sesión privada de Cloudflare Access autoriza las peticiones automáticamente.</p></section>
+</div><button class="btn primary" style="width:100%;margin-top:18px" id="generate">✦ Generar web profesional con Multi-IA</button><p class="note" id="generationStatus" role="status" aria-live="polite"></p><div id="resultPanel" class="hidden"><h3>Tu primera web</h3><p id="htmlReviewWarning" class="note" style="color:#986400;background:#fff7e6;border-radius:9px;padding:10px 12px" hidden></p><div class="footer-actions" style="flex-wrap:wrap"><button class="btn primary" id="downloadZip">⬇ Descargar proyecto ZIP</button><button class="btn" id="downloadHtml">HTML único</button><button class="btn" id="openPreview">Ver prototipo ↓</button><button class="btn" id="previewMobile">Vista móvil</button><button class="btn" id="previewDesktop">Vista escritorio</button></div><iframe id="preview" title="Vista previa aislada de la web generada" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:600px;border:1px solid #dfe6f5;border-radius:12px;background:white;margin-top:14px"></iframe><p class="note">Ultra construye, Super VL analiza capturas y North Mini Code revisa los errores. El ZIP es editable; formularios, reservas y pagos requieren integraciones reales.</p><div class="field" style="margin-top:18px"><label for="changeRequest">¿Qué quieres mejorar?</label><textarea id="changeRequest" placeholder="Ej.: cambia el hero a una fotografía más grande y usa tonos crema"></textarea></div><button class="btn primary" id="refine">Aplicar cambios con North Mini Code</button><button type="button" class="btn" id="autoReview">✦ Revisar y reparar errores automáticamente</button></div><p class="note">Pulsa «Generar mi web» para solicitar el primer prototipo. Tu sesión privada de Cloudflare Access autoriza las peticiones automáticamente.</p></section>
 <div class="footer-actions" id="navigation"><button class="btn" id="back">← Atrás</button><button class="btn primary" id="next">Continuar →</button></div></main>
 <aside class="panel aside"><h3>✦ Tu proyecto, en tiempo real</h3><div class="summary-line"><small>Tipo de negocio</small><strong id="sum-sector">Por elegir</strong></div><div class="summary-line"><small>Objetivo principal</small><strong id="sum-goal">Por elegir</strong></div><div class="summary-line"><small>Estilo visual</small><strong id="sum-style">Por elegir</strong></div><div class="summary-line"><small>Nombre del negocio</small><strong id="sum-name">Por definir</strong></div><div class="summary-line"><small>Funciones</small><div id="sum-features"><span class="tag">WhatsApp</span><span class="tag">Formulario</span></div></div><div class="status">● Preparando tu web a medida<br><span style="color:#5b76ae;font-size:12px">Tus respuestas configuran el diseño y la estructura.</span></div><p class="note">Diseños únicos, no plantillas fijas. La IA recibe tus preferencias como instrucciones estructuradas.</p></aside></div></div>
 <script>
@@ -135,19 +145,19 @@ const getQuota=async()=>{
     const d=await r.json();
     if(r.ok&&Number.isFinite(d.remaining)){$('engineQuota').textContent='Cuota diaria: '+d.remaining+' de '+d.dailyLimit+' disponibles (UTC)';return}
   }catch{}
-  $('engineQuota').textContent='Cuota diaria: sin comprobar';
+  $('engineQuota').textContent='Cuota OpenRouter (50/día): sin comprobar';
 };
 const checkProvider=async()=>{
   const b=$('checkProvider');b.disabled=true;
-  updateEngine('checking','Consultando la conexión y el catálogo de NVIDIA; no se genera texto.');
-  engineLog('Probando comunicación con NVIDIA. Consumo de generaciones: 0.');
+  updateEngine('checking','Verificando la API key de OpenRouter sin generar texto ni consumir cuota.');
+  engineLog('Comprobando autenticación OpenRouter. Solicitudes de inferencia consumidas: 0.');
   try{
     const r=await fetch('/api/provider-check',{credentials:'same-origin',cache:'no-store'});
     let d;try{d=await r.json()}catch{throw Error('La sesión Zero Trust puede haber caducado. Recarga la página.')}
     if(d.catalogReachable){
-      const suffix=d.modelListed?'Nemotron 3 Ultra aparece en el catálogo.':'No se ha encontrado Nemotron 3 Ultra en este catálogo.';
-      updateEngine('accepted','Conexión con el catálogo NVIDIA correcta (HTTP '+d.nvidiaStatus+'). '+suffix+' La autorización para generar webs aún no está comprobada.');
-      engineLog('NVIDIA respondió HTTP '+d.nvidiaStatus+'. Catálogo accesible. Clave de generación no verificada; cuota intacta.');
+      const suffix=d.credentialVerified?'Clave API verificada. Los tres modelos :free están configurados en WebCreator.':'Clave todavía no verificada.';
+      updateEngine('accepted','Autenticación OpenRouter (HTTP '+d.nvidiaStatus+'). '+suffix+' Esta consulta no comprueba inferencia.');
+      engineLog('OpenRouter respondió HTTP '+d.nvidiaStatus+'. Clave válida; no se han gastado tokens.');
     }else{
       updateEngine('error',(d.error||'No se pudo consultar el catálogo.')+(d.nvidiaStatus?' (HTTP '+d.nvidiaStatus+')':''));
       engineLog('Diagnóstico: '+(d.diagnostic||'HTTP '+(d.nvidiaStatus||r.status))+'. No se consumió una generación.');
@@ -158,6 +168,34 @@ const checkProvider=async()=>{
   }finally{b.disabled=false}
 };
 $('checkProvider').addEventListener('click',checkProvider);
+let referenceImageData='';
+$('designReference').addEventListener('change',async(e)=>{
+ const file=e.target.files?.[0];
+ if(!file){referenceImageData='';return}
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>8*1024*1024){
+  stat('Solo capturas PNG, JPG o WebP de hasta 8 MB.',true);e.target.value='';return
+ }
+ $('designReferenceInfo').textContent='Procesando captura...';
+ try{
+  const data=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file)});
+  const img=new Image();
+  await new Promise((ok,no)=>{img.onload=ok;img.onerror=no;img.src=data});
+  const scale=Math.min(1,1400/Math.max(img.width,img.height)),canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));
+  canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+  let result=canvas.toDataURL('image/jpeg',0.78);
+  if(result.length>2200000)result=canvas.toDataURL('image/jpeg',0.6);
+  if(result.length>2200000)throw Error('La captura sigue siendo demasiado grande. Reduce su resolución.');
+  referenceImageData=result;
+  $('designReferenceInfo').textContent='Captura lista ('+canvas.width+' × '+canvas.height+'). Super VL la analizará antes de generar.';
+  $('designReferencePreview').src=result;$('designReferencePreview').hidden=false;
+  $('removeDesignReference').hidden=false;
+ }catch(err){referenceImageData='';e.target.value='';$('designReferenceInfo').textContent='No se pudo preparar la captura: '+err.message}
+});
+$('removeDesignReference').addEventListener('click',()=>{
+ referenceImageData='';$('designReference').value='';$('designReferenceInfo').textContent='Sin captura adjunta.';
+ $('designReferencePreview').hidden=true;$('designReferencePreview').removeAttribute('src');$('removeDesignReference').hidden=true;
+});
 const briefing=()=>{const s=$('prompt').textContent;if(!s||s.length<50)throw new Error('Completa antes los pasos del formulario.');return s};
 const refresh=()=>{$('preview').srcdoc=currentHtml;$('resultPanel').classList.remove('hidden');stat('¡Web generada! Puedes verla, descargarla y pedir cambios.')};
 const streamRequest=async(path,payload)=>{
@@ -185,35 +223,44 @@ const streamRequest=async(path,payload)=>{
       if(event==='status'){
         if(data.jobId)rememberJob(data.jobId);
         getQuota();
-        updateEngine('connecting',data.message||'Solicitando conexión con NVIDIA.');
-        engineLog('Petición enviada al servidor. Esperando confirmación de NVIDIA.');
+        updateEngine('connecting',data.message||'Solicitando conexión con OpenRouter.');
+        engineLog('Petición enviada. Esperando respuesta de OpenRouter.');
       }else if(event==='continuation'){
         updateEngine('accepted','El modelo alcanzó su límite por respuesta. WebCreator ha iniciado una continuación automática del MISMO HTML.');
-        engineLog('Continuación automática: parte '+data.part+' de 3; se ha utilizado otra petición de NVIDIA.');
-        if(Number.isFinite(data.remaining))$('engineQuota').textContent='Cuota diaria: '+data.remaining+' de 10 disponibles (UTC)';
+        engineLog('Continuación automática: parte '+data.part+' de 3; se descontará otra solicitud del presupuesto.');
+        getQuota();
       }else if(event==='accepted'){
-        updateEngine('accepted',data.part>1?'NVIDIA ha aceptado la continuación de la página (HTTP '+data.nvidiaStatus+').':'NVIDIA respondió HTTP '+data.nvidiaStatus+'. Está preparando el HTML.');
-        engineLog('NVIDIA aceptó la solicitud (HTTP '+data.nvidiaStatus+')'+(data.part>1?', parte '+data.part:'')+'.');
+        updateEngine('accepted',data.part>1?'OpenRouter ha aceptado la continuación del HTML (HTTP '+data.nvidiaStatus+').':'OpenRouter respondió HTTP '+data.nvidiaStatus+'. Ultra está preparando el HTML.');
+        engineLog('OpenRouter aceptó la solicitud (HTTP '+data.nvidiaStatus+')'+(data.part>1?', parte '+data.part:'')+'.');getQuota();
+      }else if(event==='vision'){
+        updateEngine('accepted',data.message||'Super VL está analizando la captura.');
+        engineLog('VISIÓN: '+(data.model||'Super VL')+' · captura recibida, análisis en curso.');getQuota();
+      }else if(event==='vision-complete'){
+        updateEngine('accepted',data.message||'Referencia analizada. Generación en preparación.');
+        engineLog('VISIÓN: análisis completado. Continúa Nemotron Ultra.');
+      }else if(event==='repair'){
+        updateEngine('accepted',data.message||'North Mini Code está revisando el HTML.');
+        engineLog('REVISIÓN: buscando reparaciones pequeñas y seguras.');getQuota();
       }else if(event==='progress'){
         bytesReceived=Math.max(bytesReceived,Number(data.characters)||0);
         $('engineCharacters').textContent='HTML recibido: '+formatChars(bytesReceived)+' caracteres';
         setReferenceProgress(bytesReceived);
-        updateEngine('receiving','Nemotron está enviando HTML real. La conexión sigue activa; puedes observar cómo aumenta el contador.');
-        if(!firstFragment){firstFragment=true;engineLog('¡Primer código HTML recibido de Nemotron!')}
+        updateEngine('receiving','Ultra está escribiendo el HTML de tu web. El contador refleja los caracteres recibidos.');
+        if(!firstFragment){firstFragment=true;engineLog('¡Primer código HTML recibido de Nemotron Ultra!')}
         if(bytesReceived-previousProgress>=2000){engineLog('Recibidos '+formatChars(bytesReceived)+' caracteres de HTML.');previousProgress=bytesReceived}
       }else if(event==='heartbeat'){
         // El latido solo confirma la conexión con nuestro Worker, no prueba que NVIDIA esté generando.
-        if(currentPhase==='connecting')$('engineDetail').textContent='Conexión con WebCreator activa; NVIDIA aún no ha confirmado su respuesta.';
+        if(currentPhase==='connecting')$('engineDetail').textContent='Conexión con WebCreator activa; OpenRouter aún no ha confirmado su respuesta.';
       }else if(event==='complete'){
         completed=data;
         if(data.jobId)rememberJob(data.jobId);
         $('engineCharacters').textContent='HTML recibido: '+formatChars(data.html?.length||bytesReceived)+' caracteres';
         setReferenceProgress(data.html?.length||bytesReceived);
-        engineLog(data.cached?'Resultado recuperado de caché, sin coste adicional.':data.repaired?'HTML recibido y normalizado sin recortar el diseño.':'Nemotron terminó y entregó el HTML completo.');
+        engineLog(data.cached?'Resultado recuperado de caché, sin coste adicional.':data.repaired?'HTML recibido y normalizado sin recortar el diseño.':'Ultra terminó y entregó un HTML completo.');
         if(Array.isArray(data.warnings))for(const warning of data.warnings.slice(0,3))engineLog('Aviso: '+warning);
       }else if(event==='error'){
         if(data.jobId)rememberJob(data.jobId);
-        throw Error((data.error||'NVIDIA interrumpió la generación.')+(data.recoverable?' Usa «Recuperar último proyecto» para descargar el borrador.':''));
+        throw Error((data.error||'OpenRouter interrumpió la generación.')+(data.recoverable?' Usa «Recuperar último proyecto» para descargar el borrador.':''));
       }
     }
   }
@@ -223,10 +270,10 @@ const streamRequest=async(path,payload)=>{
 const runGeneration=async(isRefine)=>{
   if(processing)return;
   const b=$('generate'),rb=$('refine');
-  const selected=isRefine?rb:b;
   let payload;
   try{
     payload={briefing:briefing()};
+    if(!isRefine&&referenceImageData)payload.imageData=referenceImageData;
     if(isRefine){
       if(!currentHtml)throw Error('Primero necesitas una web generada.');
       const changes=$('changeRequest').value.trim();
@@ -240,7 +287,7 @@ const runGeneration=async(isRefine)=>{
   $('engineElapsed').textContent='Tiempo transcurrido: 0 s';
   $('engineCharacters').textContent='HTML recibido: 0 caracteres';
   recoveredDraft='';$('downloadDraft').hidden=true;setReferenceProgress(0);
-  updateEngine('connecting','Preparando conexión con NVIDIA. No significa todavía que la API haya aceptado la petición.');
+  updateEngine('connecting','Preparando conexión con OpenRouter. No significa todavía que el modelo haya aceptado la petición.');
   engineLog(isRefine?'Iniciando mejora de la web.':'Iniciando generación del prototipo.');
   elapsedTimer=setInterval(()=>{
     const seconds=Math.floor((Date.now()-startedAt)/1000);
@@ -261,7 +308,7 @@ const runGeneration=async(isRefine)=>{
     updateEngine('error',e.message);
     engineLog('Fallo: '+e.message);
     stat(e.message,true);
-    // Query our saved draft without repeating or charging another NVIDIA call.
+    // Query our saved draft without repeating or charging another OpenRouter call.
     // This is safe even when the model returned incomplete HTML.
     await recoverLastProject();
   }finally{
@@ -272,6 +319,11 @@ const runGeneration=async(isRefine)=>{
 };
 $('generate').addEventListener('click',()=>runGeneration(false));
 $('refine').addEventListener('click',()=>runGeneration(true));
+$('autoReview').addEventListener('click',()=>{
+ if(processing)return;
+ $('changeRequest').value='Revisa de forma objetiva errores de HTML, navegación horizontal en escritorio, CSS, JavaScript, accesibilidad y enlaces rotos; aplica SOLO parches pequeños sin cambiar el estilo ni los textos reales.';
+ runGeneration(true);
+});
 getQuota();
 $('downloadHtml').addEventListener('click',()=>{if(!currentHtml)return;const blob=new Blob([currentHtml],{type:'text/html;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='webcreator-prototipo.html';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)});
 $('openPreview').addEventListener('click',()=>{$('preview').scrollIntoView({behavior:'smooth',block:'center'})});
