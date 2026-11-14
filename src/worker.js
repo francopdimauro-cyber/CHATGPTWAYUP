@@ -3,6 +3,8 @@ const HTML = __WEBCREATOR_HTML__;
 const MODELS=Object.freeze({builder:'nvidia/nemotron-3-ultra-550b-a55b:free',vision:'nvidia/nemotron-3.5-super-vl:free',repair:'cohere/north-mini-code:free'});
 const MODEL=MODELS.builder;
 const OPENROUTER_URL='https://openrouter.ai/api/v1/chat/completions';
+// Avoid accidental whitespace surrounding the stored secret; never modify characters within the key.
+const openRouterKey=env=>String(env.OPENROUTER_API_KEY||'').trim();
 const DAILY_LIMIT=50;
 const PROJECT_CALL_LIMIT=10;
 const MAX_REQUEST_CHARS=3000000;
@@ -135,7 +137,7 @@ async function chargeCall(env,day,projectKey,model,action){
 async function requestOpenRouter(env,model,messages,maxTokens,signal){
  return fetch(OPENROUTER_URL,{
    method:'POST',signal,redirect:'manual',
-   headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,'Content-Type':'application/json',
+   headers:{Authorization:'Bearer '+openRouterKey(env),'Content-Type':'application/json',
      Accept:'application/json','HTTP-Referer':'https://wayup-webcreator.francopdimauro.workers.dev/','X-Title':'WayUp WebCreator'},
    body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature:model===MODELS.builder?0.45:0.1,stream:false})
  });
@@ -205,18 +207,23 @@ export default {
     if(request.method!=='GET')return send({error:'Método no permitido'},405);
     if(!env.OPENROUTER_API_KEY)return send({credentialPresent:false,error:'Falta OPENROUTER_API_KEY'},503);
     // Format-only check. Never return the secret, a prefix, a suffix or its hash.
-    const secret=env.OPENROUTER_API_KEY;
+    const rawSecret=String(env.OPENROUTER_API_KEY||'');
+    const secret=openRouterKey(env);
     const keyDiagnostic={
       correctPrefix:secret.startsWith('sk-or-v1-'),
+      hadSurroundingWhitespace:rawSecret!==secret,
       hasEllipsis:secret.includes('...')||secret.includes('…'),
       hasWhitespace:/\s/.test(secret),
       hasQuotes:secret.startsWith('"')||secret.startsWith("'"),
       plausibleLength:secret.length>=60&&secret.length<=200
     };
+    if(!keyDiagnostic.correctPrefix||keyDiagnostic.hasWhitespace||keyDiagnostic.hasEllipsis||keyDiagnostic.hasQuotes)
+      return send({credentialPresent:true,credentialVerified:false,generationVerified:false,provider:'OpenRouter',
+        keyDiagnostic,message:'El secreto sigue teniendo un formato inesperado después de normalizar extremos; comprueba el valor guardado, sin compartirlo.'},422);
     const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),20000);
     try{
       const upstream=await fetch('https://openrouter.ai/api/v1/key',{method:'GET',signal:ctrl.signal,
-        redirect:'manual',headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,Accept:'application/json'}});
+        redirect:'manual',headers:{Authorization:'Bearer '+openRouterKey(env),Accept:'application/json'}});
       return send({credentialPresent:true,credentialVerified:upstream.ok,catalogReachable:upstream.ok,keyDiagnostic,
         generationVerified:false,openRouterStatus:upstream.status,nvidiaStatus:upstream.status,
         model:MODEL,models:MODELS,provider:'OpenRouter',
@@ -357,7 +364,7 @@ export default {
             if(!bill){failureCode='budget_exhausted';emit('error',{error:'Presupuesto agotado (50 llamadas/día o 10 por proyecto). El borrador queda guardado.',recoverable:true,jobId:hash});return}
             const upstream=await fetch(OPENROUTER_URL,{
               method:'POST',signal:aborter.signal,redirect:'manual',
-              headers:{Authorization:'Bearer '+env.OPENROUTER_API_KEY,'Content-Type':'application/json',
+              headers:{Authorization:'Bearer '+openRouterKey(env),'Content-Type':'application/json',
                 Accept:'text/event-stream','HTTP-Referer':'https://wayup-webcreator.francopdimauro.workers.dev/','X-Title':'WayUp WebCreator'},
               body:JSON.stringify({
                 model:MODEL,messages:[{role:'system',content:instructions},{role:'user',content:promptForCall}],
