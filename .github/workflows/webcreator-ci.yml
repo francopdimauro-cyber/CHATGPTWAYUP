@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/studio-reliability-hardening
+      - feature/compact-one-screen
   pull_request:
     branches:
       - main
