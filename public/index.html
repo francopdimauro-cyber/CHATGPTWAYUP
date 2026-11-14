@@ -32,6 +32,19 @@ header{display:flex;align-items:center;justify-content:space-between;gap:20px;pa
     <span id="engineCharacters">HTML recibido: 0 caracteres</span>
     <span id="engineQuota">Cuota diaria: consultando…</span>
   </div>
+  <div style="margin-top:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px">
+      <strong id="enginePercent" style="color:#2855ee">0 % del tamaño de Aura</strong>
+      <span style="color:#65738f">Referencia: 37.278 caracteres · no es progreso real</span>
+    </div>
+    <div id="engineProgress" role="progressbar" aria-label="Porcentaje comparado con el tamaño de la web Aura" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="height:11px;margin-top:6px;background:#e0e8fa;border-radius:999px;overflow:hidden">
+      <div id="engineProgressFill" style="height:100%;width:0;background:#2855ee;border-radius:999px;transition:width .35s ease"></div>
+    </div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px">
+    <button class="btn" id="recoverProject" type="button">Recuperar último proyecto</button>
+    <button class="btn" id="downloadDraft" type="button" hidden>Descargar borrador incompleto</button>
+  </div>
   <button class="btn" id="checkProvider" type="button" style="margin:12px 0 0">Comprobar conexión NVIDIA (sin generar)</button>
   <div id="engineLog" aria-live="polite" style="margin-top:12px;font:12px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#526587;max-height:130px;overflow:auto">Sin actividad.</div>
 </div><button class="btn primary" style="width:100%;margin-top:18px" id="generate">✦ Generar mi web con Nemotron</button><p class="note" id="generationStatus" role="status" aria-live="polite"></p><div id="resultPanel" class="hidden"><h3>Tu primera web</h3><div class="footer-actions" style="flex-wrap:wrap"><button class="btn primary" id="downloadZip">⬇ Descargar proyecto ZIP</button><button class="btn" id="downloadHtml">HTML único</button><button class="btn" id="openPreview">Ver prototipo ↓</button><button class="btn" id="previewMobile">Vista móvil</button><button class="btn" id="previewDesktop">Vista escritorio</button></div><iframe id="preview" title="Vista previa aislada de la web generada" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:600px;border:1px solid #dfe6f5;border-radius:12px;background:white;margin-top:14px"></iframe><p class="note">La vista previa ejecuta interacciones del navegador, pero formularios, reservas y pagos necesitan integración real para operar.</p><div class="field" style="margin-top:18px"><label for="changeRequest">¿Qué quieres mejorar?</label><textarea id="changeRequest" placeholder="Ej.: cambia el hero a una fotografía más grande y usa tonos crema"></textarea></div><button class="btn primary" id="refine">Aplicar cambios con IA</button></div><p class="note">Pulsa «Generar mi web» para solicitar el primer prototipo. Tu sesión privada de Cloudflare Access autoriza las peticiones automáticamente.</p></section>
@@ -60,6 +73,62 @@ const engineLog=(message)=>{
   el.scrollTop=el.scrollHeight;
 };
 const formatChars=n=>Math.max(0,Number(n)||0).toLocaleString('es-ES');
+const REFERENCE_CHARS=37278;
+const setReferenceProgress=(n)=>{
+  const percent=Math.max(0,(Number(n)||0)/REFERENCE_CHARS*100);
+  $('enginePercent').textContent=percent.toFixed(1).replace('.',',')+' % del tamaño de Aura';
+  $('engineProgressFill').style.width=Math.min(100,percent)+'%';
+  $('engineProgress').setAttribute('aria-valuenow',String(Math.min(100,Math.round(percent))));
+};
+let recoveredDraft='';
+const rememberJob=(id)=>{
+  if(!/^[0-9a-f]{64}$/.test(id||''))return;
+  try{localStorage.setItem('webcreator:lastJobId',id)}catch{}
+};
+const recoverLastProject=async()=>{
+  let jobId='';
+  try{jobId=localStorage.getItem('webcreator:lastJobId')||''}catch{}
+  if(!/^[0-9a-f]{64}$/.test(jobId)){
+    engineLog('Todavía no hay un identificador de generación guardado en este navegador.');
+    return;
+  }
+  const b=$('recoverProject');b.disabled=true;
+  engineLog('Consultando el último trabajo guardado en Cloudflare D1; sin llamar a NVIDIA.');
+  try{
+    const r=await fetch('/api/recovery?job='+encodeURIComponent(jobId),{credentials:'same-origin',cache:'no-store'});
+    let data;try{data=await r.json()}catch{throw Error('No se recibió una respuesta válida. Comprueba tu sesión Zero Trust.')}
+    if(!r.ok)throw Error(data.error||'No se pudo recuperar el último proyecto.');
+    const chars=Number(data.characters)||0;
+    $('engineCharacters').textContent='HTML recibido: '+formatChars(chars)+' caracteres';
+    setReferenceProgress(chars);
+    if(data.completed && data.html){
+      currentHtml=data.html;recoveredDraft='';
+      $('downloadDraft').hidden=true;
+      refresh();
+      updateEngine('success','¡Proyecto completo recuperado del servidor! Ya puedes visualizarlo y descargar su ZIP.');
+      engineLog('Web terminada recuperada. Esta acción no consume ninguna llamada.');
+    }else if(data.partialHtml){
+      recoveredDraft=data.partialHtml;
+      $('downloadDraft').hidden=false;
+      updateEngine('error','Borrador parcial recuperado ('+formatChars(chars)+' caracteres). No es una web completa; puedes descargar el código salvado.');
+      engineLog('Se recuperó un borrador en estado "'+data.status+'".'+(data.error?' Motivo: '+data.error+'.':''));
+      stat('Borrador parcial disponible para descargar. No está listo para entregar como web funcional.',true);
+    }else{
+      updateEngine('idle','Se encontró un trabajo, pero todavía no tiene HTML recuperable.');
+      engineLog('Estado del servidor: '+data.status);
+    }
+  }catch(e){
+    updateEngine('error',e.message);
+    engineLog('Recuperación fallida: '+e.message);
+  }finally{b.disabled=false}
+};
+$('recoverProject').addEventListener('click',recoverLastProject);
+$('downloadDraft').addEventListener('click',()=>{
+  if(!recoveredDraft)return;
+  saveBlob(new Blob([recoveredDraft],{type:'text/html;charset=utf-8'}),'wayup-webcreator-borrador-incompleto.html');
+  engineLog('Descargado borrador parcial; puede carecer de etiquetas de cierre o secciones.');
+});
+
 const getQuota=async()=>{
   try{
     const r=await fetch('/api/quota',{credentials:'same-origin',cache:'no-store'});
@@ -114,6 +183,8 @@ const streamRequest=async(path,payload)=>{
       if(!raw)continue;
       let data;try{data=JSON.parse(raw)}catch{continue}
       if(event==='status'){
+        if(data.jobId)rememberJob(data.jobId);
+        getQuota();
         updateEngine('connecting',data.message||'Solicitando conexión con NVIDIA.');
         engineLog('Petición enviada al servidor. Esperando confirmación de NVIDIA.');
       }else if(event==='accepted'){
@@ -122,6 +193,7 @@ const streamRequest=async(path,payload)=>{
       }else if(event==='progress'){
         bytesReceived=Math.max(bytesReceived,Number(data.characters)||0);
         $('engineCharacters').textContent='HTML recibido: '+formatChars(bytesReceived)+' caracteres';
+        setReferenceProgress(bytesReceived);
         updateEngine('receiving','Nemotron está enviando HTML real. La conexión sigue activa; puedes observar cómo aumenta el contador.');
         if(!firstFragment){firstFragment=true;engineLog('¡Primer código HTML recibido de Nemotron!')}
         if(bytesReceived-previousProgress>=2000){engineLog('Recibidos '+formatChars(bytesReceived)+' caracteres de HTML.');previousProgress=bytesReceived}
@@ -131,6 +203,7 @@ const streamRequest=async(path,payload)=>{
       }else if(event==='complete'){
         completed=data;
         $('engineCharacters').textContent='HTML recibido: '+formatChars(data.html?.length||bytesReceived)+' caracteres';
+        setReferenceProgress(data.html?.length||bytesReceived);
         engineLog(data.cached?'Resultado recuperado de caché, sin coste adicional.':'Nemotron terminó y entregó el HTML completo.');
       }else if(event==='error'){
         throw Error(data.error||'NVIDIA interrumpió la generación.');
@@ -159,6 +232,7 @@ const runGeneration=async(isRefine)=>{
   startedAt=Date.now();
   $('engineElapsed').textContent='Tiempo transcurrido: 0 s';
   $('engineCharacters').textContent='HTML recibido: 0 caracteres';
+  recoveredDraft='';$('downloadDraft').hidden=true;setReferenceProgress(0);
   updateEngine('connecting','Preparando conexión con NVIDIA. No significa todavía que la API haya aceptado la petición.');
   engineLog(isRefine?'Iniciando mejora de la web.':'Iniciando generación del prototipo.');
   elapsedTimer=setInterval(()=>{
