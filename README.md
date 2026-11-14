@@ -55,3 +55,9 @@ El navegador móvil puede suspender una pestaña y cortar una respuesta SSE. El 
 - Nemotron tiene un máximo configurado de 24.000 tokens de salida en streaming. NVIDIA documenta que el modelo admite hasta 32.768; el aumento busca evitar cortes prematuros por longitud.
 - **Limitación conocida:** el proceso de generación sigue vinculado a la conexión de streaming. Cambiar de pestaña o cerrar la aplicación puede cancelar la llamada y no garantiza que la IA siga trabajando. La recuperación solo permite leer el HTML que el servidor alcanzó a guardar. La ejecución verdaderamente independiente del navegador requiere migrar el motor a Cloudflare Workflows o una arquitectura durable equivalente.
 - Los proyectos generados **antes de habilitar los borradores** no se pueden recuperar si no llegaron a terminar y cachearse.
+
+## Validación HTML y preservación de resultados
+
+El validador ahora admite documentos HTML5 completos aunque carezcan de `<!DOCTYPE html>`, estén rodeados de un bloque Markdown o contengan un `iframe` legítimo (por ejemplo, mapas). Añade cierres triviales faltantes, sin recortar secciones generadas, y comunica advertencias en la interfaz. **No equivale a una auditoría de seguridad del código generado**, que debe revisarse antes de publicar. No se considera web completa un documento con `<script>` o `<style>` sin cerrar, ni una salida cortada por límite de tokens sin cierre HTML.
+
+Si la salida no es válida se guarda como borrador parcial en D1, con motivo de fallo y enlace de recuperación. El cliente intenta recuperar el borrador tras un error y permite descargarlo sin hacer una nueva llamada. El conteo de llamadas sigue siendo de **10 por día UTC durante las pruebas**. No hay garantía de recuperar generaciones antiguas anteriores al sistema de borradores.
