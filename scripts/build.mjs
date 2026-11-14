@@ -3,6 +3,7 @@ const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const base=read('public/index.html');
 const css=read('public/studio.css');
 const theme=read('public/studio-theme.css');
+const compact=read('public/compact-shell.css');
 const studioClient=read('public/studio.js');
 const studioServer=read('src/studio.js');
 const worker=read('src/worker.js');
@@ -10,7 +11,7 @@ if(!worker.includes('__WEBCREATOR_HTML__')||!worker.includes('/*__WEBCREATOR_STU
   throw new Error('Faltan puntos de inserción de Studio');
 if(!base.includes('id="downloadZip"')||!base.includes('id="preview"'))
   throw new Error('Faltan controles del constructor original');
-const html=base.replace('</head>','<style>\n'+css+'\n'+theme+'\n</style></head>')
+const html=base.replace('</head>','<style>\n'+css+'\n'+theme+'\n'+compact+'\n</style></head>')
   .replace('</body>','<script>\n'+studioClient+'\n</script></body>');
 const built=worker.replace('/*__WEBCREATOR_STUDIO_SERVER__*/',studioServer)
   .replace('__WEBCREATOR_HTML__',JSON.stringify(html));
