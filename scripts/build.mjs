@@ -7,6 +7,8 @@ const compact=read('public/compact-shell.css');
 const precisionDark=read('public/precision-dark.css');
 const vibrant=read('public/wayup-vibrant.css');
 const urbanType=read('public/wayup-urban-type.css');
+const officialCss=read('public/wayup-official-brand.css');
+const originalLogoBase64=read('public/official-wayup-logo-cobalt.base64.txt').trim();
 const themeToggle=read('public/theme-toggle.js');
 const commandPalette=read('public/command-palette.js');
 const studioClient=read('public/studio.js');
@@ -16,7 +18,7 @@ if(!worker.includes('__WEBCREATOR_HTML__')||!worker.includes('/*__WEBCREATOR_STU
   throw new Error('Faltan puntos de inserción de Studio');
 if(!base.includes('id="downloadZip"')||!base.includes('id="preview"'))
   throw new Error('Faltan controles del constructor original');
-const html=base.replace('</head>','<style>\n'+css+'\n'+theme+'\n'+compact+'\n'+precisionDark+'\n'+vibrant+'\n'+urbanType+'\n</style></head>')
+const html=base.replace('__WAYUP_OFFICIAL_LOGO__','data:image/png;base64,'+originalLogoBase64).replace('</head>','<style>\n'+css+'\n'+theme+'\n'+compact+'\n'+precisionDark+'\n'+vibrant+'\n'+urbanType+'\n'+officialCss+'\n</style></head>')
   .replace('</body>','<script>\n'+studioClient+'\n</script><script>\n'+commandPalette+'\n</script><script>\n'+themeToggle+'\n</script></body>');
 const built=worker.replace('/*__WEBCREATOR_STUDIO_SERVER__*/',studioServer)
   .replace('__WEBCREATOR_HTML__',JSON.stringify(html));
