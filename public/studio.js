@@ -204,9 +204,13 @@ async function open(id=''){
   await list();
   if(id)await load(id);
   else if(!state.doc&&state.projects.length)await load(state.projects[0].id);
+  else if(state.doc)render();
 }
 function close(){
-  if(state.dirty&&!confirm('Cambios sin guardar. ¿Cerrar Studio?'))return;
+  if(state.dirty){
+    if(!confirm('Cambios sin guardar. ¿Cerrar Studio y descartarlos?'))return;
+    state.doc=parse(state.saved);state.undo=[];state.redo=[];state.selected=-1;state.code=false;sync();
+  }
   el('wcStudio').classList.remove('open');el('wcStudio').setAttribute('aria-hidden','true');document.body.style.overflow='';
   if(state.objectUrl){URL.revokeObjectURL(state.objectUrl);state.objectUrl=''}
 }
