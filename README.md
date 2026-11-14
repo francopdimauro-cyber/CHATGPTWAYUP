@@ -1,3 +1,29 @@
+# WayUp WebCreator Studio — rama feature/biblioteca-canvas
+
+Versión privada con Multi-IA de OpenRouter y panel Studio para editar y conservar proyectos en Cloudflare D1.
+
+## Biblioteca y Canvas (nueva versión)
+
+- Entrada: botón «Mis webs · Studio» en la cabecera; «Editar en Studio» en el resultado.
+- API: `src/studio.js` añade rutas protegidas por Cloudflare Access: `GET/POST /api/projects`, `GET/PATCH/DELETE /api/projects/:id`, `PATCH /api/projects/:id/name`, y versiones.
+- Los resultados nuevos se guardan automáticamente en `webcreator_projects`. El histórico recuperable de `generation_cache` se importa de forma idempotente.
+- `migrations/0002_studio.sql` crea las dos tablas nuevas sin alterar las tablas de generación o cuotas.
+- `public/studio.js` y `public/studio.css` forman el editor; `scripts/build.mjs` los incorpora al Worker con la interfaz original.
+- El modo edición modifica texto, colores, tamaño, alineación, imágenes por URL y enlaces. Modo código disponible para ediciones avanzadas.
+- Modo editar: ejecuta solo el código del puente interno en `iframe sandbox="allow-scripts"`, retirando scripts de la copia de vista. El HTML guardado preserva los scripts originales. Modo vista previa: scripts ejecutados en iframe aislado con origen opaco.
+- Guardar crea versiones D1, con historial, restauración y prevención de sobrescrituras por versión. Editar manualmente no consume llamadas de IA.
+- Limitaciones actuales: no hay arrastre libre de secciones, almacenamiento R2 de imágenes, revisión de ejecución en navegador ni prueba visual automatizada del contenido generado.
+
+## Configuración actual
+
+- Worker: `wayup-webcreator`; secretos/bindings: `OPENROUTER_API_KEY` y `USAGE_DB`.
+- Modelos: `nvidia/nemotron-3-ultra-550b-a55b:free`, `nvidia/nemotron-3.5-super-vl:free`, `cohere/north-mini-code:free`.
+- Cuotas internas: 50 llamadas/día UTC, 10 por proyecto. Siguen aplicándose los límites del proveedor.
+- No modifica WAYUP, WAY.APP ni sus despliegues.
+
+---
+
+## Notas históricas (V4)
 # WayUp WebCreator V4
 
 Constructor web de seis pasos con generación mediante Nemotron 3 Ultra (NVIDIA), vista previa aislada, iteraciones mediante IA y descarga de proyectos ZIP editables.
