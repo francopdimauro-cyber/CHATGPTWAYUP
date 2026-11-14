@@ -38,6 +38,17 @@ export default {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
    return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:5});
   }
+  // Usage meter does not call NVIDIA or consume a generation.
+  if(url.pathname==='/api/quota') {
+    if(request.method!=='GET') return send({error:'Método no permitido'},405);
+    if(!env.USAGE_DB) return send({error:'Contador D1 no disponible'},503);
+    const today=new Date().toISOString().slice(0,10);
+    try {
+      const row=await env.USAGE_DB.prepare('SELECT used FROM daily_usage WHERE day = ?').bind(today).first();
+      const used=Math.max(0,Number(row?.used||0));
+      return send({dayUTC:today,dailyLimit:5,used,remaining:Math.max(0,5-used)});
+    }catch {return send({error:'No se pudo leer el consumo actual'},503)}
+  }
   // Read-only NVIDIA credential and catalog check. This performs no inference.
   if(url.pathname==='/api/provider-check') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
