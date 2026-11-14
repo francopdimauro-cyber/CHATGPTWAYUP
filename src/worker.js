@@ -293,7 +293,13 @@ export default {
               }
             }
             if(!active)return;
-            generated+=continued?joinContinuation(generated,segment):segment;
+            const nextText=continued?joinContinuation(generated,segment):segment;
+            if(continued&&!nextText.trim()){
+              failureCode='continuation_missing_suffix';
+              emit('error',{error:'La continuación no devolvió el fragmento esperado. El borrador anterior está guardado.',jobId:hash,recoverable:true});
+              return;
+            }
+            generated+=nextText;
             finishReason=segmentReason;
             attempts++;
             await persist('working');
@@ -318,7 +324,7 @@ export default {
           // so recovery serves exactly the document we showed to the user.
           generated=page;
           await persist('complete');
-          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason,repaired:checked.repaired,warnings:checked.warnings});
+          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason,repaired:checked.repaired,warnings:checked.warnings,apiCalls:attempts});
         } catch(e){
           failureCode=e?.name==='AbortError'?'abort_or_timeout':'stream_exception';
           emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o alcanzó el límite de tiempo. Se ha intentado conservar el borrador.':'Conexión con NVIDIA interrumpida. Se ha intentado conservar el borrador.'});
