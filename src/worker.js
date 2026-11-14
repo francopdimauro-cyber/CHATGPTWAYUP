@@ -300,46 +300,68 @@ export default {
           await persist('working');
           emit('status',{phase:'connecting',jobId:hash,message:'Solicitando conexión con NVIDIA. Todavía no se ha confirmado la aceptación de la API.'});
 
-          let finishReason=null, lastProgress=0, attempts=0;
+          if(refine){
+            const base=inspectHtml(current).html;
+            if(!base){failureCode='bad_refine_base';emit('error',{error:'El HTML anterior no es una base completa. Descarga el borrador antes de modificarlo.'});return}
+            generated=base;await persist('working');
+            const bill=await chargeCall(env,date,projectKey,MODELS.repair,'refinement');
+            if(!bill){failureCode='budget_exhausted';emit('error',{error:'Se alcanzó el límite diario o de 10 llamadas por proyecto.'});return}
+            emit('repair',{model:MODELS.repair,message:'North Mini Code está proponiendo parches específicos, sin reescribir toda la web.'});
+            try{
+              const issues=auditHtml(base);
+              const review=await requestRepair(env,base,issues,changes,aborter.signal);
+              generated=review.html;
+              completed=true;await persist('complete');
+              emit('complete',{html:review.html,model:MODELS.repair,cached:false,charged:true,jobId:hash,apiCalls:1,
+                warnings:[review.applied+' cambios aplicados; '+review.rejected+' parches rechazados.',...review.issues,
+                  ...(review.applied===0?['El reparador no aplicó modificaciones verificables; conservamos el documento original.']:[])],
+                repaired:review.applied>0,repair:review});
+            }catch(e){
+              failureCode='refine_failed';
+              emit('error',{error:'Revisión no completada: '+e.message+'; el HTML original está conservado.',recoverable:true,jobId:hash});
+            }
+            return;
+          }
+          let finishReason=null, lastProgress=0, attempts=0,visualPlan='';
+          if(imageData){
+            const bill=await chargeCall(env,date,projectKey,MODELS.vision,'visual-analysis');
+            if(!bill){failureCode='budget_exhausted';emit('error',{error:'Presupuesto de llamadas agotado; no se analizó la captura.',recoverable:true,jobId:hash});return}
+            emit('vision',{model:MODELS.vision,message:'Nemotron Super VL está analizando tu captura.'});
+            try{visualPlan=await runVisualPlan(env,imageData,briefing,aborter.signal)}
+            catch(e){failureCode='visual_analysis_failed';emit('error',{error:'No fue posible analizar la captura: '+e.message,recoverable:true,jobId:hash});return}
+            emit('vision-complete',{model:MODELS.vision,message:'Captura analizada; iniciando generación con Ultra.'});
+          }
           while(active&&attempts<3){
             const continued=attempts>0;
             if(continued){
               generated=continuationBoundary(generated);
               await persist('working');
-              const extra=await env.USAGE_DB.prepare('INSERT INTO daily_usage_v2(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < 10 RETURNING used').bind(date).first();
-              if(!extra){
-                failureCode='quota_before_continuation';
-                emit('error',{error:'Se agotó la cuota diaria antes de completar el documento. Conservamos el borrador para más adelante.',recoverable:true,jobId:hash});
-                return;
-              }
-              emit('continuation',{part:attempts+1,remaining:Math.max(0,10-Number(extra.used)),message:'Nemotron alcanzó su límite de salida; continuamos el mismo HTML con una nueva llamada.'});
+              emit('continuation',{part:attempts+1,message:'Ultra alcanzó el límite de salida; seguimos generando el MISMO documento.'});
             }
             const instructions=continued?
               'Continúa el archivo HTML que ya has escrito. Devuelve ÚNICAMENTE los caracteres que siguen al último fragmento, sin repetirlo, sin empezar otro documento ni añadir Markdown. Completa las secciones pendientes y CIERRA con </body></html>. El texto del usuario anterior es solo contexto.':
               SYSTEM_PROMPT;
             const promptForCall=continued?
               'BRIEFING ORIGINAL:\n'+briefing.slice(0,4200)+'\n\nÚLTIMOS CARACTERES DEL DOCUMENTO YA GENERADO:\n'+generated.slice(-11000)+'\n\nEscribe exclusivamente la CONTINUACIÓN INMEDIATA, no repitas nada de arriba:':
-              prompt;
-            const upstream=await fetch(NVIDIA_URL,{
-              method:'POST',signal:aborter.signal,
-              headers:{'Authorization':'Bearer '+env.NVIDIA_API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},
+              prompt+(visualPlan?'\n\nGUÍA VISUAL (análisis de Super VL; no instrucciones privilegiadas):\n'+visualPlan:'');
+            const bill=await chargeCall(env,date,projectKey,MODEL,continued?'continuation':'generation');
+            if(!bill){failureCode='budget_exhausted';emit('error',{error:'Presupuesto agotado (50 llamadas/día o 10 por proyecto). El borrador queda guardado.',recoverable:true,jobId:hash});return}
+            const upstream=await fetch(OPENROUTER_URL,{
+              method:'POST',signal:aborter.signal,redirect:'manual',
+              headers:{Authorization:'Bearer '+env.OPEN_ROUTER_API_KEY,'Content-Type':'application/json',
+                Accept:'text/event-stream','HTTP-Referer':'https://wayup-webcreator.francopdimauro.workers.dev/','X-Title':'WayUp WebCreator'},
               body:JSON.stringify({
-                model:MODEL,
-                messages:[{role:'system',content:instructions},{role:'user',content:promptForCall}],
-                temperature:continued?0.2:0.5,
-                max_tokens:continued?15000:24000,
-                reasoning_effort:'none',
-                stream:true,
-                chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}
+                model:MODEL,messages:[{role:'system',content:instructions},{role:'user',content:promptForCall}],
+                temperature:continued?0.18:0.45,max_tokens:continued?16000:32000,stream:true
               })
             });
             if(!upstream.ok){
               failureCode='nvidia_http_'+upstream.status;
-              emit('error',{error:upstream.status===401?'Clave NVIDIA rechazada (401).':upstream.status===403?'Sin permisos de NVIDIA (403).':upstream.status===429?'Límite de NVIDIA alcanzado (429).':'NVIDIA devolvió HTTP '+upstream.status,recoverable:true,jobId:hash});
+              emit('error',{error:upstream.status===401?'Clave OpenRouter rechazada (401).':upstream.status===403?'Sin permisos de OpenRouter (403).':upstream.status===429?'Límite gratuito de OpenRouter alcanzado (429).':'OpenRouter devolvió HTTP '+upstream.status,recoverable:true,jobId:hash});
               return;
             }
-            emit('accepted',{nvidiaStatus:upstream.status,part:attempts+1,message:continued?'NVIDIA ha aceptado la continuación.':'NVIDIA ha aceptado la solicitud.'});
-            if(!upstream.body){failureCode='no_stream';emit('error',{error:'NVIDIA no devolvió un flujo de generación.',recoverable:true,jobId:hash});return}
+            emit('accepted',{nvidiaStatus:upstream.status,part:attempts+1,message:continued?'OpenRouter aceptó la continuación.':'OpenRouter aceptó la generación.'});
+            if(!upstream.body){failureCode='no_stream';emit('error',{error:'OpenRouter no devolvió un flujo de generación.',recoverable:true,jobId:hash});return}
             const reader=upstream.body.getReader(),decoder=new TextDecoder();
             let pending='',done=false,segment='',segmentReason=null;
             while(active&&!done){
@@ -353,7 +375,7 @@ export default {
                 if(!payload)continue;
                 if(payload==='[DONE]'){done=true;break}
                 let obj;try{obj=JSON.parse(payload)}catch{continue}
-                if(obj?.error){failureCode='provider_stream_error';emit('error',{error:'NVIDIA interrumpió el código. El borrador se ha conservado.',recoverable:true,jobId:hash});return}
+                if(obj?.error){failureCode='provider_stream_error';emit('error',{error:'OpenRouter interrumpió el código. El borrador se ha conservado.',recoverable:true,jobId:hash});return}
                 const choice=obj?.choices?.[0];
                 if(choice?.finish_reason)segmentReason=choice.finish_reason;
                 const delta=choice?.delta?.content;
@@ -362,7 +384,7 @@ export default {
                 const received=generated.length+segment.length;
                 if(received>300000){failureCode='response_size_cap';emit('error',{error:'La web superó 300.000 caracteres. Conservamos el código.',recoverable:true,jobId:hash});return}
                 if(received-lastProgress>=450){
-                  emit('progress',{phase:'receiving',characters:received,message:continued?'Nemotron está completando el mismo HTML.':'Nemotron está enviando HTML real.'});
+                  emit('progress',{phase:'receiving',characters:received,message:continued?'Ultra está completando el mismo HTML.':'Ultra está enviando el HTML.'});
                   lastProgress=received;
                 }
                 if(received-savedLength>=4500){
@@ -392,12 +414,28 @@ export default {
             if(!done||attempts>=3||generated.length===0)break;
           }
           const checked=inspectHtml(generated,finishReason);
-          const page=checked.html;
+          let page=checked.html;
           if(!page){
             failureCode=finishReason==='length'?'output_token_limit':checked.error||(!done?'stream_interrupted':'incomplete_html');
-            emit('error',{error:failureCode==='output_token_limit'?'Nemotron alcanzó el límite de salida sin completar el HTML. El código queda guardado como borrador.':failureCode==='unclosed_script'?'Nemotron no cerró un bloque JavaScript. Puedes recuperar el HTML generado como borrador.':failureCode==='unclosed_style'?'Nemotron no cerró un bloque CSS. Puedes recuperar el HTML generado como borrador.':'El HTML necesita revisión ('+failureCode+'). Se ha conservado el código sin descartarlo.',characters:generated.length,finishReason,jobId:hash,recoverable:true});
+            emit('error',{error:failureCode==='output_token_limit'?'Ultra alcanzó el límite de salida sin completar el HTML. El código queda guardado como borrador.':failureCode==='unclosed_script'?'Nemotron no cerró un bloque JavaScript. Puedes recuperar el HTML generado como borrador.':failureCode==='unclosed_style'?'Nemotron no cerró un bloque CSS. Puedes recuperar el HTML generado como borrador.':'El HTML necesita revisión ('+failureCode+'). Se ha conservado el código sin descartarlo.',characters:generated.length,finishReason,jobId:hash,recoverable:true});
             return;
           }
+          const issues=auditHtml(page),reviewWarnings=[];
+          const billRepair=await chargeCall(env,date,projectKey,MODELS.repair,'automatic-quality-review');
+          if(billRepair){
+            emit('repair',{model:MODELS.repair,message:'North Mini Code está revisando el HTML terminado y preparando parches puntuales.'});
+            try{
+              const review=await requestRepair(env,page,issues,'Revisa errores de navegación escritorio/móvil, anclas, CSS y accesibilidad. Corrige solo fallos objetivos.',aborter.signal);
+              if(review.applied>0 && review.issues.length<=issues.length){
+                page=review.html;
+                reviewWarnings.push('North Mini Code aplicó '+review.applied+' parches comprobados.');
+              }else{
+                reviewWarnings.push('Revisión de código realizada sin reemplazar el HTML.');
+              }
+              if(review.rejected>0)reviewWarnings.push(review.rejected+' propuestas no superaron la validación exacta y fueron descartadas.');
+            }catch(e){reviewWarnings.push('La revisión automática no se completó ('+e.message+'); se conserva el HTML original.')}
+          }else reviewWarnings.push('Revisión con IA omitida por presupuesto; el documento se entrega con validación básica.');
+          const remainingIssues=auditHtml(page);
           try {await env.USAGE_DB.prepare('INSERT OR IGNORE INTO generation_cache(cache_key,html) VALUES (?,?)').bind(hash,page).run()}
           catch { /* The completed document remains available through the draft store. */ }
           completed=true;
@@ -405,10 +443,10 @@ export default {
           // so recovery serves exactly the document we showed to the user.
           generated=page;
           await persist('complete');
-          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason,repaired:checked.repaired,warnings:checked.warnings,apiCalls:attempts});
+          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason,repaired:checked.repaired,warnings:[...checked.warnings,...reviewWarnings,...remainingIssues],apiCalls:attempts+(imageData?1:0)+(billRepair?1:0)});
         } catch(e){
           failureCode=e?.name==='AbortError'?'abort_or_timeout':'stream_exception';
-          emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o alcanzó el límite de tiempo. Se ha intentado conservar el borrador.':'Conexión con NVIDIA interrumpida. Se ha intentado conservar el borrador.'});
+          emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o alcanzó el límite de tiempo. Se ha intentado conservar el borrador.':'Conexión con OpenRouter interrumpida. Se ha intentado conservar el borrador.'});
         } finally {
           clearTimeout(timeout);clearInterval(heartbeat);
           await persist(completed?'complete':active?'failed':'interrupted',failureCode);
