@@ -1,8 +1,18 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
-if(!worker.includes('__WEBCREATOR_HTML__'))throw new Error('Missing HTML injection placeholder');
-if(!html.includes('id="downloadZip"')||!html.includes('id="preview"'))throw new Error('Missing WebCreator controls');
+const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
+const base=read('public/index.html');
+const css=read('public/studio.css');
+const studioClient=read('public/studio.js');
+const studioServer=read('src/studio.js');
+const worker=read('src/worker.js');
+if(!worker.includes('__WEBCREATOR_HTML__')||!worker.includes('/*__WEBCREATOR_STUDIO_SERVER__*/'))
+  throw new Error('Faltan puntos de inserción de Studio');
+if(!base.includes('id="downloadZip"')||!base.includes('id="preview"'))
+  throw new Error('Faltan controles del constructor original');
+const html=base.replace('</head>','<style>\n'+css+'\n</style></head>')
+  .replace('</body>','<script>\n'+studioClient+'\n</script></body>');
+const built=worker.replace('/*__WEBCREATOR_STUDIO_SERVER__*/',studioServer)
+  .replace('__WEBCREATOR_HTML__',JSON.stringify(html));
 mkdirSync(new URL('../dist/',import.meta.url),{recursive:true});
-writeFileSync(new URL('../dist/worker.js',import.meta.url),worker.replace('__WEBCREATOR_HTML__',JSON.stringify(html)));
-console.log('Built dist/worker.js including WebCreator V4 UI');
+writeFileSync(new URL('../dist/worker.js',import.meta.url),built);
+console.log('Built WebCreator Studio + original Multi-IA generator');
