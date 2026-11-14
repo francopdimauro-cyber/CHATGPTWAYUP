@@ -30,8 +30,8 @@ async function handleStudio(request,env,url) {
   const db=env.USAGE_DB;
   if(!db)return send({error:'D1 no disponible'},503);
   const path=url.pathname;
-  const match=path.match(/^\/api\/projects\/([a-f0-9-]{36})(?:\/(versions)(?:\/([0-9]+))?|\/(name))?$/);
-  const id=match?.[1],section=match?.[2],vText=match?.[3],rename=match?.[4];
+  const match=path.match(/^\/api\/projects\/([a-f0-9-]{36})(?:\/(versions)(?:\/([0-9]+))?|\/(name)|\/(quality))?$/);
+  const id=match?.[1],section=match?.[2],vText=match?.[3],rename=match?.[4],quality=match?.[5];
   if(path!=='/api/projects'&&!match)return send({error:'Ruta Studio no encontrada'},404);
   if(request.method!=='GET') {
     if(request.headers.get('origin')!==url.origin)return send({error:'Origen no autorizado'},403);
@@ -66,6 +66,20 @@ async function handleStudio(request,env,url) {
     if(request.method==='GET'&&section==='versions') {
       const rows=await db.prepare('SELECT v.version,v.label,v.created_at,length(v.html) AS characters FROM webcreator_project_versions v JOIN webcreator_projects p ON p.id=v.project_id WHERE v.project_id=? AND p.archived=0 ORDER BY version DESC LIMIT 100').bind(id).all();
       return send({versions:rows.results||[]});
+    }
+    if(request.method==='GET'&&quality==='quality') {
+      const row=await db.prepare('SELECT id,name,html,current_version AS version FROM webcreator_projects WHERE id=? AND archived=0').bind(id).first();
+      if(!row)return send({error:'Proyecto no encontrado'},404);
+      const issues=auditHtml(row.html);
+      const clean=inspectHtml(row.html);
+      return send({
+        id:row.id,name:row.name,version:row.version,scope:'static',
+        status:issues.length?'review':'pass',validStructure:Boolean(clean.html),
+        issues,characters:row.html.length,
+        images:(row.html.match(/<img\\b/gi)||[]).length,
+        sections:(row.html.match(/<section\\b/gi)||[]).length,
+        note:'Auditoría estática básica: no sustituye pruebas visuales, funcionales ni seguridad de publicación.'
+      });
     }
     if(request.method==='GET'&&!section&&!rename) {
       const row=await db.prepare('SELECT id,name,html,current_version AS version,created_at,updated_at FROM webcreator_projects WHERE id=? AND archived=0').bind(id).first();
