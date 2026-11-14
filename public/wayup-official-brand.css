@@ -1,0 +1,36 @@
+/* Official WAYUP brand mark and stronger typography for WEB. */
+.wrap>header .brand{gap:11px!important}
+.wrap>header .wc-official-wayup-logo{
+ display:block;flex:none;width:42px;height:42px;object-fit:contain;
+ border-radius:50%;background:#0029ff;
+ filter:drop-shadow(0 4px 9px rgba(15,35,110,.16));
+}
+.wrap>header .brand-sub{
+ margin-left:1px!important;color:#aeb8d0!important;
+ font-family:var(--wc-interface);font-weight:650;font-size:13px!important;
+ letter-spacing:-.025em!important;
+}
+:root[data-wc-theme="light"] .wrap>header .brand-sub{color:#5d6d8e!important}
+.wc-urban-headline .wc-web-display{
+ font-family:"Anton","Impact","Arial Narrow",sans-serif!important;
+ font-weight:400!important;font-style:normal;
+ display:inline-block;
+ letter-spacing:-.02em!important;line-height:.9;
+ color:#e3e9ff!important;
+ -webkit-text-stroke:0!important;
+ text-shadow:2px 2px 0 rgba(124,144,255,.25);
+ transform:skewX(-4deg) translateY(1px);
+}
+:root[data-wc-theme="light"] .wc-urban-headline .wc-web-display{
+ color:#fff!important;
+ text-shadow:2px 2px 0 rgba(7,36,142,.25);
+}
+@media(min-width:900px) and (min-height:650px){
+ .wrap>header .wc-official-wayup-logo{width:35px;height:35px}
+ .wc-urban-headline .wc-web-display{letter-spacing:-.015em!important}
+}
+@media(max-width:520px){
+ .wrap>header .wc-official-wayup-logo{width:34px;height:34px}
+ .wrap>header .brand-sub{font-size:11px!important}
+ .wc-urban-headline .wc-web-display{letter-spacing:0!important}
+}
