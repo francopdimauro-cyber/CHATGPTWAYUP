@@ -22,7 +22,7 @@ Esto genera `dist/worker.js`, que contiene la interfaz HTML incorporada al Worke
 - La aplicación está protegida mediante **Cloudflare Zero Trust Access**, asociada exclusivamente al Worker `wayup-webcreator` y a la identidad autorizada en su política.
 - El Worker verifica obligatoriamente `ctx.access` y el correo autenticado antes de servir la interfaz o ejecutar una API. En ausencia de una identidad validada, deniega la petición.
 - **Único secreto necesario para la IA:** `NVIDIA_API_KEY`, configurado como Secret en Cloudflare. Nunca se envía al navegador ni se almacena en GitHub.
-- **D1:** binding `USAGE_DB` a la base de datos privada `wayup-webcreator-usage` para contabilizar un máximo global de cinco peticiones por día UTC y cachear HTML terminado.
+- **D1:** binding `USAGE_DB` a la base de datos privada `wayup-webcreator-usage` para contabilizar un máximo global de diez peticiones por día UTC durante las pruebas y cachear HTML terminado.
 - La antigua contraseña de 256 bits se ha eliminado tanto del backend y formulario como de los secretos del Worker. No hay que configurar ninguna contraseña adicional.
 
 ## API actual
@@ -42,3 +42,7 @@ Vista previa con `iframe sandbox="allow-scripts"` sin `allow-same-origin`; auten
 El ZIP incluye `index.html`, `styles.css`, `script.js` (si procede) y `README.txt`. Las imágenes remotas no se incluyen y requieren conexión o sustitución por archivos propios. Formularios, reservas o pagos necesitan integraciones reales. Las cargas de archivos del formulario no incorporan todavía sus contenidos a la IA.
 
 El enlace público puede tardar en propagarse tras activar el subdominio. El Worker está desplegado, pero la conexión real con NVIDIA no puede verificarse hasta configurar la clave.
+
+## Pruebas desde móvil
+
+El navegador móvil puede suspender una pestaña y cortar una respuesta SSE. El aumento de cuota a diez peticiones por día **no evita** que se pierda una generación en curso. La caché actual solo recupera páginas que llegaron a completarse y guardarse. Para reanudar trabajos de 20 minutos sin dejar el navegador abierto es necesario un proceso duradero independiente del navegador (por ejemplo, Cloudflare Workflows + D1), aún no implementado.
