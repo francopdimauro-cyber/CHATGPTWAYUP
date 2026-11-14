@@ -77,6 +77,21 @@ export default {
       return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,diagnostic:e?.name==='AbortError'?'timeout':e instanceof TypeError?'network_error':'unknown',error:e?.name==='AbortError'?'El catálogo de NVIDIA no respondió en 30 segundos.':'Falló la comunicación con el catálogo NVIDIA; no se pudo verificar la conexión.'},504);
     } finally {clearTimeout(timer)}
   }
+  // Recover the last generated HTML or partial draft without a new model request.
+  if(url.pathname==='/api/recovery') {
+    if(request.method!=='GET') return send({error:'Método no permitido'},405);
+    if(!env.USAGE_DB) return send({error:'Base de datos de recuperación no disponible'},503);
+    const job=url.searchParams.get('job')||'';
+    if(!/^[a-f0-9]{64}$/.test(job)) return send({error:'Identificador de proyecto inválido'},400);
+    try {
+      const cache=await env.USAGE_DB.prepare('SELECT html FROM generation_cache WHERE cache_key = ?').bind(job).first();
+      if(cache?.html) return send({status:'complete',completed:true,html:cache.html,characters:cache.html.length});
+      const draft=await env.USAGE_DB.prepare('SELECT status,chars,partial_html,error_code,updated_at FROM generation_drafts WHERE job_key = ?').bind(job).first();
+      if(!draft) return send({error:'No hay un borrador guardado para este proyecto'},404);
+      const complete=draft.status==='complete' && Boolean(parseHtml(draft.partial_html));
+      return send({status:draft.status,completed:complete,html:complete?draft.partial_html:null,partialHtml:complete?null:draft.partial_html,characters:draft.chars,error:draft.error_code,updatedAt:draft.updated_at});
+    } catch {return send({error:'No se pudo recuperar el proyecto guardado'},503)}
+  }
   if(!['/api/generate','/api/refine','/api/generate-stream','/api/refine-stream'].includes(url.pathname)) return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
   if(!env.NVIDIA_API_KEY) return send({error:'El generador aún no tiene configurada la clave NVIDIA en Cloudflare.'},503);
@@ -120,36 +135,48 @@ export default {
     const aborter=new AbortController();
     const encoder=new TextEncoder();
     let active=true;
+    let generated='';
+    let savedLength=0;
+    let failureCode=null;
+    let completed=false;
+    const persist=async(status,issue=null)=>{
+      try {
+        await env.USAGE_DB.prepare('INSERT INTO generation_drafts (job_key,status,chars,partial_html,error_code,updated_at) VALUES (?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(job_key) DO UPDATE SET status=excluded.status,chars=excluded.chars,partial_html=excluded.partial_html,error_code=excluded.error_code,updated_at=CURRENT_TIMESTAMP')
+          .bind(hash,status,generated.length,generated,issue).run();
+      } catch { /* The model call must continue even if one draft checkpoint fails. */ }
+    };
     const events=new ReadableStream({
       async start(controller) {
         const emit=(event,body)=>{
           if(!active)return;
-          try{controller.enqueue(encoder.encode('event: '+event+'\ndata: '+JSON.stringify(body)+'\n\n'))}
-          catch{active=false;aborter.abort()}
+          try {controller.enqueue(encoder.encode('event: '+event+'\ndata: '+JSON.stringify(body)+'\n\n'))}
+          catch {active=false;aborter.abort()}
         };
         const stop=()=>{if(active){active=false;try{controller.close()}catch{}}};
-        const timer=setTimeout(()=>aborter.abort(),30*60*1000);
+        const timeout=setTimeout(()=>aborter.abort(),30*60*1000);
         const heartbeat=setInterval(()=>emit('heartbeat',{ts:Date.now()}),15000);
         try {
-          emit('status',{phase:'connecting',message:'Solicitando conexión con NVIDIA. Todavía no se ha confirmado la aceptación de la API.'});
+          await persist('working');
+          emit('status',{phase:'connecting',jobId:hash,message:'Solicitando conexión con NVIDIA. Todavía no se ha confirmado la aceptación de la API.'});
           const upstream=await fetch(NVIDIA_URL,{
             method:'POST',signal:aborter.signal,
             headers:{'Authorization':'Bearer '+env.NVIDIA_API_KEY,'Content-Type':'application/json','Accept':'text/event-stream'},
             body:JSON.stringify({
               model:MODEL,messages:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],
-              temperature:0.5,max_tokens:14000,reasoning_effort:'none',stream:true,
+              temperature:0.5,max_tokens:24000,reasoning_effort:'none',stream:true,
               chat_template_kwargs:{enable_thinking:false,force_nonempty_content:true}
             })
           });
           if(!upstream.ok){
+            failureCode='nvidia_http_'+upstream.status;
             emit('error',{phase:'rejected',error:upstream.status===401?'NVIDIA ha rechazado la API key (HTTP 401).':upstream.status===403?'La clave no tiene permisos para este modelo (HTTP 403).':upstream.status===429?'NVIDIA ha limitado las peticiones (HTTP 429).':'NVIDIA rechazó la generación (HTTP '+upstream.status+')',httpStatus:upstream.status});
             return;
           }
           emit('accepted',{nvidiaStatus:upstream.status,message:'NVIDIA ha aceptado la solicitud. Esperando los primeros fragmentos de HTML.'});
-          if(!upstream.body) {emit('error',{error:'NVIDIA no devolvió un flujo de generación'});return}
+          if(!upstream.body){failureCode='empty_stream';emit('error',{error:'NVIDIA no devolvió un flujo de generación'});return}
           const reader=upstream.body.getReader();
           const decoder=new TextDecoder();
-          let pending='',generated='',done=false,lastProgress=0;
+          let pending='',done=false,lastProgress=0,finishReason=null;
           while(active&&!done){
             const {value,done:ended}=await reader.read();
             if(ended)break;
@@ -161,11 +188,17 @@ export default {
               if(!payload)continue;
               if(payload==='[DONE]'){done=true;break}
               let obj;try{obj=JSON.parse(payload)}catch{continue}
-              if(obj?.error){emit('error',{error:'NVIDIA ha devuelto un error durante la generación'});return}
-              const delta=obj?.choices?.[0]?.delta?.content;
+              if(obj?.error){failureCode='provider_stream_error';emit('error',{error:'NVIDIA ha devuelto un error durante la generación'});return}
+              const choice=obj?.choices?.[0];
+              if(choice?.finish_reason) finishReason=choice.finish_reason;
+              const delta=choice?.delta?.content;
               if(typeof delta==='string'){
                 generated+=delta;
-                if(generated.length>300000){emit('error',{error:'La respuesta de NVIDIA superó el tamaño admitido'});return}
+                if(generated.length>300000){failureCode='html_too_large';emit('error',{error:'La respuesta de NVIDIA superó el tamaño admitido. Se guardó el borrador.'});return}
+                if(generated.length-savedLength>=4500){
+                  await persist('working');
+                  savedLength=generated.length;
+                }
                 if(generated.length-lastProgress>=450){
                   emit('progress',{phase:'receiving',characters:generated.length,message:'Nemotron está enviando HTML real.'});
                   lastProgress=generated.length;
@@ -174,21 +207,30 @@ export default {
             }
           }
           const page=parseHtml(generated);
-          if(!done||!page){emit('error',{error:!done?'La respuesta de NVIDIA terminó sin confirmar que estaba completa.':'NVIDIA no devolvió un documento HTML completo y válido.',characters:generated.length});return}
-          try{await env.USAGE_DB.prepare('INSERT OR IGNORE INTO generation_cache(cache_key,html) VALUES (?,?)').bind(hash,page).run()}
-          catch{/* Failure to cache must not discard generated HTML. */}
-          emit('complete',{html:page,model:MODEL,cached:false,charged:true});
-        }catch(e){
-          emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o superó el límite de 30 minutos.':'Conexión con NVIDIA interrumpida antes de completar la web.'});
-        }finally{
-          clearTimeout(timer);clearInterval(heartbeat);stop();
+          if(!page){
+            failureCode=finishReason==='length'?'output_token_limit':!done?'stream_interrupted':'incomplete_html';
+            emit('error',{error:failureCode==='output_token_limit'?'Nemotron alcanzó el máximo de tokens antes de cerrar el HTML. El borrador se ha conservado.':failureCode==='stream_interrupted'?'NVIDIA cerró el flujo antes de completar el HTML. Se ha conservado el borrador.':'NVIDIA terminó sin un documento HTML completo. El borrador se ha conservado.',characters:generated.length,finishReason});
+            return;
+          }
+          try {await env.USAGE_DB.prepare('INSERT OR IGNORE INTO generation_cache(cache_key,html) VALUES (?,?)').bind(hash,page).run()}
+          catch { /* The completed document remains available through the draft store. */ }
+          completed=true;
+          await persist('complete');
+          emit('complete',{html:page,model:MODEL,cached:false,charged:true,jobId:hash,finishReason});
+        } catch(e){
+          failureCode=e?.name==='AbortError'?'abort_or_timeout':'stream_exception';
+          emit('error',{phase:'interrupted',error:e?.name==='AbortError'?'La generación se canceló o alcanzó el límite de tiempo. Se ha intentado conservar el borrador.':'Conexión con NVIDIA interrumpida. Se ha intentado conservar el borrador.'});
+        } finally {
+          clearTimeout(timeout);clearInterval(heartbeat);
+          await persist(completed?'complete':active?'failed':'interrupted',failureCode);
+          stop();
         }
       },
       cancel(){active=false;aborter.abort()}
     });
     return new Response(events,{headers:{
-      'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform',
-      'x-content-type-options':'nosniff','connection':'keep-alive'
+      'content-type':'text/event-stream; charset=utf-8',
+      'cache-control':'no-cache, no-transform','x-content-type-options':'nosniff'
     }});
   }
   return send({error:'Esta versión de generación sin streaming está desactivada. Actualiza WebCreator (Ctrl+F5) y utiliza la generación en directo.'},426);
