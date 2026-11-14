@@ -22,21 +22,27 @@ function parseHtml(v) {
  return html;
 }
 export default {
- async fetch(request,env) {
+ async fetch(request,env,ctx) {
+  // Fail closed: only requests authenticated by Cloudflare Zero Trust may use this private Worker.
+  if(!ctx?.access) return send({error:'Acceso privado requerido: inicia sesión en Cloudflare Zero Trust.'},403);
+  let identity;
+  try { identity=await ctx.access.getIdentity(); }
+  catch { return send({error:'No se pudo comprobar tu identidad en Cloudflare Access.'},403); }
+  if(identity?.email?.toLowerCase()!=='francopdimauro@gmail.com') return send({error:'Usuario no autorizado para WebCreator.'},403);
   const url = new URL(request.url);
   if(request.method==='GET' && (url.pathname==='/' || url.pathname==='/index.html')) {
    return new Response(HTML, {headers:{'content-type':'text/html; charset=utf-8','x-content-type-options':'nosniff','referrer-policy':'no-referrer','x-frame-options':'DENY','cache-control':'public, max-age=120'}});
   }
   if(url.pathname==='/api/health') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
-   return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:Boolean(env.WEBCREATOR_ACCESS_TOKEN),quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:5});
+   return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:5});
   }
   if(url.pathname!=='/api/generate' && url.pathname!=='/api/refine') return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
-  if(!env.NVIDIA_API_KEY || !env.WEBCREATOR_ACCESS_TOKEN) return send({error:'El generador aún no está configurado. El administrador debe añadir los dos secretos al Worker.'},503);
+  if(!env.NVIDIA_API_KEY) return send({error:'El generador aún no tiene configurada la clave NVIDIA en Cloudflare.'},503);
   const origin=request.headers.get('origin');
   if(origin && origin!==url.origin) return send({error:'Origen no autorizado'},403);
-  if(request.headers.get('authorization')!==`Bearer ${env.WEBCREATOR_ACCESS_TOKEN}`) return send({error:'Clave de acceso incorrecta'},401);
+  // No browser-managed API token: all routes are protected by verified ctx.access.
   const ct=request.headers.get('content-type')||'';
   if(!ct.toLowerCase().startsWith('application/json')) return send({error:'Usa JSON'},415);
   if(Number(request.headers.get('content-length')||0)>285000) return send({error:'Solicitud demasiado grande'},413);
