@@ -189,7 +189,7 @@ export default {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
    return send({status:'ok',model:MODEL,configured:Boolean(env.OPENROUTER_API_KEY),models:MODELS,provider:'OpenRouter',accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
   }
-  // Usage meter does not call NVIDIA or consume a generation.
+  // Usage meter does not call OpenRouter or consume a generation.
   if(url.pathname==='/api/quota') {
     if(request.method!=='GET') return send({error:'Método no permitido'},405);
     if(!env.USAGE_DB) return send({error:'Contador D1 no disponible'},503);
@@ -298,7 +298,7 @@ export default {
         const heartbeat=setInterval(()=>emit('heartbeat',{ts:Date.now()}),15000);
         try {
           await persist('working');
-          emit('status',{phase:'connecting',jobId:hash,message:'Solicitando conexión con NVIDIA. Todavía no se ha confirmado la aceptación de la API.'});
+          emit('status',{phase:'connecting',jobId:hash,message:'Solicitando conexión con OpenRouter. Todavía no se ha confirmado la aceptación de la API.'});
 
           if(refine){
             const base=inspectHtml(current).html;
@@ -356,7 +356,7 @@ export default {
               })
             });
             if(!upstream.ok){
-              failureCode='nvidia_http_'+upstream.status;
+              failureCode='openrouter_http_'+upstream.status;
               emit('error',{error:upstream.status===401?'Clave OpenRouter rechazada (401).':upstream.status===403?'Sin permisos de OpenRouter (403).':upstream.status===429?'Límite gratuito de OpenRouter alcanzado (429).':'OpenRouter devolvió HTTP '+upstream.status,recoverable:true,jobId:hash});
               return;
             }
