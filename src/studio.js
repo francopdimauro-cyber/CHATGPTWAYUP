@@ -76,8 +76,8 @@ async function handleStudio(request,env,url) {
         id:row.id,name:row.name,version:row.version,scope:'static',
         status:issues.length?'review':'pass',validStructure:Boolean(clean.html),
         issues,characters:row.html.length,
-        images:(row.html.match(/<img\\b/gi)||[]).length,
-        sections:(row.html.match(/<section\\b/gi)||[]).length,
+        images:(row.html.match(/<img\b/gi)||[]).length,
+        sections:(row.html.match(/<section\b/gi)||[]).length,
         note:'Auditoría estática básica: no sustituye pruebas visuales, funcionales ni seguridad de publicación.'
       });
     }
