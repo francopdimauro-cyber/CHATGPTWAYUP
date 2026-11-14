@@ -17,24 +17,23 @@ npm run check
 
 Esto genera `dist/worker.js`, que contiene la interfaz HTML incorporada al Worker y el backend. Publicar como Worker ES module con el archivo `dist/worker.js` como módulo principal.
 
-## Configurar antes de generar
+## Acceso privado y configuración
 
-En **Cloudflare → Workers & Pages → wayup-webcreator → Settings → Variables and Secrets** añadir **Secret**:
+- La aplicación está protegida mediante **Cloudflare Zero Trust Access**, asociada exclusivamente al Worker `wayup-webcreator` y a la identidad autorizada en su política.
+- El Worker verifica obligatoriamente `ctx.access` y el correo autenticado antes de servir la interfaz o ejecutar una API. En ausencia de una identidad validada, deniega la petición.
+- **Único secreto necesario para la IA:** `NVIDIA_API_KEY`, configurado como Secret en Cloudflare. Nunca se envía al navegador ni se almacena en GitHub.
+- **D1:** binding `USAGE_DB` a la base de datos privada `wayup-webcreator-usage` para contabilizar un máximo global de cinco peticiones por día UTC y cachear HTML terminado.
+- La antigua contraseña de 256 bits se ha eliminado tanto del backend y formulario como de los secretos del Worker. No hay que configurar ninguna contraseña adicional.
 
-- `NVIDIA_API_KEY`: clave de NVIDIA Build. Solo backend.
-- `WEBCREATOR_ACCESS_TOKEN`: contraseña larga, aleatoria e independiente para el acceso de prueba al constructor.
+## API actual
 
-Nunca introducir la API key de NVIDIA en el formulario, en un archivo de GitHub o en el navegador.
+- `GET /api/health`: diagnóstico general tras iniciar sesión con Access.
+- `GET /api/quota`: llamadas disponibles sin gastar cuota.
+- `GET /api/provider-check`: consulta el catálogo de modelos de NVIDIA; no realiza inferencia.
+- `POST /api/generate-stream`: generación en streaming SSE con estados de conexión y recepción.
+- `POST /api/refine-stream`: modificación del HTML anterior con streaming SSE.
 
-El formulario solicita **solo** `WEBCREATOR_ACCESS_TOKEN`. Mientras falte cualquiera de los secretos, `/api/generate` y `/api/refine` responden 503, sin consumir NVIDIA.
-
-## API
-
-- `GET /api/health`: estado, modelo y configuración de secretos (sin revelar sus valores)
-- `POST /api/generate`: JSON `{"briefing":"..."}`
-- `POST /api/refine`: JSON `{"briefing":"...","html":"...","changes":"..."}`
-
-Ambos endpoints POST exigen `Authorization: Bearer <WEBCREATOR_ACCESS_TOKEN>`.
+Las rutas antiguas `/api/generate` y `/api/refine` están desactivadas para evitar peticiones prolongadas sin streaming. Todas las rutas del Worker requieren autenticación de Cloudflare Access.
 
 ## Seguridad y limitaciones
 
