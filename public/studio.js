@@ -150,6 +150,7 @@ function selectIndex(index){
   el('wcAlign').value=node.style.textAlign||'';
   const color=(v,d)=>/^#[\da-f]{6}$/i.test(v||'')?v:d;
   el('wcColor').value=color(node.style.color,'#111111');el('wcBackground').value=color(node.style.backgroundColor,'#ffffff');
+  el('wcColor').dataset.touched='false';el('wcBackground').dataset.touched='false';
   const img=node.tagName==='IMG',link=node.tagName==='A';
   for(const id of ['wcSrcWrap','wcAltWrap','wcApplyImage'])el(id).classList.toggle('wc-hidden',!img);
   for(const id of ['wcHrefWrap','wcApplyLink'])el(id).classList.toggle('wc-hidden',!link);
@@ -223,7 +224,8 @@ el('wcDesktop').addEventListener('click',()=>el('wcFrame').className='');
 el('wcTablet').addEventListener('click',()=>el('wcFrame').className='tablet');
 el('wcMobile').addEventListener('click',()=>el('wcFrame').className='mobile');
 el('wcApplyText').addEventListener('click',()=>{const node=currentNode();if(node&&!node.children.length)update(()=>{node.textContent=el('wcText').value},'Texto actualizado.')});
-el('wcApplyStyle').addEventListener('click',()=>{const node=currentNode();if(!node)return;update(()=>{node.style.color=el('wcColor').value;node.style.backgroundColor=el('wcBackground').value;const px=Number(el('wcFont').value);if(px>=8&&px<=160)node.style.fontSize=px+'px';if(el('wcAlign').value)node.style.textAlign=el('wcAlign').value},'Estilos aplicados sin IA.')});
+for(const id of ['wcColor','wcBackground'])el(id).addEventListener('input',()=>{el(id).dataset.touched='true'});
+el('wcApplyStyle').addEventListener('click',()=>{const node=currentNode();if(!node)return;update(()=>{if(el('wcColor').dataset.touched==='true')node.style.color=el('wcColor').value;if(el('wcBackground').dataset.touched==='true')node.style.backgroundColor=el('wcBackground').value;const px=Number(el('wcFont').value);if(px>=8&&px<=160)node.style.fontSize=px+'px';if(el('wcAlign').value)node.style.textAlign=el('wcAlign').value},'Estilos aplicados sin IA.')});
 el('wcApplyImage').addEventListener('click',()=>{
   const node=currentNode();if(node?.tagName!=='IMG')return;
   const src=el('wcSrc').value.trim();
