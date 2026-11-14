@@ -1,0 +1,141 @@
+/* WAYUP / URBAN TYPE SIGNATURE
+ * Strong poster-style lettering without decorative images or oversized page furniture.
+ * Bricolage Grotesque is served with font-display:swap and a robust offline fallback. */
+:root{
+ --wc-display:"Bricolage Grotesque","Arial Black","Segoe UI Black",ui-sans-serif,system-ui,sans-serif;
+ --wc-interface:"Space Grotesk",Inter,"Segoe UI",ui-sans-serif,system-ui,sans-serif;
+}
+body{font-family:var(--wc-interface)!important}
+.wrap>header .brand{gap:9px!important}
+.wrap>header .brand .wc-wordmark,
+#wcStudio .wc-brand{
+ font-family:var(--wc-display)!important;
+ font-weight:800!important;
+ font-optical-sizing:auto;letter-spacing:-.093em!important;line-height:1;
+}
+.wrap>header .brand .wc-wordmark{
+ font-size:clamp(22px,2.1vw,28px);display:inline-block;white-space:nowrap;
+ transform:skewX(-4deg);transform-origin:center center;
+}
+.wrap>header .brand .wc-wordmark>span{letter-spacing:-.1em}
+.wrap>header .brand .wc-wordmark::after{
+ content:"";display:block;height:3px;width:27px;background:currentColor;
+ opacity:.4;margin:2px 0 0 auto;transform:skewX(-21deg);
+}
+.intro .intro-copy{align-items:center}
+.intro .wc-urban-headline{
+ display:flex;flex-direction:column;align-items:flex-start;
+ width:max-content;max-width:100%;margin:0!important;
+ text-transform:uppercase;
+ font-family:var(--wc-display)!important;
+ font-optical-sizing:auto;
+ font-weight:800!important;letter-spacing:-.075em!important;
+ line-height:1!important;text-wrap:unset!important;
+ isolation:isolate;
+}
+.wc-urban-headline .wc-urban-overline{
+ font-family:var(--wc-interface);font-weight:700;
+ font-size:10px;letter-spacing:.19em;line-height:1.3;
+ color:#b9c0dc;text-transform:uppercase;margin-bottom:4px;
+}
+.wc-urban-headline .wc-urban-power{
+ display:block;
+ font-size:clamp(34px,3.5vw,52px);
+ line-height:.84;letter-spacing:-.095em;
+ white-space:nowrap;
+}
+.wc-urban-headline .wc-urban-outline{
+ color:#c9d1ff;
+ letter-spacing:-.09em;
+}
+@supports(-webkit-text-stroke:1px #fff){
+ .wc-urban-headline .wc-urban-outline{
+  color:rgba(240,243,255,.07);
+  -webkit-text-stroke:1.15px rgba(239,243,255,.91);
+ }
+}
+.wc-urban-headline .wc-urban-bottom{
+ display:flex;align-items:baseline;gap:8px;white-space:nowrap;
+ font-size:clamp(17px,2.06vw,28px);
+ line-height:1;letter-spacing:-.075em;margin-top:8px;
+}
+.wc-urban-headline .wc-urban-accent{
+ position:relative;display:inline-block;isolation:isolate;
+ color:#c5d0ff!important;
+ font-style:normal;font-family:var(--wc-display);
+ font-weight:800;
+}
+.wc-urban-headline .wc-urban-arrow{
+ display:inline-block;vertical-align:top;font-family:var(--wc-interface);
+ font-size:.9em;line-height:1;transform:translateY(-2px);
+ font-weight:700;letter-spacing:0;color:#b8c4ff;
+}
+.wc-urban-headline .wc-urban-accent::after{
+ content:"";position:absolute;left:3%;right:3%;height:3px;bottom:-4px;
+ background:currentColor;opacity:.8;transform:skewX(-16deg);
+}
+.intro .eyebrow{
+ font-family:var(--wc-interface)!important;
+ font-size:10px!important;letter-spacing:.16em!important;
+}
+.question,.aside h3,#resultPanel h3,#wcStudio .wc-sidebar-head h3,#wcStudio .wc-inspector h3{
+ font-family:var(--wc-display)!important;font-weight:750!important;
+ font-optical-sizing:auto;letter-spacing:-.05em!important;
+}
+.question{line-height:1.15!important}
+#wcStudio .wc-brand{letter-spacing:-.065em!important}
+#wcStudio .wc-project strong,.option strong{font-family:var(--wc-interface);letter-spacing:-.025em}
+:root[data-wc-theme="light"] .wc-urban-headline .wc-urban-overline{color:#dbe2ff!important}
+:root[data-wc-theme="light"] .wc-urban-headline .wc-urban-outline{color:#f8faff!important}
+@supports(-webkit-text-stroke:1px #fff){
+ :root[data-wc-theme="light"] .wc-urban-headline .wc-urban-outline{
+   color:rgba(245,249,255,.07)!important;
+   -webkit-text-stroke:1.25px rgba(250,253,255,.95);
+ }
+}
+:root[data-wc-theme="light"] .wc-urban-headline .wc-urban-accent{color:#d8ffa5!important}
+:root[data-wc-theme="light"] .wc-urban-headline .wc-urban-arrow{color:#d8ffa5!important}
+:root[data-wc-theme="light"] .wrap>header .brand .wc-wordmark{color:#132653!important}
+:root[data-wc-theme="light"] .wrap>header .brand .wc-wordmark>span{color:#315bea!important}
+:root[data-wc-theme="light"] .wrap>header .brand .wc-wordmark::after{background:#315bea!important}
+/* The compact wizard must still own the viewport; typography only changes its top ribbon. */
+@media(min-width:900px) and (min-height:650px){
+ .intro{padding:9px 20px 11px!important}
+ .intro .intro-copy{grid-template-columns:max-content minmax(0,1fr);column-gap:clamp(18px,2.6vw,42px);row-gap:2px}
+ .intro .wc-urban-headline .wc-urban-power{font-size:clamp(32px,3.25vw,46px)}
+ .intro .wc-urban-headline .wc-urban-bottom{font-size:clamp(16px,1.85vw,25px);margin-top:6px}
+ .intro .wc-urban-headline .wc-urban-overline{font-size:9px;margin-bottom:3px}
+ .intro .eyebrow{grid-column:1/-1}
+ .intro .wc-urban-headline{grid-column:1;grid-row:2;margin:0!important}
+ .intro p{grid-column:2;grid-row:2;max-width:590px;line-height:1.45!important}
+}
+@media(min-width:900px) and (max-width:1150px) and (min-height:650px){
+ .intro .intro-copy{grid-template-columns:minmax(0,1fr) minmax(230px,.85fr);column-gap:16px}
+ .intro .wc-urban-headline .wc-urban-power{font-size:clamp(29px,3.6vw,39px)}
+ .intro .wc-urban-headline .wc-urban-bottom{font-size:clamp(15px,2.15vw,21px)}
+}
+@media(max-width:899px){
+ .intro .intro-copy{display:block}
+ .intro .wc-urban-headline .wc-urban-power{font-size:clamp(32px,6vw,50px)}
+ .intro .wc-urban-headline .wc-urban-bottom{font-size:clamp(17px,3.3vw,28px)}
+ .intro .wc-urban-headline{margin:11px 0!important}
+ .intro .wc-urban-headline .wc-urban-overline{font-size:9px}
+ .intro p{max-width:620px}
+}
+@media(max-width:520px){
+ .wrap>header .brand .wc-wordmark{font-size:23px}
+ .intro .wc-urban-headline .wc-urban-power{font-size:clamp(30px,8.5vw,40px)}
+ .intro .wc-urban-headline .wc-urban-bottom{font-size:clamp(16px,4.6vw,23px)}
+ .intro .wc-urban-headline{max-width:100%}
+}
+@media(max-width:345px){
+ .intro .wc-urban-headline .wc-urban-power{font-size:27px}
+ .intro .wc-urban-headline .wc-urban-bottom{font-size:15px}
+}
+@media(forced-colors:active){
+ .wc-urban-headline .wc-urban-outline{color:CanvasText!important;-webkit-text-stroke:0!important}
+ .wc-urban-headline .wc-urban-accent{text-decoration:underline;text-underline-offset:3px}
+}
+@media(prefers-reduced-motion:reduce){
+ .wc-urban-headline *, .wc-wordmark{transition:none!important}
+}
