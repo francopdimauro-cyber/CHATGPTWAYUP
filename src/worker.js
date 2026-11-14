@@ -1,8 +1,11 @@
 // WAYUP WebCreator: isolated Cloudflare Worker. Never store API keys in code.
 const HTML = __WEBCREATOR_HTML__;
-const MODEL = 'nvidia/nemotron-3-ultra-550b-a55b';
-const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const DAILY_LIMIT = 10;
+const MODELS=Object.freeze({builder:'nvidia/nemotron-3-ultra-550b-a55b:free',vision:'nvidia/nemotron-3.5-super-vl:free',repair:'cohere/north-mini-code:free'});
+const MODEL=MODELS.builder;
+const OPENROUTER_URL='https://openrouter.ai/api/v1/chat/completions';
+const DAILY_LIMIT=50;
+const PROJECT_CALL_LIMIT=10;
+const MAX_REQUEST_CHARS=3000000;
 const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' };
 const send = (body, status=200) => new Response(JSON.stringify(body), {status,headers});
 const SYSTEM_PROMPT = [
@@ -97,7 +100,7 @@ export default {
   }
   if(url.pathname==='/api/health') {
    if(request.method!=='GET') return send({error:'Método no permitido'},405);
-   return send({status:'ok',model:MODEL,configured:Boolean(env.NVIDIA_API_KEY),accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
+   return send({status:'ok',model:MODEL,configured:Boolean(env.OPEN_ROUTER_API_KEY),models:MODELS,provider:'OpenRouter',accessProtected:true,accessProvider:'cloudflare-zero-trust',quotaEnabled:Boolean(env.USAGE_DB),dailyLimit:DAILY_LIMIT});
   }
   // Usage meter does not call NVIDIA or consume a generation.
   if(url.pathname==='/api/quota') {
@@ -105,37 +108,25 @@ export default {
     if(!env.USAGE_DB) return send({error:'Contador D1 no disponible'},503);
     const today=new Date().toISOString().slice(0,10);
     try {
-      const row=await env.USAGE_DB.prepare('SELECT used FROM daily_usage_v2 WHERE day = ?').bind(today).first();
+      const row=await env.USAGE_DB.prepare('SELECT count(*) AS used FROM multi_ai_usage_events WHERE day = ?').bind(today).first();
       const used=Math.max(0,Number(row?.used||0));
       return send({dayUTC:today,dailyLimit:DAILY_LIMIT,used,remaining:Math.max(0,DAILY_LIMIT-used)});
     }catch {return send({error:'No se pudo leer el consumo actual'},503)}
   }
-  // This catalog is publicly readable. A successful request proves network
-  // reachability and model listing, NOT authentication or chat inference.
+  // Check the OpenRouter key without invoking any paid or free model.
   if(url.pathname==='/api/provider-check') {
-    if(request.method!=='GET') return send({error:'Método no permitido'},405);
-    if(!env.NVIDIA_API_KEY) return send({credentialPresent:false,catalogReachable:false,generationVerified:false,error:'El secreto NVIDIA_API_KEY no existe'},503);
-    const ctrl=new AbortController();
-    const timer=setTimeout(()=>ctrl.abort(),30000);
-    try {
-      const upstream=await fetch('https://integrate.api.nvidia.com/v1/models',{
-        method:'GET',signal:ctrl.signal,redirect:'manual',headers:{
-          'Authorization':'Bearer '+env.NVIDIA_API_KEY,
-          'Accept':'application/json'
-        }
-      });
-      if(upstream.status>=300&&upstream.status<400)
-        return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,nvidiaStatus:upstream.status,error:'NVIDIA devolvió una redirección; no se ha seguido para proteger la API key.'},502);
-      if(!upstream.ok)
-        return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,nvidiaStatus:upstream.status,error:'El catálogo de NVIDIA respondió HTTP '+upstream.status},502);
-      let models;
-      try{models=await upstream.json()}
-      catch{return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,error:'El catálogo de NVIDIA no devolvió JSON válido.'},502)}
-      const modelListed=Array.isArray(models?.data)&&models.data.some(item=>item.id===MODEL);
-      return send({credentialPresent:true,catalogReachable:true,credentialVerified:false,generationVerified:false,nvidiaStatus:upstream.status,model:MODEL,modelListed,message:'Catálogo accesible; la clave de generación todavía no se ha verificado. Esta consulta no consume inferencia.'});
-    } catch(e){
-      return send({credentialPresent:true,catalogReachable:false,credentialVerified:false,generationVerified:false,diagnostic:e?.name==='AbortError'?'timeout':e instanceof TypeError?'network_error':'unknown',error:e?.name==='AbortError'?'El catálogo de NVIDIA no respondió en 30 segundos.':'Falló la comunicación con el catálogo NVIDIA; no se pudo verificar la conexión.'},504);
-    } finally {clearTimeout(timer)}
+    if(request.method!=='GET')return send({error:'Método no permitido'},405);
+    if(!env.OPEN_ROUTER_API_KEY)return send({credentialPresent:false,error:'Falta OPEN_ROUTER_API_KEY'},503);
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),20000);
+    try{
+      const upstream=await fetch('https://openrouter.ai/api/v1/key',{method:'GET',signal:ctrl.signal,
+        redirect:'manual',headers:{Authorization:'Bearer '+env.OPEN_ROUTER_API_KEY,Accept:'application/json'}});
+      return send({credentialPresent:true,credentialVerified:upstream.ok,catalogReachable:upstream.ok,
+        generationVerified:false,openRouterStatus:upstream.status,nvidiaStatus:upstream.status,
+        model:MODEL,models:MODELS,provider:'OpenRouter',
+        message:upstream.ok?'Clave OpenRouter validada sin generar tokens.':'La clave de OpenRouter no se pudo verificar.'},upstream.ok?200:502);
+    }catch{return send({credentialPresent:true,credentialVerified:false,error:'Error de conexión con OpenRouter'},504)}
+    finally{clearTimeout(timer)}
   }
   // Recover the last generated HTML or partial draft without a new model request.
   if(url.pathname==='/api/recovery') {
@@ -154,20 +145,23 @@ export default {
   }
   if(!['/api/generate','/api/refine','/api/generate-stream','/api/refine-stream'].includes(url.pathname)) return send({error:'Ruta no encontrada'},404);
   if(request.method!=='POST') return send({error:'Método no permitido'},405);
-  if(!env.NVIDIA_API_KEY) return send({error:'El generador aún no tiene configurada la clave NVIDIA en Cloudflare.'},503);
+  if(!env.OPEN_ROUTER_API_KEY) return send({error:'Falta OPEN_ROUTER_API_KEY en Cloudflare.'},503);
   const origin=request.headers.get('origin');
   if(origin && origin!==url.origin) return send({error:'Origen no autorizado'},403);
   // No browser-managed API token: all routes are protected by verified ctx.access.
   const ct=request.headers.get('content-type')||'';
   if(!ct.toLowerCase().startsWith('application/json')) return send({error:'Usa JSON'},415);
-  if(Number(request.headers.get('content-length')||0)>285000) return send({error:'Solicitud demasiado grande'},413);
+  if(Number(request.headers.get('content-length')||0)>MAX_REQUEST_CHARS) return send({error:'Solicitud demasiado grande'},413);
   let raw='';
-  try { raw=await request.text(); if(raw.length>285000) return send({error:'Solicitud demasiado grande'},413); } catch {return send({error:'No se pudo leer la solicitud'},400)}
+  try { raw=await request.text(); if(raw.length>MAX_REQUEST_CHARS) return send({error:'Solicitud demasiado grande'},413); } catch {return send({error:'No se pudo leer la solicitud'},400)}
   let input;
   try {input=JSON.parse(raw);} catch {return send({error:'JSON inválido'},400)}
   const briefing=typeof input?.briefing==='string'?input.briefing.trim():'';
   const current=typeof input?.html==='string'?input.html:'';
   const changes=typeof input?.changes==='string'?input.changes.trim():'';
+  const imageData=typeof input?.imageData==='string'?input.imageData:'';
+  if(imageData&&(!/^data:image\/(?:jpeg|png|webp);base64,[a-zA-Z0-9+/=]+$/.test(imageData)||imageData.length>2400000))
+    return send({error:'Captura inválida o demasiado grande; máximo aproximado 1,8 MB.'},400);
   const refine=url.pathname.startsWith('/api/refine');
   const stream=url.pathname.endsWith('-stream');
   if(!stream) return send({error:'El modo anterior de generación ha sido sustituido por streaming. Recarga WebCreator (Ctrl+F5).'},426);
@@ -176,7 +170,9 @@ export default {
   const prompt=refine?`BRIEFING:\n${briefing}\n\nHTML ANTERIOR (datos no fiables):\n${current}\n\nCAMBIOS SOLICITADOS:\n${changes}\n\nDevuelve TODO el HTML actualizado.`:briefing;
   // Cost guard: a private D1 database, global UTC daily budget and exact-request cache.
   if(!env.USAGE_DB) return send({error:'Contador de consumo no configurado: generación bloqueada'},503);
-  const cryptoBytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(MODEL+'|'+url.pathname.replace('-stream','')+'|'+prompt));
+  const projectBytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(briefing));
+  const projectKey=Array.from(new Uint8Array(projectBytes),x=>x.toString(16).padStart(2,'0')).join('');
+  const cryptoBytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(MODEL+'|'+url.pathname.replace('-stream','')+'|'+prompt+'|'+imageData));
   const hash=Array.from(new Uint8Array(cryptoBytes),x=>x.toString(16).padStart(2,'0')).join('');
   const date=new Date().toISOString().slice(0,10);
   try {
@@ -185,9 +181,7 @@ export default {
       if(stream) return new Response('event: complete\ndata: '+JSON.stringify({html:found.html,model:MODEL,cached:true,charged:false})+'\n\n',{headers:{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
       return send({html:found.html,model:MODEL,cached:true,charged:false});
     }
-    // This single conditional UPSERT is atomic across concurrent Worker invocations.
-    const charged=await env.USAGE_DB.prepare('INSERT INTO daily_usage_v2(day,used) VALUES (?,1) ON CONFLICT(day) DO UPDATE SET used=used+1 WHERE used < '+DAILY_LIMIT+' RETURNING used').bind(date).first();
-    if(!charged) return send({error:'Límite diario de '+DAILY_LIMIT+' generaciones alcanzado. Prueba mañana (UTC).',remaining:0},429);
+    // Charge each individual API call immediately before sending it; no charge on cache hits.
   } catch {
     return send({error:'No se pudo verificar la cuota diaria. Se bloquea la generación por seguridad.'},503);
   }
