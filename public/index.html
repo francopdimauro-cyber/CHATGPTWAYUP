@@ -32,7 +32,7 @@ header{display:flex;align-items:center;justify-content:space-between;gap:20px;pa
     <span id="engineCharacters">HTML recibido: 0 caracteres</span>
     <span id="engineQuota">Cuota diaria: consultando…</span>
   </div>
-  <button class="btn" id="checkProvider" type="button" style="margin:12px 0 0">Comprobar clave NVIDIA (sin generar)</button>
+  <button class="btn" id="checkProvider" type="button" style="margin:12px 0 0">Comprobar conexión NVIDIA (sin generar)</button>
   <div id="engineLog" aria-live="polite" style="margin-top:12px;font:12px/1.55 ui-monospace,Consolas,monospace;white-space:pre-wrap;color:#526587;max-height:130px;overflow:auto">Sin actividad.</div>
 </div><button class="btn primary" style="width:100%;margin-top:18px" id="generate">✦ Generar mi web con Nemotron</button><p class="note" id="generationStatus" role="status" aria-live="polite"></p><div id="resultPanel" class="hidden"><h3>Tu primera web</h3><div class="footer-actions" style="flex-wrap:wrap"><button class="btn primary" id="downloadZip">⬇ Descargar proyecto ZIP</button><button class="btn" id="downloadHtml">HTML único</button><button class="btn" id="openPreview">Ver prototipo ↓</button><button class="btn" id="previewMobile">Vista móvil</button><button class="btn" id="previewDesktop">Vista escritorio</button></div><iframe id="preview" title="Vista previa aislada de la web generada" sandbox="allow-scripts" referrerpolicy="no-referrer" style="width:100%;height:600px;border:1px solid #dfe6f5;border-radius:12px;background:white;margin-top:14px"></iframe><p class="note">La vista previa ejecuta interacciones del navegador, pero formularios, reservas y pagos necesitan integración real para operar.</p><div class="field" style="margin-top:18px"><label for="changeRequest">¿Qué quieres mejorar?</label><textarea id="changeRequest" placeholder="Ej.: cambia el hero a una fotografía más grande y usa tonos crema"></textarea></div><button class="btn primary" id="refine">Aplicar cambios con IA</button></div><p class="note">Pulsa «Generar mi web» para solicitar el primer prototipo. Tu sesión privada de Cloudflare Access autoriza las peticiones automáticamente.</p></section>
 <div class="footer-actions" id="navigation"><button class="btn" id="back">← Atrás</button><button class="btn primary" id="next">Continuar →</button></div></main>
@@ -69,24 +69,23 @@ const getQuota=async()=>{
   $('engineQuota').textContent='Cuota diaria: sin comprobar';
 };
 const checkProvider=async()=>{
-  const b=$('checkProvider');
-  b.disabled=true;
-  updateEngine('checking','Verificando la clave en NVIDIA sin solicitar generación de texto.');
-  engineLog('Consultando catálogo de NVIDIA. No consume una generación.');
+  const b=$('checkProvider');b.disabled=true;
+  updateEngine('checking','Consultando la conexión y el catálogo de NVIDIA; no se genera texto.');
+  engineLog('Probando comunicación con NVIDIA. Consumo de generaciones: 0.');
   try{
     const r=await fetch('/api/provider-check',{credentials:'same-origin',cache:'no-store'});
-    let d;try{d=await r.json()}catch{throw Error('La sesión Zero Trust puede haber caducado. Recarga la página e inicia sesión.')}
-    if(d.credentialAccepted){
-      const suffix=d.modelListed?'El modelo Nemotron 3 Ultra figura en el catálogo.':'El modelo no se pudo confirmar en el catálogo.';
-      updateEngine('accepted','NVIDIA acepta la clave para consultar modelos. '+suffix+' La generación real todavía no está verificada.');
-      engineLog('NVIDIA respondió HTTP '+d.nvidiaStatus+' al catálogo. No se gastó cuota.');
+    let d;try{d=await r.json()}catch{throw Error('La sesión Zero Trust puede haber caducado. Recarga la página.')}
+    if(d.catalogReachable){
+      const suffix=d.modelListed?'Nemotron 3 Ultra aparece en el catálogo.':'No se ha encontrado Nemotron 3 Ultra en este catálogo.';
+      updateEngine('accepted','Conexión con el catálogo NVIDIA correcta (HTTP '+d.nvidiaStatus+'). '+suffix+' La autorización para generar webs aún no está comprobada.');
+      engineLog('NVIDIA respondió HTTP '+d.nvidiaStatus+'. Catálogo accesible. Clave de generación no verificada; cuota intacta.');
     }else{
-      updateEngine('error',d.nvidiaStatus===401?'NVIDIA rechazó la clave (401).':d.nvidiaStatus===403?'La clave carece de permisos para consultar el catálogo (403).':(d.error||'No se pudo comprobar el catálogo; la clave aún no está verificada.'));
-      engineLog('Comprobación fallida'+(d.nvidiaStatus?' (HTTP '+d.nvidiaStatus+')':'')+'. No se gastó cuota.');
+      updateEngine('error',(d.error||'No se pudo consultar el catálogo.')+(d.nvidiaStatus?' (HTTP '+d.nvidiaStatus+')':''));
+      engineLog('Diagnóstico: '+(d.diagnostic||'HTTP '+(d.nvidiaStatus||r.status))+'. No se consumió una generación.');
     }
   }catch(e){
     updateEngine('error','No se pudo completar la comprobación: '+e.message);
-    engineLog('Error de red o sesión antes de consultar NVIDIA.');
+    engineLog('Error de la sesión o comunicación con el Worker. No se gastó cuota.');
   }finally{b.disabled=false}
 };
 $('checkProvider').addEventListener('click',checkProvider);
