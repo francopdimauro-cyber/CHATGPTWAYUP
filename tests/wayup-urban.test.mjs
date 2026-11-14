@@ -10,13 +10,17 @@ const toggle=file('public/theme-toggle.js');
 const build=file('scripts/build.mjs');
 const bundle=file('dist/worker.js');
 
-test('WAYUP has an original art-directed urban title and wordmark',()=>{
+test('WAYUP uses its official disc and a contrasting display face for WEB',()=>{
  assert.match(html,/class="wc-urban-headline"/);
  assert.match(html,/class="wc-urban-overline"/);
  assert.match(html,/class="wc-urban-power"/);
- assert.match(html,/class="wc-urban-outline"/);
+ assert.match(html,/class="wc-web-display"/);
  assert.match(html,/class="wc-urban-accent"/);
- assert.match(html,/class="wc-wordmark"/);
+ assert.match(html,/class="wc-official-wayup-logo"/);
+ assert.doesNotMatch(html,/class="brand-icon"/);
+ assert.doesNotMatch(html,/class="wc-wordmark"/);
+ assert.match(html,/family=Anton/);
+ assert.match(file('public/wayup-official-brand.css'),/font-family:"Anton"/);
  assert.match(html,/Bricolage\+Grotesque/);
  assert.match(urban,/Bricolage Grotesque/);
  assert.match(urban,/@supports\(-webkit-text-stroke/);
@@ -47,4 +51,14 @@ test('strong typography does not alter generated-site HTML or Multi-IA code',()=
  assert.match(bundle,/--bg:#f3f6ff/);
  assert.match(bundle,/OPENROUTER_API_KEY/);
  assert.match(bundle,/handleStudio/);
+});
+
+test('official cobalt disc is embedded and no placeholder is shipped',()=>{
+ const source=file('public/official-wayup-logo-cobalt.base64.txt').trim();
+ assert.ok(source.startsWith('iVBORw0KGgo'),'expected PNG base64');
+ assert.ok(source.length>53000);
+ assert.match(bundle,/data:image\/png;base64,/);
+ assert.doesNotMatch(bundle,/__WAYUP_OFFICIAL_LOGO__/);
+ assert.match(bundle,/wc-web-display/);
+ assert.match(bundle,/wc-official-wayup-logo/);
 });
