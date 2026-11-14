@@ -67,3 +67,23 @@ Si la salida no es válida se guarda como borrador parcial en D1, con motivo de 
 En el modo de streaming, WebCreator genera la primera parte del HTML con un máximo de 24.000 tokens de salida. Si el archivo se corta por longitud o termina incompleto, solicita **hasta dos fragmentos adicionales** a NVIDIA (máximo 15.000 tokens cada uno), con el resumen del briefing y la cola del HTML ya generado. Intenta reanudar desde el último elemento terminado, sin regenerar todo desde cero. Cada llamada adicional **se contabiliza en D1** y queda sujeta al límite global de **10 solicitudes diarias** durante las pruebas. La interfaz muestra cuándo comienza cada continuación y la cuota restante. Si persiste el fallo, el borrador queda en D1 y puede descargarse.
 
 No hay garantía de que el modelo continúe de forma perfecta entre fragmentos; hay que revisar los límites de las secciones, los enlaces, el JavaScript y las imágenes antes de entregar una web comercial. En el caso de desconexión del móvil, el trabajo todavía depende de la sesión de streaming: una arquitectura duradera mediante Workflows queda pendiente.
+
+
+## WebCreator Multi-IA V1 (rama `feature/multi-ia-calidad`)
+
+Esta sección documenta la nueva versión de pruebas y **reemplaza para esta rama** la descripción anterior de límites NVIDIA. Ningún cambio en esta rama modifica WAYUP o WAY.APP.
+
+**Proveedor:** OpenRouter mediante `OPENROUTER_API_KEY` (secreto de Cloudflare; nunca en GitHub). El acceso privado por Zero Trust se conserva.
+
+**Modelos fijados exclusivamente a variantes gratuitas:**
+- `nvidia/nemotron-3-ultra-550b-a55b:free` construye HTML y hasta dos continuaciones (32.000 + 16.000 + 16.000 tokens máximos solicitados).
+- `nvidia/nemotron-3.5-super-vl:free` analiza una captura opcional PNG/JPG/WebP. Se reescala a JPEG y se envía como data URI para obtener una guía visual compacta.
+- `cohere/north-mini-code:free` revisa el HTML generado o realiza cambios solicitados, devolviendo JSON con reemplazos exactos verificables. Nunca sustituye a ciegas el documento: se descartan parches ambiguos, destructivos o inválidos.
+
+**Presupuesto:** tabla D1 `multi_ai_usage_events`, máximo interno de 50 solicitudes/día UTC y 10 llamadas por briefing/proyecto en un mismo día. Se carga un intento antes de enviar cada solicitud. Los límites externos de OpenRouter pueden ser inferiores o cambiar. La caché de HTML terminado evita volver a facturar una solicitud idéntica. La cuota de NVIDIA anterior (`daily_usage_v2`) no se reutiliza ni se borra.
+
+**Interfaz:** carga opcional de captura y botón `Revisar y reparar errores automáticamente`. Indicadores de fases SSE: `vision`, `vision-complete`, `accepted`, `progress`, `continuation`, `repair`, `complete` y `error`. Continúan activos recuperación de borradores y exportación ZIP.
+
+**Seguridad / límites funcionales:** HTTPS con Access, comprobación de identidad, origen y tipos de archivo. Los modelos gratuitos pueden registrar solicitudes; no enviar datos personales, imágenes de personas o material confidencial. El validador detecta problemas básicos, pero no prueba funcionalmente JS/CSS ni certifica seguridad; es imprescindible revisar la web antes de publicar. Las imágenes externas no se empaquetan. Las reservas y formularios requieren backend. La generación todavía depende del streaming del navegador; la reanudación duradera independiente de la pestaña no está implementada.
+
+**Estado de pruebas a 14 nov 2026:** sintaxis y fixtures de rutas/modelos/parches verificadas sin llamadas a IA; despliegue del Worker confirmado por Cloudflare. La comprobación real de inferencia con OpenRouter, el análisis de captura y la reparación IA extremo a extremo quedan pendientes de una ejecución de prueba. La conexión sin tokens se comprueba desde el botón `Comprobar clave OpenRouter`.
