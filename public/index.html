@@ -197,7 +197,21 @@ $('removeDesignReference').addEventListener('click',()=>{
  $('designReferencePreview').hidden=true;$('designReferencePreview').removeAttribute('src');$('removeDesignReference').hidden=true;
 });
 const briefing=()=>{const s=$('prompt').textContent;if(!s||s.length<50)throw new Error('Completa antes los pasos del formulario.');return s};
-const refresh=()=>{$('preview').srcdoc=currentHtml;$('resultPanel').classList.remove('hidden');stat('¡Web generada! Puedes verla, descargarla y pedir cambios.')};
+// Firefox may fail to display srcdoc previews on Access-protected origins. Use a sandboxed Blob.
+let previewObjectUrl='';
+const refresh=()=>{
+  if(!currentHtml)return;
+  const frame=$('preview');
+  const previousUrl=previewObjectUrl;
+  previewObjectUrl=URL.createObjectURL(new Blob([currentHtml],{type:'text/html;charset=utf-8'}));
+  // Preserve sandbox without allow-same-origin: generated JS cannot access the editor.
+  frame.removeAttribute('srcdoc');
+  frame.src=previewObjectUrl;
+  if(previousUrl)frame.addEventListener('load',()=>URL.revokeObjectURL(previousUrl),{once:true});
+  $('resultPanel').classList.remove('hidden');
+  stat('¡Web generada! Puedes verla, descargarla y pedir cambios.');
+};
+window.addEventListener('pagehide',()=>{if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl)});
 const streamRequest=async(path,payload)=>{
   const r=await fetch(path,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   if(!r.ok){
