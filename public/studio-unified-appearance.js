@@ -9,12 +9,11 @@
  const anchor=document.getElementById('wcUndo');
  if(!studio||!actions||!anchor||document.getElementById('wcStudioThemeControl'))return;
  const UI_KEY='wc-studio-unified-ui-v1';
- const THEME_KEY='wc-studio-unified-theme-v1';
+ // Reutilizar el tema global del constructor: una sola preferencia Claro/Oscuro.
  const read=(key,fallback)=>{try{return localStorage.getItem(key)||fallback}catch{return fallback}};
  const write=(key,value)=>{try{localStorage.setItem(key,value)}catch{}};
  const currentRoot=()=>document.documentElement.dataset.wcTheme==='light'?'light':'dark';
- let theme=read(THEME_KEY,currentRoot());
- if(theme!=='light'&&theme!=='dark')theme='dark';
+ let theme=currentRoot();
  let layout=read(UI_KEY,'premium')==='legacy'?'legacy':'premium';
  const row=document.createElement('div');row.className='wc-unified-top-actions';
  row.setAttribute('role','group');row.setAttribute('aria-label','Apariencia de WAYUP Studio');
@@ -39,8 +38,13 @@
    layoutButton.title=layout==='premium'?'Volver a la interfaz anterior sin perder cambios':'Activar interfaz profesional conservando proyectos y fuentes';
  }
  themeButton.addEventListener('click',()=>{
-   theme=theme==='dark'?'light':'dark';write(THEME_KEY,theme);paint();
+   const original=document.getElementById('wcThemeToggle');
+   if(original){original.click();theme=currentRoot();}
+   else{theme=theme==='dark'?'light':'dark';document.documentElement.dataset.wcTheme=theme;write('wc-theme-mode',theme);}
+   paint();
  });
+ const existingToggle=document.getElementById('wcThemeToggle');
+ if(existingToggle)existingToggle.addEventListener('click',()=>{queueMicrotask(()=>{theme=currentRoot();paint()})});
  layoutButton.addEventListener('click',()=>{
    layout=layout==='premium'?'legacy':'premium';write(UI_KEY,layout);paint();
  });
