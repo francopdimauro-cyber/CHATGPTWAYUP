@@ -28,3 +28,13 @@
 #wcStudio .wc-selected-info [aria-live]{min-height:0}
 @media(max-width:1000px){#wcStudio .wc-insert-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){#wcStudio .wc-selected-heading{gap:7px}#wcStudio .wc-selected-info{padding:11px!important}}
+
+#wcStudio #wcAddElementTop{
+  display:inline-flex!important;align-items:center;justify-content:center;
+  background:var(--s-accent-soft)!important;color:var(--s-accent)!important;
+  border:1px solid var(--s-accent)!important;border-radius:8px!important;
+  padding:8px 10px!important;min-height:35px;font-size:11px!important;font-weight:800!important;white-space:nowrap;
+}
+#wcStudio #wcAddElementTop:hover{background:var(--s-accent)!important;color:var(--s-accent-ink)!important}
+#wcStudio #wcSmartLinkPanel:not(.wc-hidden){display:flex;flex-direction:column;gap:10px}
+#wcStudio .wc-insert-grid button:focus-visible,#wcStudio .wc-selected-actions button:focus-visible{outline:2px solid var(--s-accent)!important;outline-offset:2px}
