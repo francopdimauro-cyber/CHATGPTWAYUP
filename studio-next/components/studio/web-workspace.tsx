@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
-  Save, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3 } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
-import { downloadBytes, htmlForExport, listSavedSites, patchSelectedElement, safePreview,
+import { addHtmlSection, attachLocalImage, editHtmlStructure, htmlLayerOutline,
+  downloadBytes, htmlForExport, listSavedSites, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
   type SiteBundle } from '@/lib/web-project-files';
 
@@ -93,7 +94,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [view,setView]=useState<View>('preview');
   const [device,setDevice]=useState<'desktop'|'mobile'>('desktop');
   const [selected,setSelected]=useState<number|null>(null);
-  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:''});
+  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:''});
+  const [layerSearch,setLayerSearch]=useState('');
   const [draftHtml,setDraftHtml]=useState('');
   const [past,setPast]=useState<string[]>([]);
   const [future,setFuture]=useState<string[]>([]);
@@ -109,13 +111,16 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const previewFrame=useRef<HTMLIFrameElement>(null);
   const selectedRef=useRef<HTMLElement|null>(null);
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
+  const layers=useMemo(()=>site?htmlLayerOutline(site.html):[],[site]);
+  const activeLayer=layers.find(layer=>layer.index===selected);
+  const filteredLayers=layers.filter(layer=>(layer.tag+' '+layer.label+' '+layer.id).toLowerCase().includes(layerSearch.toLowerCase())).slice(0,250);
   useEffect(()=>()=>preview?.revoke(),[preview]);
   useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
   const changeHtml=useCallback((html:string)=>{
     if(!site||html===site.html)return;
     setPast(old=>[...old.slice(-49),site.html]);setFuture([]);
     setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
-    setDraftHtml(html);setDirty(true);
+    setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;
   },[site]);
   const changeSite=(value:SiteBundle)=>{
     setSite(value);setDraftHtml(value.html);setPast([]);setFuture([]);setDirty(false);
@@ -184,6 +189,24 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       setNotice('Si no tienes acceso al generador integrado, puedes usar el WebCreator original e importar su ZIP.');
     }finally{setBusy(false);}
   }
+
+  function selectLayer(index:number){
+    const element=previewFrame.current?.contentDocument?.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');
+    if(!element)return;
+    selectedRef.current?.removeAttribute('data-wayup-selected');
+    element.dataset.wayupSelected='true';
+    selectedRef.current=element;
+    setSelected(index);
+    setSelectedValues({
+      text:element.children.length?'':element.textContent?.slice(0,5000)||'',
+      color:element.style.color||'#ffffff',
+      background:element.style.backgroundColor||'transparent',
+      fontSize:element.style.fontSize||'16px',
+      href:element.getAttribute('href')||'',
+      alt:element.getAttribute('alt')||''
+    });
+    element.scrollIntoView({block:'center',behavior:'smooth'});
+  }
   function previewLoaded(){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
@@ -192,20 +215,33 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
       if(!element)return;
       const index=Number(element.dataset.wayupEdit);
-      if(!Number.isSafeInteger(index))return;
-      selectedRef.current?.removeAttribute('data-wayup-selected');
-      element.dataset.wayupSelected='true';selectedRef.current=element;
-      setSelected(index);
-      setSelectedValues({
-        text:element.children.length?'':element.textContent?.slice(0,5000)||'',
-        color:element.style.color||'#ffffff',
-        background:element.style.backgroundColor||'transparent',
-        fontSize:element.style.fontSize||'16px'
-      });
+      if(Number.isSafeInteger(index))selectLayer(index);
     },true);
     doc.addEventListener('submit',event=>event.preventDefault(),true);
   }
-  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string})=>{
+  function modifyStructure(action:'duplicate'|'remove'|'up'|'down'){
+    if(!site||selected===null)return;
+    try{
+      changeHtml(editHtmlStructure(site.html,selected,action));
+      setNotice(action==='duplicate'?'Elemento duplicado en el HTML.':action==='remove'?'Elemento eliminado; puedes deshacerlo.':'Orden cambiado; puedes deshacerlo.');
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo modificar el bloque.');}
+  }
+  function insertSection(){
+    if(!site)return;
+    try{changeHtml(addHtmlSection(site.html));setNotice('Nueva sección añadida al documento real.');}
+    catch(error){setNotice(error instanceof Error?error.message:'No se pudo añadir la sección.');}
+  }
+  async function changeImage(file:File){
+    if(!site||selected===null)return;
+    try{
+      const image=attachLocalImage(site,selected,new Uint8Array(await file.arrayBuffer()));
+      setPast(old=>[...old.slice(-49),site.html]);setFuture([]);
+      setSite(image);setDraftHtml(image.html);setDirty(true);
+      setSelected(null);selectedRef.current=null;
+      setNotice('Imagen incorporada al proyecto y al ZIP. Guarda la versión para conservarla.');
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo adjuntar la imagen.');}
+  }
+  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string;href?:string;alt?:string})=>{
     if(!site||selected===null)return;
     try{
       const next=patchSelectedElement(site.html,selected,changes);
@@ -356,6 +392,29 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
+        {view==='preview'&&<aside className="hidden w-[232px] shrink-0 flex-col border-r border-stroke bg-panel xl:flex" aria-label="Navegador de capas HTML">
+          <div className="border-b border-stroke px-3 py-3">
+            <h2 className="flex items-center gap-2 text-[12px] font-semibold"><Layers3 size={14} className="text-brand"/> Estructura de la web</h2>
+            <input className={BASE+' mt-3 w-full'} value={layerSearch} onChange={e=>setLayerSearch(e.target.value)} placeholder="Buscar sección o elemento…" aria-label="Buscar capas"/>
+          </div>
+          <div className="scroll-subtle min-h-0 flex-1 overflow-y-auto px-2 py-2">
+            {filteredLayers.map(layer=><button key={layer.index} type="button"
+              onClick={()=>selectLayer(layer.index)} aria-pressed={selected===layer.index}
+              style={{paddingLeft:8+layer.depth*11}}
+              className={'mb-0.5 flex w-full items-center gap-2 rounded-md py-2 pr-2 text-left text-[10px] '+(selected===layer.index?'bg-brandsoft text-brand':'text-mist hover:bg-raised')}>
+              <span className="shrink-0 font-mono text-[9px] text-faint">{layer.tag.toLowerCase()}</span>
+              <span className="min-w-0 truncate">{layer.label}</span>
+            </button>)}
+            {!filteredLayers.length&&<p className="p-3 text-[11px] text-faint">No se encontraron capas.</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-1.5 border-t border-stroke p-2">
+            <button className={btn} onClick={insertSection} title="Añadir nueva sección"><FilePlus2 size={13}/> Sección</button>
+            <button className={btn} onClick={()=>modifyStructure('duplicate')} disabled={selected===null} title="Duplicar elemento"><Copy size={13}/> Duplicar</button>
+            <button className={btn} onClick={()=>modifyStructure('up')} disabled={selected===null} title="Mover arriba"><ArrowUp size={13}/> Subir</button>
+            <button className={btn} onClick={()=>modifyStructure('down')} disabled={selected===null} title="Mover abajo"><ArrowDown size={13}/> Bajar</button>
+            <button className={btn+' col-span-2'} onClick={()=>modifyStructure('remove')} disabled={selected===null} title="Eliminar y poder deshacer"><Trash2 size={13}/> Eliminar elemento</button>
+          </div>
+        </aside>}
         <div className="flex min-w-0 flex-1 flex-col bg-app">
           {view==='preview'?<>
             <div className="flex items-center justify-center gap-2 border-b border-stroke py-2">
@@ -385,7 +444,21 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-semibold">Inspector HTML</h2><span className="font-mono text-[9px] text-faint">DOM</span></div>
           <p className="mb-4 text-[11px] leading-5 text-mist">Haz clic en un elemento de la web para editar sus propiedades. Los cambios se reflejan en el HTML exportado.</p>
           {selected===null?<div className="rounded-lg border border-dashed border-stroke p-4 text-[11px] text-faint">Selecciona un texto, título o botón del Canvas.</div>:<>
-            <div className="mb-4 rounded-lg border border-stroke bg-elevated px-3 py-2 font-mono text-[10px] text-mist">Nodo #{selected}</div>
+            <div className="mb-4 rounded-lg border border-stroke bg-elevated px-3 py-2 font-mono text-[10px] text-mist">{activeLayer?.tag||'Nodo'} · #{selected}</div>
+            {activeLayer?.tag==='A'&&<label className="mb-3 block text-[11px] text-mist"><span className="flex items-center gap-1.5"><Link2 size={13}/> Destino del enlace</span>
+              <input className={BASE+' mt-1 w-full'} value={selectedValues.href} onChange={e=>setSelectedValues({...selectedValues,href:e.target.value})} placeholder="https://… o #seccion"/>
+              <button className={btn+' mt-2'} onClick={()=>patch({href:selectedValues.href})}>Guardar enlace</button>
+            </label>}
+            {activeLayer?.tag==='IMG'&&<div className="mb-4 rounded-lg border border-stroke p-3">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold"><ImagePlus size={15} className="text-brand"/> Sustituir imagen / logo</div>
+              <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Adjuntar imagen para reemplazar la seleccionada"
+                className="block w-full text-[10px] text-mist" onChange={e=>{const file=e.target.files?.[0];if(file)void changeImage(file);e.currentTarget.value='';}}/>
+              <p className="my-2 text-[10px] leading-4 text-faint">PNG, JPG, GIF o WebP. Máximo 5 MB. La imagen queda dentro del ZIP.</p>
+              <label className="block text-[11px] text-mist">Texto alternativo
+                <input className={BASE+' mt-1 w-full'} value={selectedValues.alt} onChange={e=>setSelectedValues({...selectedValues,alt:e.target.value})}/>
+              </label>
+              <button className={btn+' mt-2'} onClick={()=>patch({alt:selectedValues.alt})}>Guardar descripción</button>
+            </div>}
             <label className="mb-3 block text-[11px] text-mist">Contenido de texto
               <textarea className={BASE+' mt-1 min-h-[90px] w-full resize-y'} value={selectedValues.text} placeholder="Selecciona un elemento sin hijos" onChange={e=>setSelectedValues({...selectedValues,text:e.target.value})}/>
               <button className={btn+' mt-2'} onClick={()=>patch({text:selectedValues.text})}>Aplicar texto</button>
