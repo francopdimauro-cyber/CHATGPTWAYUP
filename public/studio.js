@@ -11,7 +11,7 @@ let device='desktop';
 const shell=`<div id="wcStudio" role="dialog" aria-modal="true" aria-label="WAYUP Studio, editor visual" aria-hidden="true">
  <header class="wc-top">
   <div class="wc-identity">
-   <span class="wc-studio-mark" aria-hidden="true">W<span>·</span></span>
+   <span class="wc-studio-mark" aria-hidden="true"><img id="wcStudioBrandLogo" alt="" width="42" height="42"></span>
    <div class="wc-identity-text"><div class="wc-brand">WAY<b>UP</b><em>STUDIO</em></div><span class="wc-identity-sub">CREATIVE WORKSPACE / V2</span></div>
   </div>
   <div class="wc-top-context"><span class="wc-context-led" aria-hidden="true"></span><div><small>PROYECTO EN EDICIÓN</small><strong id="wcHeaderTitle">Elige una web</strong></div></div>
@@ -128,6 +128,8 @@ const shell=`<div id="wcStudio" role="dialog" aria-modal="true" aria-label="WAYU
  </div>
 </div>`;
 document.body.insertAdjacentHTML('beforeend',shell);
+const officialLogo=document.querySelector('.wc-official-wayup-logo')?.getAttribute('src');
+if(officialLogo)document.getElementById('wcStudioBrandLogo').src=officialLogo;
 const header=document.querySelector('.wrap > header');
 if(header){const b=document.createElement('button');b.type='button';b.className='wc-open-btn';b.id='wcOpen';b.textContent='▦ Mis webs · Studio';header.append(b)}
 const actions=document.querySelector('#resultPanel .footer-actions');
