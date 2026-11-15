@@ -6,6 +6,7 @@ import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, Fi
   Save, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
+import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
 import { downloadBytes, htmlForExport, listSavedSites, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
@@ -15,7 +16,6 @@ type Stage='home'|'create'|'editor'|'agent'|'export';
 type View='preview'|'code';
 type BrowserEditorProps={
   onClose():void;
-  onAgent(site:SiteBundle):void;
 };
 const WEB_CREATOR='https://wayup-webcreator.francopdimauro.workers.dev/';
 const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
@@ -83,7 +83,7 @@ async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void):P
   if(!completed)throw Error('La generación terminó sin entregar un documento HTML completo.');
   return html;
 }
-export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
+export function WebWorkspace({onClose}:BrowserEditorProps){
   const [stage,setStage]=useState<Stage>('home');
   const [site,setSite]=useState<SiteBundle|null>(null);
   const [savedSites,setSavedSites]=useState<SiteBundle[]>([]);
@@ -153,6 +153,23 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
     }catch{setNotice('No fue posible guardar la web. Descarga una copia ZIP para no perder cambios.');}
     finally{setBusy(false);}
   }
+  function createLocalWeb(){
+    setFileError('');
+    try{
+      const html=starterHtml(form as Parameters<typeof starterHtml>[0]);
+      const draft=siteFromHtml(html,form.name.trim());
+      changeSite({...draft,source:'generated'});
+      setNotice('Web creada a partir de tu briefing. Puedes editar cada elemento, su código y exportar el ZIP.');
+    }catch(error){setFileError(error instanceof Error?error.message:'No se pudo crear la web.');}
+  }
+  const [webAIReady,setWebAIReady]=useState(false);
+  useEffect(()=>{
+    let active=true;
+    fetch('/studio-api/webcreator/status',{cache:'no-store',credentials:'same-origin'})
+      .then(r=>r.ok?r.json():null).then(v=>{if(active)setWebAIReady(v?.configured===true&&v?.authorized===true);})
+      .catch(()=>{if(active)setWebAIReady(false)});
+    return ()=>{active=false};
+  },[]);
   async function createWeb(){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
@@ -312,10 +329,13 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
           {editInputs('features','Funciones necesarias','WhatsApp, formulario, mapa, reservas…')}
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
-          <button disabled={busy} onClick={()=>void createWeb()} className={primary}>{busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generar y abrir en el editor</button>
-          <a href={WEB_CREATOR} target="_blank" rel="noopener noreferrer" className={btn}>WebCreator original <ChevronRight size={13}/></a>
+          <button disabled={busy} onClick={createLocalWeb} className={primary}><FilePlus2 size={15}/> Crear web editable desde el briefing</button>
+          <button disabled={!webAIReady||busy} onClick={()=>void createWeb()} className={btn} title={webAIReady?'Motor de IA autorizado':'Se requiere conexión privada de Cloudflare Access con WebCreator'}>
+            {busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generación IA {webAIReady?'':'(sin conexión)'}
+          </button>
+          <a href={WEB_CREATOR} target="_blank" rel="noopener noreferrer" className={btn}>Abrir WebCreator original <ChevronRight size={13}/></a>
         </div>
-        <p className="mt-4 text-[11px] leading-5 text-faint">La generación utiliza el motor original y sus cuotas. Si la autenticación privada del motor impide conectar desde esta preview, utiliza su enlace y vuelve a importar el HTML o ZIP.</p>
+        <p className="mt-4 text-[11px] leading-5 text-faint">El creador local no consume IA y entrega HTML editable real. La generación por IA solo se habilitará cuando Cloudflare Access autorice la conexión privada; puedes entrar al WebCreator original con tu cuenta y después importar su HTML o ZIP.</p>
       </div>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
