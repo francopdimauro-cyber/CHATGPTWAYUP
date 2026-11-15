@@ -14,13 +14,17 @@ for(const name of system)fonts.set(name,{name,source:'system',category:'system'}
 const picker=document.createElement('div');picker.className='wc-font-picker';picker.innerHTML=
 '<div class="wc-font-head"><input type="search" id="wcFontSearch" placeholder="Buscar entre todas las fuentes…" autocomplete="off" aria-label="Buscar fuentes"><span id="wcFontCount">Cargando catálogo…</span></div>'+
 '<div class="wc-font-filters" role="group" aria-label="Tipo de fuentes"><button type="button" data-font-filter="all" aria-pressed="true">Todas</button><button type="button" data-font-filter="google">Google</button><button type="button" data-font-filter="open">Open</button><button type="button" data-font-filter="local">Mi PC</button><button type="button" data-font-filter="uploaded">Importadas</button><button type="button" data-font-filter="system">Sistema</button></div>'+
-'<div id="wcFontResults" class="wc-font-results" role="listbox" aria-label="Familias tipográficas"></div>'+
+'<div id="wcFontResults" class="wc-font-results" role="listbox" aria-label="Familias tipográficas"></div><button type="button" id="wcFontMore" hidden>Ver más fuentes</button>'+
 '<div class="wc-font-actions"><button type="button" id="wcDetectFonts">Detectar fuentes de mi equipo</button><button type="button" id="wcImportFont">+ Importar fuente</button><input type="file" id="wcFontFile" accept=".woff2,.woff,.ttf,.otf" hidden></div>'+
+'<div class="wc-font-actions"><button type="button" id="wcDownloadWindowsFonts">Windows: exportar listado (.ps1)</button><button type="button" id="wcImportFontList">Importar lista (.json)</button><input type="file" id="wcFontList" accept=".json,application/json" hidden></div>'+
+'<label class="wc-font-remember"><input type="checkbox" id="wcRememberFonts"> Recordar nombres de mis fuentes en este navegador</label>'+
 '<div class="wc-font-manual"><input id="wcFontManual" type="text" placeholder="Nombre de fuente instalada…" maxlength="90" aria-label="Nombre de fuente local"><button type="button" id="wcAddFont">Añadir</button></div>'+
 '<p id="wcFontHelp" class="wc-font-help" role="status">Las fuentes de Google y Open se cargarán desde Internet. Las del ordenador solo se verán en equipos donde estén instaladas.</p>';
 select.parentElement.insertAdjacentElement('afterend',picker);
 select.classList.add('wc-font-native');
-let activeFilter='all',loaded=false,loading=false,loadedRemote=false;
+let activeFilter='all',loaded=false,loading=false,loadedRemote=false,visibleLimit=22;
+const windowsExporter='__WAYUP_WINDOWS_FONT_EXPORTER__';
+const rememberKey='wayup-studio-font-names-v1',rememberPref='wayup-studio-font-remember-v1';
 const normalize=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('es');
 function source(name){return fonts.get(name)?.source||null}
 function note(message){el('wcFontHelp').textContent=message}
@@ -60,7 +64,7 @@ function render(){
  values.sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
  const chosen=select.value;
  const root=el('wcFontResults');root.replaceChildren();
- for(const f of values.slice(0,22)){
+ for(const f of values.slice(0,visibleLimit)){
   const button=document.createElement('button');button.type='button';button.className='wc-font-item';button.setAttribute('role','option');
   button.setAttribute('aria-selected',String(chosen===f.name));button.dataset.font=f.name;
   const name=document.createElement('strong');name.textContent=f.name;
@@ -70,8 +74,9 @@ function render(){
   button.append(name,label,sample);root.append(button);
  }
  if(!values.length){const p=document.createElement('p');p.className='wc-font-noresults';p.textContent='No hay fuentes que coincidan. Prueba otra búsqueda.';root.append(p)}
- el('wcFontCount').textContent=values.length+' fuentes'+(values.length>22?' · mostrando 22':'')+(loadedRemote?' · catálogo en línea':' · selección básica');
- for(const f of values.slice(0,10))preview(f);
+ el('wcFontCount').textContent=values.length+' fuentes'+(values.length>visibleLimit?' · mostrando '+Math.min(visibleLimit,values.length):'')+(loadedRemote?' · catálogo en línea':' · selección básica');
+ el('wcFontMore').hidden=values.length<=visibleLimit;
+ for(const f of values.slice(Math.max(0,visibleLimit-22),Math.min(visibleLimit,values.length,Math.max(0,visibleLimit-22)+8)))preview(f);
 }
 async function loadRemote(){
  if(loaded||loading)return;loading=true;
@@ -82,7 +87,7 @@ async function loadRemote(){
   if(!Array.isArray(data))throw Error('Catálogo inválido');
   for(const f of data){
    if((f.type!=='google'&&f.type!=='other')||!/^[a-z0-9-]+$/.test(f.id||'')||!safeName(f.family))continue;
-   register({name:f.family,id:f.id,source:f.type==='google'?'google':'open',category:String(f.category||'sans-serif')});
+   register({name:f.family,id:f.id,source:f.type==='google'?'google':'open',category:String(f.category||'sans-serif'),weights:Array.isArray(f.weights)?f.weights.filter(x=>Number.isInteger(x)&&x>=100&&x<=900):[400]});
   }
   loadedRemote=true;note('Catálogo Fontsource activo. Fuentes de Google y otras bibliotecas abiertas. Las locales requieren permiso o importación.');
  }catch{
@@ -91,14 +96,15 @@ async function loadRemote(){
 }
 picker.addEventListener('click',event=>{
  const filter=event.target.closest('[data-font-filter]');
- if(filter){activeFilter=filter.dataset.fontFilter;picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===filter)));render();return}
+ if(filter){activeFilter=filter.dataset.fontFilter;visibleLimit=22;picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===filter)));render();return}
  const choice=event.target.closest('[data-font]');
  if(choice&&fonts.has(choice.dataset.font)){
   ensureOption(choice.dataset.font);select.value=choice.dataset.font;render();
   note('Fuente '+select.value+' seleccionada. Pulsa «Aplicar tipografía y estilos» para actualizar el elemento del Canvas.');
  }
 });
-el('wcFontSearch').addEventListener('input',render);
+el('wcFontSearch').addEventListener('input',()=>{visibleLimit=22;render()});
+el('wcFontMore').addEventListener('click',()=>{visibleLimit+=22;render();el('wcFontMore').focus()});
 el('wcFontSearch').addEventListener('focus',loadRemote,{once:true});
 picker.addEventListener('pointerdown',loadRemote,{once:true});
 el('wcDetectFonts').addEventListener('click',async()=>{
@@ -112,7 +118,7 @@ el('wcDetectFonts').addEventListener('click',async()=>{
   const families=[...new Set(found.map(f=>f.family).filter(safeName))];
   for(const name of families)register({name,source:'local',category:'system'});
   activeFilter='local';picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fontFilter==='local')));
-  note('Detectadas '+families.length+' familias de este dispositivo. El navegador pedirá permiso. No se envían a nuestros servidores.');
+  persistLocal();note('Detectadas '+families.length+' familias de este dispositivo. El navegador pedirá permiso. No se envían a nuestros servidores.');
   render();
  }catch(e){note('No se accedió a las fuentes: '+(e?.name==='NotAllowedError'?'permiso denegado.':String(e?.message||'error del navegador')))}
  finally{button.disabled=false}
@@ -121,7 +127,7 @@ el('wcAddFont').addEventListener('click',()=>{
  const name=el('wcFontManual').value.trim();
  if(!safeName(name)){note('Introduce un nombre de fuente válido (máximo 90 caracteres).');return}
  register({name,source:'local',category:'system'});
- select.value=name;activeFilter='local';render();note('Fuente local añadida. Solo aparecerá en dispositivos donde esté instalada.');
+ select.value=name;activeFilter='local';persistLocal();render();note('Fuente local añadida. Solo aparecerá en dispositivos donde esté instalada.');
 });
 el('wcImportFont').addEventListener('click',()=>el('wcFontFile').click());
 el('wcFontFile').addEventListener('change',async()=>{
@@ -171,6 +177,59 @@ function embed(doc,name){
  }
  const style=doc.createElement('style');style.setAttribute('data-wc-font-upload',name);style.textContent=css;doc.head.append(style);return true;
 }
+function persistLocal(){
+ try{
+  if(!el('wcRememberFonts').checked)return;
+  const names=[...fonts.values()].filter(f=>f.source==='local').map(f=>f.name).slice(0,7000);
+  localStorage.setItem(rememberKey,JSON.stringify(names));
+  localStorage.setItem(rememberPref,'1');
+ }catch{note('No se pudo guardar el listado local en este navegador.')}
+}
+function loadRemembered(){
+ try{
+  const remember=localStorage.getItem(rememberPref)==='1';
+  el('wcRememberFonts').checked=remember;
+  if(!remember)return;
+  const names=JSON.parse(localStorage.getItem(rememberKey)||'[]');
+  if(!Array.isArray(names)||names.length>7000)return;
+  for(const name of names)if(safeName(name))register({name,source:'local',category:'system'});
+ }catch{ /* Optional local storage is not available. */ }
+}
+el('wcRememberFonts').addEventListener('change',()=>{
+ try{
+  if(el('wcRememberFonts').checked){persistLocal();note('El catálogo de nombres se guardará solo en este navegador.')}
+  else{localStorage.removeItem(rememberKey);localStorage.removeItem(rememberPref);note('Se dejó de recordar el listado local. No se eliminaron fuentes del equipo.')}
+ }catch{note('El navegador no permite guardar preferencias locales.')}
+});
+el('wcDownloadWindowsFonts').addEventListener('click',()=>{
+ if(windowsExporter==='__WAYUP_WINDOWS_FONT_EXPORTER__'){note('El exportador estará disponible en la versión compilada.');return}
+ const blob=new Blob([windowsExporter],{type:'text/plain;charset=utf-8'});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download='wayup-exportar-fuentes.ps1';document.body.append(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),2000);
+ note('Ejecuta el script .ps1 en Windows PowerShell. Creará wayup-fuentes-windows.json en el Escritorio; después pulsa «Importar lista (.json)».');
+});
+el('wcImportFontList').addEventListener('click',()=>el('wcFontList').click());
+el('wcFontList').addEventListener('change',async()=>{
+ const file=el('wcFontList').files?.[0];el('wcFontList').value='';
+ if(!file)return;
+ if(!/\.json$/i.test(file.name)||file.size>512000){note('Selecciona el JSON exportado por WAYUP (máximo 500 KB).');return}
+ try{
+  const raw=await file.text(),payload=JSON.parse(raw.replace(/^\uFEFF/,''));
+  if(payload?.format!=='wayup-local-fonts-v1'||!Array.isArray(payload.families)||payload.families.length>7000)
+   throw Error('Formato de listado incompatible.');
+  let count=0;
+  for(const family of payload.families){
+   if(!safeName(family))continue;
+   register({name:family,source:'local',category:'system'});count++;
+  }
+  activeFilter='local';visibleLimit=22;
+  picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fontFilter==='local')));
+  persistLocal();render();
+  note('Importadas '+count+' familias instaladas en Windows. Son solo nombres; la web exportada necesitará esas fuentes en el equipo donde se abra, o fuentes incrustadas con licencia.');
+ }catch(e){note('No se pudo importar el catálogo: '+String(e.message||'archivo inválido'))}
+});
+loadRemembered();
 window.WebCreatorFontLibrary={
  has:name=>fonts.has(name),get:name=>fonts.get(name)||null,href:name=>urlFor(fonts.get(name)||{}),ensureOption,
  hydrate,embed,refresh:render
