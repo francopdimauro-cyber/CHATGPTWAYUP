@@ -13,6 +13,7 @@ insert.innerHTML=`<summary><span>＋</span> Insertar elementos <b aria-hidden="t
 <p class="wc-insert-intro">Añade elementos a la sección seleccionada. Los cambios forman parte del HTML exportado.</p>
 <label>Texto para el botón o tarjeta<input id="wcInsertText" type="text" maxlength="150" placeholder="Reserva tu plaza"></label>
 <label>URL del botón o imagen externa<input id="wcInsertUrl" type="text" maxlength="1400" placeholder="https://... / #seccion"></label>
+<label>Posición<select id="wcInsertPosition"><option value="after">Después del elemento seleccionado</option><option value="section">Al final de la sección</option></select></label>
 <div class="wc-insert-grid" role="group" aria-label="Insertar formas y recursos">
 <button type="button" data-wc-insert="button">↗ Botón<small>Conexión externa</small></button>
 <button type="button" data-wc-insert="rectangle">▭ Rectángulo<small>Forma editable</small></button>
@@ -46,8 +47,11 @@ const caption=n=>String(n?.getAttribute('aria-label')||n?.getAttribute('title')|
 const message=(v,err=false)=>{el('wcStatus').textContent=v;el('wcStatus').dataset.error=String(err)};
 function type(n){
  if(!n)return 'Sin selección';
- const shape=n.getAttribute('data-wc-kind');if(shape&&labels[shape])return labels[shape];
  const href=n.getAttribute('href')||'';
+ if(n.tagName==='A'&&/(?:^|\/\/)(?:wa\.me|api\.whatsapp\.com|www\.whatsapp\.com)\//i.test(href))return 'Botón de WhatsApp';
+ if(n.tagName==='A'&&/^mailto:/i.test(href))return 'Botón de correo';
+ if(n.tagName==='A'&&/^tel:/i.test(href))return 'Botón de llamada';
+ const shape=n.getAttribute('data-wc-kind');if(shape&&labels[shape])return labels[shape];
  if(n.tagName==='A'){
   if(/(?:^|\/\/)(?:wa\.me|api\.whatsapp\.com|www\.whatsapp\.com)\//i.test(href))return 'Botón de WhatsApp';
   if(/^mailto:/i.test(href))return 'Botón de correo';
@@ -117,6 +121,7 @@ el('wcSmartLinkApply').addEventListener('click',()=>{
  const n=studio.getSelection();if(!n||!['A','BUTTON'].includes(n.tagName))return message('Selecciona primero un botón o enlace.',true);
  const kind=el('wcSmartLinkKind').value,href=transform(kind,el('wcSmartLinkValue').value);
  if(!href)return message('Introduce una dirección, un email, número o #sección válidos.',true);
+ if(href.startsWith('#')&&!studio.getDocument()?.getElementById(href.slice(1)))return message('La sección '+href+' no existe en esta web.',true);
  if(n.tagName==='BUTTON'&&n.closest('form')&&!confirm('Este botón forma parte de un formulario. Al convertirlo en enlace dejará de enviarlo. ¿Continuar?'))return;
  let target=n;const blank=el('wcSmartLinkTab').checked&&['web','whatsapp'].includes(kind)&&/^https?:\/\//i.test(href);
  const changed=studio.change(()=>{
@@ -135,10 +140,17 @@ el('wcSmartLinkApply').addEventListener('click',()=>{
 function insertElement(kind){
  const doc=studio.getDocument();if(!doc)return message('Abre primero un proyecto.',true);
  const txt=el('wcInsertText').value.trim(),raw=el('wcInsertUrl').value.trim();
- const parent=studio.getSelection()?.closest('section,article,main,header,footer')||doc.querySelector('main')||doc.body;
+ const current=studio.getSelection();
+ const parent=current?.closest('section,article,main,header,footer')||doc.querySelector('main')||doc.body;
+ let after=current;
+ if(after&&['SPAN','A','BUTTON','SMALL','STRONG','EM','I','B'].includes(after.tagName)){
+  after=after.closest('h1,h2,h3,h4,h5,h6,p,li,div,section,article')||after;
+ }
+ const canInsertAfter=Boolean(after?.parentElement&&after!==parent&&parent.contains(after));
+
  let n;
  if(kind==='image'){
-  const href=validHref(raw);if(!/^https?:\/\//.test(href))return message('Escribe una URL de imagen https:// válida.',true);
+  const href=validHref(raw);if(!/^https:\/\//.test(href))return message('Escribe una URL de imagen https:// válida.',true);
   n=doc.createElement('img');n.src=href;n.alt=txt||'Imagen añadida';n.loading='lazy';n.style.cssText='display:block;max-width:100%;width:340px;height:auto;margin:20px auto;object-fit:contain';
  }else if(kind==='button'){
   n=doc.createElement('a');n.textContent=txt||'Nuevo botón';n.setAttribute('data-wc-kind','button');
@@ -153,7 +165,8 @@ function insertElement(kind){
   if(kind==='card'){n.textContent=txt||'Nueva tarjeta';n.style.cssText='display:block;box-sizing:border-box;width:min(100%,420px);padding:24px;background:#f6f8ff;color:#18284e;border:1px solid #cdd8ea;border-radius:16px;margin:20px auto;font:500 16px/1.5 system-ui,sans-serif'}
   if(kind==='badge'){n.textContent=txt||'Nueva etiqueta';n.style.cssText='display:inline-block;padding:7px 16px;background:#e2efff;color:#153d78;border-radius:999px;margin:12px;font:700 13px/1.4 system-ui,sans-serif'}
  }
- const done=studio.change(()=>parent.append(n),(labels[kind]||'Elemento')+' añadido. Guarda el proyecto.');
+ const mode=el('wcInsertPosition').value;
+ const done=studio.change(()=>{if(mode==='after'&&canInsertAfter)after.after(n);else parent.append(n)},(labels[kind]||'Elemento')+' añadido. Guarda el proyecto.');
  if(done){studio.selectNode(n);insert.open=false;if(kind==='button'){links.open=true;links.scrollIntoView({block:'nearest',behavior:'smooth'})}message((labels[kind]||'Elemento')+' añadido. Puedes editar sus propiedades.')}
 }
 insert.addEventListener('click',e=>{const kind=e.target.closest('[data-wc-insert]')?.dataset.wcInsert;if(kind&&labels[kind])insertElement(kind)});
