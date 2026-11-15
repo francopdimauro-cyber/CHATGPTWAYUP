@@ -26,6 +26,8 @@ export function StudioApp() {
   const [mobileInspector, setMobileInspector] = useState(false);
   const [savedContent, setSavedContent] = useState(JSON.stringify(DEMO_PROJECT));
   const [notice, setNotice] = useState('');
+  const [theme, setTheme] = useState<'light'|'dark'>('dark');
+  const [workspace, setWorkspace] = useState<'web'|'agent'|null>(null);
   const [contextSpot, setContextSpot] = useState<ContextSpot | null>(null);
   const internalClipboard = useRef('');
   const doc = history.present;
@@ -37,7 +39,13 @@ export function StudioApp() {
 
   useEffect(()=>{
     if(window.innerWidth<=1024)setNavCollapsed(true);
+    const stored=localStorage.getItem('wayup-studio-theme');
+    if(stored==='light'||stored==='dark')setTheme(stored);
   }, []);
+  useEffect(()=>{
+    document.documentElement.dataset.studioTheme=theme;
+    try { localStorage.setItem('wayup-studio-theme',theme); } catch {}
+  },[theme]);
 
   useEffect(()=>{
     const restored = loadLocalDemo(DEMO_PROJECT);
@@ -165,6 +173,8 @@ export function StudioApp() {
     <TopBar project={doc} dirty={dirty} saving={false} canUndo={history.past.length>0} canRedo={history.future.length>0}
       onUndo={undo} onRedo={redo} onSave={onSave}
       canCopy={Boolean(selectedId && doc.elements[selectedId])}
+      theme={theme} onTheme={()=>setTheme(v=>v==='dark'?'light':'dark')}
+      onCreateWeb={()=>setWorkspace('web')} onCreateAgent={()=>setWorkspace('agent')}
       onCopy={()=>void runCommand('copy')} onCut={()=>void runCommand('cut')}
       onPaste={()=>void runCommand('paste')} onDuplicate={()=>void runCommand('duplicate')} onToggleLibrary={()=>{setNavCollapsed(false);setMobileNav(v=>!v)}} onToggleInspector={()=>setMobileInspector(v=>!v)}/>
     <Navigator doc={doc} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
