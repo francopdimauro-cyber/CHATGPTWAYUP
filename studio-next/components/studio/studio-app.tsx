@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSS
 import { Circle, Command } from 'lucide-react';
 import { Canvas } from './canvas';
 import { WebWorkspace } from './web-workspace';
-import { siteZip, type SiteBundle } from '@/lib/web-project-files';
 import { EditorContextMenu, type ContextSpot, type EditorCommand } from './context-menu';
 import { serializeStudioLayer, parseStudioLayer, cloneStudioLayer } from '@/lib/studio-clipboard';
 import { Inspector } from './inspector';
@@ -167,35 +166,6 @@ export function StudioApp() {
   const onStyle = (id: string, patch: Partial<ElementStyle>) => dispatch({type:'estilo',elementId:id,patch});
   const onElement = (id: string, patch: Partial<StudioElement>) => dispatch({type:'modificar',elementId:id,patch});
   const onMove = (id: string, x: number, y: number) => dispatch({type:'estilo',elementId:id,patch:{x,y}});
-  function onWebAgent(site:SiteBundle) {
-    let bytes:Uint8Array;
-    try{bytes=siteZip(site);}catch{setNotice('No se pudo preparar el ZIP del proyecto para su agente.');return;}
-    const copy=new Uint8Array(bytes.length);copy.set(bytes);
-    const file=new File([copy.buffer],site.name.toLowerCase().replace(/[^a-z0-9-]/g,'-')+'-web.zip',{type:'application/zip'});
-    setWebWorkspaceOpen(false);
-    window.setTimeout(()=>{
-      const trigger=document.getElementById('wayup-agent-open');
-      if(!(trigger instanceof HTMLButtonElement)){
-        setNotice('El módulo de agentes no está disponible. Puedes volver al proyecto y exportar su ZIP.');return;
-      }
-      trigger.click();
-      let attempts=0;
-      function fill(){
-        const element=document.getElementById('wa-auto-zip');
-        if(element instanceof HTMLInputElement){
-          try{
-            const transfer=new DataTransfer();transfer.items.add(file);
-            element.files=transfer.files;
-            element.dispatchEvent(new Event('change',{bubbles:true}));
-            setNotice('Web preparada para el agente. Inicia sesión y confirma el dominio antes de generarlo.');
-          }catch{setNotice('No se pudo adjuntar el ZIP automáticamente. Impórtalo en el panel de agentes.');}
-        }else if(attempts++<18){window.setTimeout(fill,150);}
-        else setNotice('Abre el módulo de agentes y carga el ZIP de la web para continuar.');
-      }
-      fill();
-    },0);
-  }
-
   const onSelect = (id: string | null) => {
     setSelectedId(id);setMobileNav(false);setContextSpot(null);
   };
@@ -215,7 +185,7 @@ export function StudioApp() {
       onPaste={()=>void runCommand('paste')} onDuplicate={()=>void runCommand('duplicate')} onToggleLibrary={()=>{setNavCollapsed(false);setMobileNav(v=>!v)}} onToggleInspector={()=>setMobileInspector(v=>!v)}/>
     <Navigator doc={doc} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
     <Canvas doc={doc} mode={mode} device={device} zoom={zoom} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} onMode={setMode} onDevice={setDevice} onZoom={setZoom} onMove={onMove}/>
-    {webWorkspaceOpen && <WebWorkspace onClose={()=>setWebWorkspaceOpen(false)} onAgent={onWebAgent}/>}
+    {webWorkspaceOpen && <WebWorkspace onClose={()=>setWebWorkspaceOpen(false)}/>}
     <EditorContextMenu spot={contextSpot} canUndo={history.past.length>0} canRedo={history.future.length>0}
       canEdit={mode==='diseno'} onClose={closeContextMenu} onAction={runCommand}/>
     <Inspector doc={doc} selectedId={selectedId} tab={inspectorTab} onTab={setInspectorTab} onStyle={onStyle} onElement={onElement} mobileOpen={mobileInspector} onCloseMobile={()=>setMobileInspector(false)}/>
