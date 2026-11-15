@@ -60,12 +60,13 @@ async function studioNextBody(request){
   if(size<4)throw Object.assign(Error('ZIP inválido.'),{status:400});
   const output=new Uint8Array(size);let cursor=0;
   for(const part of parts){output.set(part,cursor);cursor+=part.length;}
-  if(!(output[0]===80&&output[1]===75&&[3,5,7].includes(output[2])&&[4,6,8].includes(output[3])))
+  if(!(output[0]===80&&output[1]===75&&((output[2]===3&&output[3]===4)||(output[2]===5&&output[3]===6)||(output[2]===7&&output[3]===8))))
     throw Object.assign(Error('Se esperaba un ZIP real.'),{status:400});
   return output;
 }
 function studioNextObjectKey(owner,id,version){
-  return 'studio/'+owner+'/'+id+'/v'+version+'.zip';
+  // Sufijo aleatorio: dos PUT concurrentes nunca comparten objeto, aunque apunten a la misma versión.
+  return 'studio/'+owner+'/'+id+'/v'+version+'-'+crypto.randomUUID()+'.zip';
 }
 function studioNextProjectName(request){
   let value='Proyecto sin título';
