@@ -45,4 +45,33 @@ const text = historyReducer(redone,{type:'modificar',elementId:'cta',patch:{text
 assert.equal(text.present.elements.cta.href,'#contacto','El contenido no altera el destino del botón');
 const unknown = historyReducer(text,{type:'modificar',elementId:'nodo-desconocido',patch:{text:'N/A'}});
 assert.equal(unknown,text,'Un nodo desconocido no modifica el estado');
+
+const { cloneStudioLayer, serializeStudioLayer, parseStudioLayer } = await loadTS('lib/studio-clipboard.ts');
+const origin = DEMO_PROJECT.elements.cta;
+const serialized = serializeStudioLayer(origin);
+const copied = parseStudioLayer(serialized);
+assert.ok(copied,'El portapapeles debe aceptar una capa válida');
+assert.equal(copied.text,origin.text);
+assert.equal(copied.style.background,origin.style.background);
+const cloned = cloneStudioLayer(copied,'inicio','copied-cta',24);
+assert.equal(cloned.style.x,24,'Duplicar desplaza la posición para distinguir capas');
+const inserted = historyReducer(initial,{type:'insertar',element:cloned,afterId:'cta'});
+assert.ok(inserted.present.elements['copied-cta'],'Pegar debe crear una capa real');
+assert.equal(inserted.present.sections.find(s=>s.id==='inicio').children.includes('copied-cta'),true);
+const deleted = historyReducer(inserted,{type:'eliminar',elementId:'copied-cta'});
+assert.equal(deleted.present.elements['copied-cta'],undefined,'Cortar/eliminar retira la capa');
+assert.equal(deleted.present.sections.find(s=>s.id==='inicio').children.includes('copied-cta'),false);
+const undoDelete = historyReducer(deleted,{type:'deshacer'});
+assert.ok(undoDelete.present.elements['copied-cta'],'Deshacer debe restaurar una capa eliminada');
+const redoDelete = historyReducer(undoDelete,{type:'rehacer'});
+assert.equal(redoDelete.present.elements['copied-cta'],undefined,'Rehacer vuelve a eliminar');
+const reordered = historyReducer(inserted,{type:'ordenar',elementId:'copied-cta',direction:-1});
+assert.notDeepEqual(reordered.present.sections.find(s=>s.id==='inicio').children,
+  inserted.present.sections.find(s=>s.id==='inicio').children,'Traer/enviar debe reordenar');
+assert.equal(historyReducer(reordered,{type:'deshacer'}).present,inserted.present);
+assert.equal(parseStudioLayer('texto cualquiera'),null,'No pegamos texto arbitrario como capa');
+const malicious = serialized.replace('WAYAPP_STUDIO_LAYER_V1', 'OTRO_TIPO');
+assert.equal(parseStudioLayer(malicious),null);
+console.log('Correcto: copiar, pegar, cortar, duplicar, reordenar y deshacer cambios de capas.');
+
 console.log(`Correcto: ${paths.length} archivos TypeScript/TSX, 21 estilos, historial, acciones y enlaces.`);
