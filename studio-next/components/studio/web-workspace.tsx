@@ -187,6 +187,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       setSavedSites(await listSavedSites());
       await refreshCloud();
       setNotice('Proyecto guardado de forma privada en la nube · versión '+remote.cloud?.version+'.');
+      if(!site.cloud&&!site.agent)setPostSavePrompt(true);
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo guardar en la nube. La copia local permanece disponible.');}
     finally{setBusy(false);}
   }
@@ -200,13 +201,36 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     }catch(error){setFileError(error instanceof Error?error.message:'No se pudo crear la web.');}
   }
   const [webAIReady,setWebAIReady]=useState(false);
-  useEffect(()=>{
-    let active=true;
-    fetch('/studio-api/webcreator/status',{cache:'no-store',credentials:'same-origin'})
-      .then(r=>r.ok?r.json():null).then(v=>{if(active)setWebAIReady(v?.configured===true&&v?.authorized===true);})
-      .catch(()=>{if(active)setWebAIReady(false)});
-    return ()=>{active=false};
+  const [webAIReason,setWebAIReason]=useState('');
+  const [webLoginOpen,setWebLoginOpen]=useState(false);
+  const [webEmail,setWebEmail]=useState('');
+  const [webPassword,setWebPassword]=useState('');
+  const [webLoginBusy,setWebLoginBusy]=useState(false);
+  const refreshWebAI=useCallback(async()=>{
+    try{
+      const response=await fetch('/studio-api/webcreator/status',{cache:'no-store',credentials:'same-origin'});
+      const data=await response.json().catch(()=>null);
+      setWebAIReady(response.ok&&data?.configured===true&&data?.authorized===true);
+      setWebAIReason(String(data?.reason||'').slice(0,240));
+    }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar la conexión con WebCreator.');}
   },[]);
+  useEffect(()=>{if(stage==='create')void refreshWebAI()},[stage,refreshWebAI]);
+  async function loginForEngines(event:React.FormEvent){
+    event.preventDefault();setWebLoginBusy(true);setFileError('');
+    try{
+      const response=await fetch('/studio-api/agents/auth/login',{
+        method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({email:webEmail.trim(),password:webPassword})
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok||!data.user?.id)throw Error(data.error||'No se pudo iniciar sesión.');
+      setWebPassword('');setWebLoginOpen(false);
+      setNotice('Sesión iniciada. El editor y Agent Builder comparten tu identidad.');
+      await refreshWebAI();void refreshCloud();
+    }catch(error){setFileError(error instanceof Error?error.message:'Error de inicio de sesión.');}
+    finally{setWebLoginBusy(false);}
+  }
   async function createWeb(){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
@@ -334,10 +358,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     setSite(attached);setDirty(true);
     setNotice('El asistente se ha vinculado a esta web. Se añadirá al ZIP y HTML exportados.');
     try{
-      const saved=await saveSite(attached);
+      let saved=attached;
+      if(attached.cloud)saved=await cloudSaveSite(saved);
+      saved=await saveSite(saved);
       setSite(saved);setDirty(false);
       setSavedSites(await listSavedSites());
-      setNotice('Agente vinculado y guardado. Descarga web + agente.');
+      setNotice(saved.cloud?'Agente vinculado y guardado con la web en Cloudflare.':'Agente vinculado y guardado en este dispositivo.');
     }catch{
       setNotice('Agente vinculado en esta sesión, pero no se pudo guardar en este dispositivo. Descarga el ZIP ahora.');
     }
@@ -463,7 +489,22 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           </button>
           <a href={WEB_CREATOR} target="_blank" rel="noopener noreferrer" className={btn}>Abrir WebCreator original <ChevronRight size={13}/></a>
         </div>
-        <p className="mt-4 text-[11px] leading-5 text-faint">El creador local no consume IA y entrega HTML editable real. La generación por IA solo se habilitará cuando Cloudflare Access autorice la conexión privada; puedes entrar al WebCreator original con tu cuenta y después importar su HTML o ZIP.</p>
+        <div className="mt-4 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">
+          <div className="flex items-center justify-between gap-2">
+            <strong>Conexión del generador IA</strong>
+            <button className={btn} onClick={()=>void refreshWebAI()}>Comprobar conexión</button>
+          </div>
+          <p className="mt-2">{webAIReady?'WebCreator conectado y autorizado.':webAIReason||'Inicia sesión para comprobar el generador.'}</p>
+          {!webAIReady&&<button className={btn+' mt-3'} onClick={()=>setWebLoginOpen(v=>!v)}>
+            <Bot size={14}/> Acceder con mi cuenta
+          </button>}
+          {webLoginOpen&&<form onSubmit={e=>void loginForEngines(e)} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <input type="email" required autoComplete="username" className={BASE} placeholder="Correo de Agent Builder" value={webEmail} onChange={e=>setWebEmail(e.target.value)}/>
+            <input type="password" required autoComplete="current-password" className={BASE} placeholder="Contraseña" value={webPassword} onChange={e=>setWebPassword(e.target.value)}/>
+            <button type="submit" disabled={webLoginBusy} className={primary}>{webLoginBusy?'Accediendo…':'Iniciar sesión'}</button>
+          </form>}
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-faint">El creador local no consume IA. La generación privada requiere autorización de Cloudflare; si falla, puedes continuar con el editor y tus agentes sin perder proyectos.</p>
       </div>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
