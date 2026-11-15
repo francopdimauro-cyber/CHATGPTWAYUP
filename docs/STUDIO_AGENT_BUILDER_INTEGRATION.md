@@ -42,3 +42,13 @@ No altera el código, usuarios, sesiones ni bases de datos de los Workers \`agen
 5. Despliegue de web y Worker de agente con aislamiento por cliente, sin copiar claves ni mezclar cuotas.
 
 **No activar API keys de terceros ni ejecutar despliegues adicionales sin comprobar límites gratuitos y permisos.**
+
+## Flujo automático de agente y embeber (15-11-2026)
+
+En la preview ya funciona el módulo "Generación automática: web + agente" desde el panel de Studio. El dueño inicia sesión, selecciona un ZIP de WebCreator terminado y un dominio HTTPS. Tras confirmar explícitamente, Studio extrae el contexto textual de index.html sin ejecutar scripts, pide una configuración de IA, crea el agente nuevo, limita su permiso a generación de texto, lo activa, publica un chat para el dominio y descarga el ZIP con el widget insertado automáticamente. Si una fase falla, conserva el identificador del agente/chat creado durante esa sesión para reintentar sin duplicarlo.
+
+IMPORTANTE: esta primera versión aún requiere seleccionar el ZIP. El Canvas de Studio Next es una demo de guardado local; todavía no está conectado a los proyectos D1/R2 reales. El objetivo final es que el primer guardado de una web REAL pregunte "¿Quieres asociar un agente IA?", y el botón "Sí" llame al mismo orquestador con el HTML guardado en el servidor, sin importar ZIP manualmente ni cambiar de aplicación.
+
+AISLAMIENTO PENDIENTE: hoy este flujo automático utiliza un agente y chat alojados en el Agent Builder central. Para garantizar Worker y SQLite independientes por cada web es necesario integrar el despliegue de agente individual, con token administrativo guardado como secreto solo en el backend y clave de IA específica para el Worker. No afirmar que esto ya se ha hecho.
+
+SEGURIDAD: ninguna operación se ejecuta antes de confirmar; se informa de que el texto de la web se enviará al proveedor de IA configurado; no se ejecuta HTML del cliente, y el asistente carece de acciones de reservas, pagos o emails.
