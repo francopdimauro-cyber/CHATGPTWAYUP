@@ -220,7 +220,8 @@ export function safeSiteLink(value:string):boolean{
   if(raw.startsWith('/')&&!raw.startsWith('//'))return !/\\/.test(raw);
   if(/^(mailto:|tel:)/i.test(raw))return !/[<>\s]/.test(raw);
   if(/^https:\/\//i.test(raw)){try{const url=new URL(raw);return Boolean(url.hostname)&&!url.username&&!url.password;}catch{return false}}
-  return safePath(raw.split(/[?#]/)[0])&&!raw.startsWith('//');
+  if(/^[a-z][a-z0-9+.-]*:/i.test(raw)||raw.includes(':')||raw.startsWith('//')||/\\/.test(raw))return false;
+  return safePath(raw.split(/[?#]/)[0])&&!/[<>"']/.test(raw);
 }
 export function detectSafeImage(bytes:Uint8Array):{mime:string;ext:string}|null{
   if(bytes.byteLength<12||bytes.byteLength>5_000_000)return null;
@@ -240,7 +241,7 @@ export function attachLocalImage(site:SiteBundle,index:number,data:Uint8Array):S
   const file='wayup-media/'+crypto.randomUUID()+'.'+kind.ext;
   if(!safePath(file))throw Error('Ruta de recurso inválida.');
   return {...site,html:patchSelectedElement(site.html,index,{src:file}),
-    assets:{...site.assets,[file]:new Uint8Array(data)},updatedAt:Date.now()};
+    assets:{...site.assets,[(site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'')+file]:new Uint8Array(data)},updatedAt:Date.now()};
 }
 function serializeEditedHtml(doc:Document):string{
   return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
