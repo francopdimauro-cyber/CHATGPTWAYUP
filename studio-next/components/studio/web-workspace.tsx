@@ -1,0 +1,401 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
+  FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
+  Save, Search, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
+import { parseColorCode } from '@/lib/color-codes';
+import { downloadBytes, listSavedSites, patchSelectedElement, safePreview,
+  saveSite, siteFromHtml, siteFromZip, siteWithNewHtml, siteZip,
+  type SiteBundle } from '@/lib/web-project-files';
+
+type Stage='home'|'create'|'editor'|'agent'|'export';
+type View='preview'|'code';
+type BrowserEditorProps={
+  onClose():void;
+  onAgent(site:SiteBundle):void;
+};
+const WEB_CREATOR='https://wayup-webcreator.francopdimauro.workers.dev/';
+const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+  .replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').slice(0,64)||'web';
+const BASE='rounded-xl border border-stroke bg-elevated px-3 py-2.5 text-[12px] text-ink outline-none focus:border-brand';
+const btn='inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border border-stroke bg-elevated px-3 text-[11px] font-semibold text-ink transition hover:border-brand/50 hover:bg-raised disabled:opacity-40';
+const primary='inline-flex min-h-[37px] items-center justify-center gap-2 rounded-lg bg-[#2855ee] px-4 text-[11px] font-bold text-white shadow-sm hover:bg-[#3e69f5] disabled:opacity-50';
+const steps=[['01','Crear web'],['02','Editar web'],['03','Agente IA'],['04','Exportar']] as const;
+function fileByte(bytes:Uint8Array):string{
+  if(bytes.length>2_000_000)throw Error('El archivo HTML supera 2 MB.');
+  return strFromU8(bytes);
+}
+function briefFrom(form:Record<string,string>):string{
+  return [
+    'CREA UNA WEB PROFESIONAL COMPLETA Y EDITABLE PARA ESTE NEGOCIO.',
+    'Negocio: '+form.name,
+    'Sector: '+form.industry,
+    'Público objetivo: '+form.audience,
+    'Objetivo principal: '+form.goal,
+    'Dirección de arte: '+form.style,
+    'Servicios, contenido y valores reales: '+form.services,
+    'Datos proporcionados: '+form.contact,
+    'Funciones solicitadas: '+form.features,
+    'Marca y colores de referencia: '+form.palette,
+    'REQUISITOS DEL EDITOR WAYUP: utiliza secciones semánticas con data-wc-section estable,',
+    'títulos reales, navegación y botones funcionales con anclas válidas.',
+    'Entrega HTML5 completo y responsivo, sin scripts ni imágenes externas inventadas.'
+  ].join('\n');
+}
+async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void):Promise<string>{
+  const res=await fetch('/studio-api/webcreator/generate-stream',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',cache:'no-store',body:JSON.stringify({briefing})
+  });
+  if(!res.ok){
+    const data=await res.json().catch(()=>({}));
+    throw Error(data.error||'El motor de generación no está disponible en Studio (HTTP '+res.status+').');
+  }
+  if(!res.body)throw Error('El motor de generación no devolvió un flujo de datos.');
+  const reader=res.body.getReader(),decoder=new TextDecoder();
+  let carry='',html='',completed=false,event='message';
+  function handle(raw:string){
+    let payload='';
+    for(const line of raw.split('\n')){
+      if(line.startsWith('event:'))event=line.slice(6).trim();
+      if(line.startsWith('data:'))payload+=line.slice(5).trim();
+    }
+    if(!payload)return;
+    let data:Record<string,unknown>;
+    try{data=JSON.parse(payload) as Record<string,unknown>;}catch{return;}
+    if(event==='complete'){
+      if(typeof data.html==='string'){html=data.html;completed=true;}
+      onProgress('Web generada. Preparando editor…');
+    }else if(event==='error')throw Error(String(data.error||data.message||'Ha fallado la generación.'));
+    else if(event==='progress'||event==='status')onProgress(String(data.message||'Generando diseño y estructura…'));
+    event='message';
+  }
+  while(true){
+    const chunk=await reader.read();if(chunk.done)break;
+    carry+=decoder.decode(chunk.value,{stream:true});
+    const parts=carry.split(/\r?\n\r?\n/);carry=parts.pop()||'';
+    for(const part of parts)handle(part);
+  }
+  if(carry.trim())handle(carry);
+  if(!completed)throw Error('La generación terminó sin entregar un documento HTML completo.');
+  return html;
+}
+export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
+  const [stage,setStage]=useState<Stage>('home');
+  const [site,setSite]=useState<SiteBundle|null>(null);
+  const [savedSites,setSavedSites]=useState<SiteBundle[]>([]);
+  const [busy,setBusy]=useState(false);
+  const [notice,setNotice]=useState('');
+  const [fileError,setFileError]=useState('');
+  const [view,setView]=useState<View>('preview');
+  const [device,setDevice]=useState<'desktop'|'mobile'>('desktop');
+  const [selected,setSelected]=useState<number|null>(null);
+  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:''});
+  const [draftHtml,setDraftHtml]=useState('');
+  const [past,setPast]=useState<string[]>([]);
+  const [future,setFuture]=useState<string[]>([]);
+  const [dirty,setDirty]=useState(false);
+  const [form,setForm]=useState<Record<string,string>>({
+    name:'',industry:'',audience:'',goal:'Conseguir contactos y clientes',
+    style:'Editorial, moderno, profesional y responsive',
+    services:'',contact:'',features:'Formulario de contacto, WhatsApp opcional',
+    palette:'Respetar la identidad corporativa disponible'
+  });
+  const fileInput=useRef<HTMLInputElement>(null);
+  const previewFrame=useRef<HTMLIFrameElement>(null);
+  const selectedRef=useRef<HTMLElement|null>(null);
+  const preview=useMemo(()=>site?safePreview(site):null,[site]);
+  useEffect(()=>()=>preview?.revoke(),[preview]);
+  useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
+  const changeHtml=useCallback((html:string)=>{
+    if(!site||html===site.html)return;
+    setPast(old=>[...old.slice(-49),site.html]);setFuture([]);
+    setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
+    setDraftHtml(html);setDirty(true);
+  },[site]);
+  const changeSite=(value:SiteBundle)=>{
+    setSite(value);setDraftHtml(value.html);setPast([]);setFuture([]);setDirty(false);
+    setSelected(null);setNotice('');setView('preview');setStage('editor');
+  };
+  const undo=()=>{
+    if(!site||!past.length)return;
+    const previous=past[past.length-1];setPast(past.slice(0,-1));setFuture(v=>[site.html,...v]);
+    setSite({...site,html:previous});setDraftHtml(previous);setDirty(true);setSelected(null);
+  };
+  const redo=()=>{
+    if(!site||!future.length)return;
+    const [next,...rest]=future;setFuture(rest);setPast(v=>[...v,site.html].slice(-50));
+    setSite({...site,html:next});setDraftHtml(next);setDirty(true);setSelected(null);
+  };
+  async function importFile(file:File){
+    setBusy(true);setFileError('');
+    try{
+      if(file.size>25_000_000)throw Error('El archivo supera el límite de 25 MB.');
+      const buffer=await file.arrayBuffer();
+      const site=file.name.toLowerCase().endsWith('.zip')?siteFromZip(new Uint8Array(buffer)):
+        siteFromHtml(fileByte(new Uint8Array(buffer)),file.name.replace(/\.html?$/i,''));
+      changeSite(site);
+    }catch(error){setFileError(error instanceof Error?error.message:'No se pudo importar esta web.');}
+    finally{setBusy(false);if(fileInput.current)fileInput.current.value='';}
+  }
+  async function onSave(){
+    if(!site)return;
+    setBusy(true);
+    try{
+      const saved=await saveSite(site);
+      setSite(saved);setDirty(false);setNotice('Versión '+saved.version+' guardada en este dispositivo.');
+      setSavedSites(await listSavedSites());
+    }catch{setNotice('No fue posible guardar la web. Descarga una copia ZIP para no perder cambios.');}
+    finally{setBusy(false);}
+  }
+  async function createWeb(){
+    if(form.name.trim().length<2||form.services.trim().length<20){
+      setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
+    }
+    setFileError('');setBusy(true);setNotice('Generando una web con el motor WebCreator…');
+    try{
+      const html=await streamGeneratedWeb(briefFrom(form),setNotice);
+      const generated=siteFromHtml(html,form.name.trim());
+      changeSite({...generated,source:'generated'});
+    }catch(error){
+      setFileError(error instanceof Error?error.message:'Error al crear la web.');
+      setNotice('Si no tienes acceso al generador integrado, puedes usar el WebCreator original e importar su ZIP.');
+    }finally{setBusy(false);}
+  }
+  function previewLoaded(){
+    const doc=previewFrame.current?.contentDocument;
+    if(!doc)return;
+    doc.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
+      if(!element)return;
+      const index=Number(element.dataset.wayupEdit);
+      if(!Number.isSafeInteger(index))return;
+      selectedRef.current?.removeAttribute('data-wayup-selected');
+      element.dataset.wayupSelected='true';selectedRef.current=element;
+      setSelected(index);
+      setSelectedValues({
+        text:element.children.length?'':element.textContent?.slice(0,5000)||'',
+        color:element.style.color||'#ffffff',
+        background:element.style.backgroundColor||'transparent',
+        fontSize:element.style.fontSize||'16px'
+      });
+    },true);
+    doc.addEventListener('submit',event=>event.preventDefault(),true);
+  }
+  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string})=>{
+    if(!site||selected===null)return;
+    try{
+      const next=patchSelectedElement(site.html,selected,changes);
+      changeHtml(next);
+      setNotice('Elemento actualizado en el HTML de la web.');
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo actualizar el elemento.');}
+  };
+  const goAgent=()=>{if(site)onAgent(site);};
+  function exportHtml(){
+    if(!site)return;
+    const bytes=strToU8(site.html);
+    downloadBytes(bytes,cleanName(site.name)+'.html','text/html;charset=utf-8');
+    setNotice('HTML descargado.');
+  }
+  function exportZip(){
+    if(!site)return;
+    try{
+      const bytes=siteZip(site);
+      downloadBytes(bytes,cleanName(site.name)+'.zip','application/zip');
+      setNotice('ZIP completo descargado con recursos y HTML actualizados.');
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo exportar.');}
+  }
+  const editInputs=(id:keyof typeof form,label:string,placeholder:string,required=false)=>(
+    <label key={id} className="flex flex-col gap-1.5 text-[11px] text-mist">{label}
+      <input className={BASE} value={form[id]} placeholder={placeholder}
+        required={required} onChange={event=>setForm({...form,[id]:event.target.value})}/>
+    </label>
+  );
+  return <div className="fixed inset-0 z-[60] flex min-h-0 flex-col overflow-hidden bg-app text-ink" role="dialog" aria-modal="true" aria-label="WayUp Studio — Crear y editar webs reales">
+    <header className="flex h-[63px] shrink-0 items-center justify-between gap-3 border-b border-stroke bg-panel px-4 sm:px-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <img src="/wayup-logo.png" className="h-9 w-9 shrink-0 rounded-full object-contain" alt="WayUp"/>
+        <div className="min-w-0"><div className="text-[13px] font-bold tracking-tight">WayUp Studio <span className="font-normal text-mist">/ Web Workspace</span></div>
+          <div className="truncate text-[10px] text-faint">{site?site.name:'Proyectos · Creador · Editor · Agente IA'}</div></div>
+      </div>
+      <div className="hidden items-center gap-2 lg:flex">
+        {steps.map(([number,label],index)=>(
+          <div key={number} className="flex items-center gap-1.5">
+            {index>0&&<ChevronRight size={12} className="text-faint"/>}
+            <span className={'rounded-md px-2 py-1.5 text-[10px] font-semibold '+(
+              (stage==='home'||stage==='create'?index===0:stage==='editor'?index===1:stage==='agent'?index===2:index===3)?
+                'bg-brandsoft text-brand':'text-mist'
+            )}>{number} · {label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        {site&&<button onClick={()=>setStage('home')} className={btn}><FolderOpen size={14}/> Proyectos</button>}
+        <button onClick={onClose} className={btn} title="Cerrar Web Workspace"><X size={15}/><span className="hidden sm:inline">Cerrar</span></button>
+      </div>
+    </header>
+    {(notice||fileError)&&<div role="status" className={'shrink-0 border-b px-4 py-2 text-[11px] '+(fileError?'border-red-500/30 bg-red-500/10 text-red-400':'border-stroke bg-elevated text-mist')}>{fileError||notice}</div>}
+    {(stage==='home'||stage==='create')&&<main className="scroll-subtle mx-auto w-full max-w-[1090px] flex-1 overflow-y-auto px-5 py-8 sm:px-9">
+      <div className="mb-7 flex items-end justify-between gap-3">
+        <div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.2em] text-brand">El estudio definitivo</div>
+          <h1 className="text-[clamp(25px,3vw,38px)] font-semibold tracking-[-.055em]">Una web real. Tu diseño. Tu agente.</h1>
+          <p className="mt-2 max-w-[600px] text-[12px] leading-6 text-mist">Crea una web con IA o abre cualquier proyecto HTML/ZIP para editar su código, diseño y exportación.</p></div>
+        {stage==='create'&&<button onClick={()=>setStage('home')} className={btn}><ArrowLeft size={14}/> Volver</button>}
+      </div>
+      {stage==='home'?<>
+        <div className="grid gap-4 md:grid-cols-3">
+          <button onClick={()=>{setStage('create');setFileError('');}} className="group flex min-h-[175px] flex-col items-start gap-3 rounded-2xl border border-brand/30 bg-brandsoft p-5 text-left transition hover:border-brand">
+            <Sparkles size={25} className="text-brand"/>
+            <span className="text-[16px] font-bold">Generar con IA</span>
+            <span className="text-[12px] leading-5 text-mist">Briefing profesional, motor WebCreator y apertura automática en el editor.</span>
+            <span className="mt-auto text-[11px] font-semibold text-brand">Crear proyecto →</span>
+          </button>
+          <button onClick={()=>fileInput.current?.click()} className="flex min-h-[175px] flex-col items-start gap-3 rounded-2xl border border-stroke bg-panel p-5 text-left transition hover:border-brand/40">
+            <FileUp size={25} className="text-brand"/>
+            <span className="text-[16px] font-bold">Importar una web</span>
+            <span className="text-[12px] leading-5 text-mist">HTML o ZIP completo. Conserva CSS, imágenes, fuentes y estructura.</span>
+            <span className="mt-auto text-[11px] font-semibold text-brand">Elegir archivo →</span>
+          </button>
+          <button onClick={()=>{
+            const title='Mi nuevo proyecto';
+            changeSite(siteFromHtml('<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>body{font:16px system-ui;margin:0;background:#f8f9fc;color:#151a26}header{padding:26px 6%;background:#fff;border-bottom:1px solid #ddd}main{padding:90px 6%;max-width:900px;margin:auto}h1{font-size:clamp(38px,6vw,72px);line-height:1.07}p{line-height:1.8}</style></head><body><header>MI MARCA · INICIO · SERVICIOS · CONTACTO</header><main><h1>Tu próxima gran web comienza aquí</h1><p>Selecciona cualquier elemento del lienzo y empieza a personalizarlo desde el Inspector. También puedes editar el código HTML completo.</p></main></body></html>',title));
+          }} className="flex min-h-[175px] flex-col items-start gap-3 rounded-2xl border border-stroke bg-panel p-5 text-left transition hover:border-brand/40">
+            <FilePlus2 size={25} className="text-brand"/>
+            <span className="text-[16px] font-bold">Empezar en blanco</span>
+            <span className="text-[12px] leading-5 text-mist">Editor libre con código HTML y personalización de elementos reales.</span>
+            <span className="mt-auto text-[11px] font-semibold text-brand">Nuevo lienzo →</span>
+          </button>
+        </div>
+        <div className="mt-9 flex items-center justify-between"><h2 className="text-[14px] font-semibold">Tus proyectos guardados</h2><span className="font-mono text-[10px] text-faint">{savedSites.length} proyectos · guardados en este dispositivo</span></div>
+        <div className="mt-3 grid gap-2">
+          {savedSites.map(item=><button key={item.id} className="flex w-full items-center gap-3 rounded-xl border border-stroke bg-panel p-4 text-left hover:border-brand/50" onClick={()=>changeSite(item)}>
+            <Globe size={20} className="text-brand"/><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-semibold">{item.name}</span><span className="text-[10px] text-faint">Versión {item.version} · {new Date(item.updatedAt).toLocaleString('es-ES')}</span></span><ChevronRight size={16} className="text-faint"/>
+          </button>)}
+          {!savedSites.length&&<div className="rounded-xl border border-dashed border-stroke px-5 py-7 text-center text-[12px] text-faint">Todavía no tienes webs guardadas. Genera una o importa un ZIP.</div>}
+        </div>
+        <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
+      </>:<div className="rounded-2xl border border-stroke bg-panel p-5 sm:p-7">
+        <div className="mb-5 flex items-center justify-between"><h2 className="text-[17px] font-bold">Crear web con WebCreator</h2><span className="rounded-full bg-brandsoft px-3 py-1 text-[10px] text-brand">Formulario completo</span></div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {editInputs('name','Nombre del negocio','Ej. Entrena-T Parquesol',true)}
+          {editInputs('industry','Sector o actividad','Gimnasio, restaurante, clínica…',true)}
+          {editInputs('audience','Público objetivo','Personas que buscan entrenamiento personal')}
+          {editInputs('goal','Objetivo de la web','Conseguir reservas, contactos, ventas…')}
+          {editInputs('style','Estilo visual','Minimalista, premium, editorial…')}
+          {editInputs('palette','Colores e identidad de marca','Cobalto, marfil, logotipo existente…')}
+        </div>
+        <label className="mt-4 flex flex-col gap-1.5 text-[11px] text-mist">Servicios y propuesta de valor
+          <textarea className={BASE+' min-h-[96px] resize-y'} value={form.services} placeholder="Describe de verdad qué hace tu negocio y por qué es diferente…" onChange={e=>setForm({...form,services:e.target.value})}/>
+        </label>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {editInputs('contact','Ubicación, contacto y horarios','Solo información real')}
+          {editInputs('features','Funciones necesarias','WhatsApp, formulario, mapa, reservas…')}
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button disabled={busy} onClick={()=>void createWeb()} className={primary}>{busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generar y abrir en el editor</button>
+          <a href={WEB_CREATOR} target="_blank" rel="noopener noreferrer" className={btn}>WebCreator original <ChevronRight size={13}/></a>
+        </div>
+        <p className="mt-4 text-[11px] leading-5 text-faint">La generación utiliza el motor original y sus cuotas. Si la autenticación privada del motor impide conectar desde esta preview, utiliza su enlace y vuelve a importar el HTML o ZIP.</p>
+      </div>}
+    </main>}
+    {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-4 py-2.5">
+        <div className="flex items-center gap-2 text-[10px] text-mist">
+          <span className="rounded-md bg-brandsoft px-2 py-1 font-bold text-brand">{site.source==='generated'?'GENERADA':'IMPORTADA'}</span>
+          <span className="hidden sm:inline">{site.entry}</span>
+          <span>{Object.keys(site.assets).length} recursos</span>
+          {dirty&&<span className="text-amber-400">● Sin guardar</span>}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={undo} disabled={!past.length} className={btn} title="Deshacer"><Undo2 size={14}/></button>
+          <button onClick={redo} disabled={!future.length} className={btn} title="Rehacer"><Redo2 size={14}/></button>
+          <button onClick={()=>setView('preview')} className={btn+(view==='preview'?' border-brand text-brand':'')}><Paintbrush size={14}/> Visual</button>
+          <button onClick={()=>setView('code')} className={btn+(view==='code'?' border-brand text-brand':'')}><CodeXml size={14}/> HTML</button>
+          <button onClick={()=>void onSave()} disabled={busy} className={btn}><Save size={14}/> Guardar</button>
+          <button onClick={()=>setStage('agent')} className={primary}><Bot size={14}/> Siguiente: Agente IA</button>
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col bg-app">
+          {view==='preview'?<>
+            <div className="flex items-center justify-center gap-2 border-b border-stroke py-2">
+              <button onClick={()=>setDevice('desktop')} aria-pressed={device==='desktop'} className={btn+(device==='desktop'?' border-brand':'')}><Monitor size={14}/> Escritorio</button>
+              <button onClick={()=>setDevice('mobile')} aria-pressed={device==='mobile'} className={btn+(device==='mobile'?' border-brand':'')}><Smartphone size={14}/> Móvil</button>
+            </div>
+            <div className="scroll-subtle flex-1 overflow-auto p-3 sm:p-6">
+              <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-lg border border-stroke bg-white shadow-panel"
+                style={{maxWidth:device==='mobile'?390:1280}}>
+                <iframe title="Previsualización segura de la web importada" ref={previewFrame} onLoad={previewLoaded}
+                  sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={preview?.html||''}
+                  className="h-full min-h-[620px] w-full border-0 bg-white"/>
+              </div>
+            </div>
+          </>:<>
+            <div className="flex items-center justify-between border-b border-stroke px-4 py-3 text-[11px] text-mist"><span><FileCode2 size={13} className="mr-2 inline text-brand"/> {site.entry}</span><span>{site.html.length.toLocaleString('es-ES')} caracteres · HTML editado directamente</span></div>
+            <textarea aria-label="Editor completo de HTML de la web"
+              className="scroll-subtle min-h-0 flex-1 resize-none bg-[#10141c] p-5 font-mono text-[12px] leading-6 text-[#dae6ff] outline-none"
+              spellCheck={false} value={draftHtml} onChange={e=>setDraftHtml(e.target.value)}
+              onBlur={()=>{if(draftHtml!==site.html)changeHtml(draftHtml)}}/>
+            <div className="flex items-center justify-end border-t border-stroke p-2">
+              <button onClick={()=>{if(draftHtml!==site.html)changeHtml(draftHtml);setView('preview')}} className={primary}><Check size={14}/> Aplicar HTML y ver resultado</button>
+            </div>
+          </>}
+        </div>
+        <aside className="scroll-subtle hidden w-[278px] shrink-0 overflow-y-auto border-l border-stroke bg-panel p-4 lg:block">
+          <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-semibold">Inspector HTML</h2><span className="font-mono text-[9px] text-faint">DOM</span></div>
+          <p className="mb-4 text-[11px] leading-5 text-mist">Haz clic en un elemento de la web para editar sus propiedades. Los cambios se reflejan en el HTML exportado.</p>
+          {selected===null?<div className="rounded-lg border border-dashed border-stroke p-4 text-[11px] text-faint">Selecciona un texto, título o botón del Canvas.</div>:<>
+            <div className="mb-4 rounded-lg border border-stroke bg-elevated px-3 py-2 font-mono text-[10px] text-mist">Nodo #{selected}</div>
+            <label className="mb-3 block text-[11px] text-mist">Contenido de texto
+              <textarea className={BASE+' mt-1 min-h-[90px] w-full resize-y'} value={selectedValues.text} placeholder="Selecciona un elemento sin hijos" onChange={e=>setSelectedValues({...selectedValues,text:e.target.value})}/>
+              <button className={btn+' mt-2'} onClick={()=>patch({text:selectedValues.text})}>Aplicar texto</button>
+            </label>
+            {(['color','background','fontSize'] as const).map(field=><label key={field} className="mb-3 block text-[11px] text-mist">
+              {field==='color'?'Color · RGB / HEX':field==='background'?'Fondo · RGB / HEX':'Tamaño · CSS'}
+              <input className={BASE+' mt-1 w-full font-mono'} value={selectedValues[field]} onChange={e=>setSelectedValues({...selectedValues,[field]:e.target.value})}
+                onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/>
+            </label>)}
+            <button className={primary+' w-full'} onClick={()=>{
+              const color=parseColorCode(selectedValues.color);
+              const background=parseColorCode(selectedValues.background);
+              const fontSize=/^\d{1,3}(?:\.\d+)?px$/.test(selectedValues.fontSize)?selectedValues.fontSize:undefined;
+              if(!color||!background||!fontSize){setNotice('Revisa los códigos HEX/RGB o tamaño CSS.');return;}
+              patch({color,background,fontSize});
+            }}>Aplicar estilos</button>
+          </>}
+          <div className="mt-7 border-t border-stroke pt-4 text-[10px] leading-5 text-faint">Vista de edición protegida: el JavaScript importado no se ejecuta dentro del editor. Los archivos originales se conservan para exportación.</div>
+        </aside>
+      </div>
+    </main>}
+    {site&&(stage==='agent'||stage==='export')&&<main className="scroll-subtle mx-auto w-full max-w-[730px] flex-1 overflow-y-auto px-6 py-10">
+      <button onClick={()=>setStage(stage==='agent'?'editor':'agent')} className={btn+' mb-7'}><ArrowLeft size={14}/> Volver</button>
+      {stage==='agent'?<>
+        <div className="mb-2 text-[11px] font-bold uppercase tracking-[.16em] text-brand">03 / ASISTENTE IA</div>
+        <h1 className="text-[30px] font-bold tracking-[-.04em]">¿Quieres asociar un agente a esta web?</h1>
+        <p className="mt-3 text-[13px] leading-6 text-mist">Puedes crear uno a partir del contenido real de <strong>{site.name}</strong>, definir su rol, objetivo y capacidades y dejarlo preparado para embeber en tu web.</p>
+        <div className="mt-7 grid gap-3 sm:grid-cols-2">
+          <button onClick={goAgent} className="flex flex-col items-start gap-3 rounded-xl border border-brand/30 bg-brandsoft p-5 text-left hover:border-brand">
+            <Bot size={24} className="text-brand"/><span className="text-[15px] font-bold">Sí, añadir agente IA</span>
+            <span className="text-[11px] leading-5 text-mist">Abrir configuración y vincular el agente de forma segura al proyecto.</span>
+          </button>
+          <button onClick={()=>setStage('export')} className="flex flex-col items-start gap-3 rounded-xl border border-stroke bg-panel p-5 text-left hover:border-brand">
+            <Download size={24} className="text-brand"/><span className="text-[15px] font-bold">Ahora no</span>
+            <span className="text-[11px] leading-5 text-mist">Exportar la web sin asistente y añadirlo cuando quieras.</span>
+          </button>
+        </div>
+      </>:<>
+        <div className="mb-2 text-[11px] font-bold uppercase tracking-[.16em] text-brand">04 / ENTREGA</div>
+        <h1 className="text-[30px] font-bold tracking-[-.04em]">Tu web, lista para llevar.</h1>
+        <p className="mt-3 text-[13px] leading-6 text-mist">Descarga el HTML actualizado o el proyecto completo, manteniendo CSS, imágenes, recursos y carpetas del ZIP original.</p>
+        <div className="mt-7 flex flex-col gap-3">
+          <button onClick={exportZip} className={primary+' w-full justify-start py-4 text-[13px]'}><FileArchive size={19}/> Descargar proyecto ZIP completo</button>
+          <button onClick={exportHtml} className={btn+' w-full justify-start py-4 text-[13px]'}><FileCode2 size={19}/> Descargar HTML actualizado</button>
+          <button onClick={()=>setStage('editor')} className={btn+' w-full justify-start py-4'}><Paintbrush size={17}/> Seguir editando</button>
+        </div>
+        <div className="mt-6 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">Si importaste una web con scripts originales, esos archivos se conservarán en el ZIP. Revísalos antes de desplegar el resultado. Los agentes necesitan su backend funcionando para responder.</div>
+      </>}
+    </main>}
+  </div>;
+}
