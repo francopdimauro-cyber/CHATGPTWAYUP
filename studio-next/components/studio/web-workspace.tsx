@@ -98,7 +98,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [view,setView]=useState<View>('preview');
   const [device,setDevice]=useState<'desktop'|'mobile'>('desktop');
   const [selected,setSelected]=useState<number|null>(null);
-  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:''});
+  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:'',width:'',height:'',padding:'',margin:'',radius:'',fontWeight:'',fontFamily:'',textAlign:''});
   const [layerSearch,setLayerSearch]=useState('');
   const [draftHtml,setDraftHtml]=useState('');
   const [past,setPast]=useState<string[]>([]);
@@ -232,7 +232,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       background:element.style.backgroundColor||'transparent',
       fontSize:element.style.fontSize||'16px',
       href:element.getAttribute('href')||'',
-      alt:element.getAttribute('alt')||''
+      alt:element.getAttribute('alt')||'',
+      width:element.style.width||'',height:element.style.height||'',
+      padding:element.style.padding||'',margin:element.style.margin||'',
+      radius:element.style.borderRadius||'',fontWeight:element.style.fontWeight||'',
+      fontFamily:element.style.fontFamily||'',textAlign:element.style.textAlign||''
     });
     element.scrollIntoView({block:'center',behavior:'smooth'});
   }
@@ -270,7 +274,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       setNotice('Imagen incorporada al proyecto y al ZIP. Guarda la versión para conservarla.');
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo adjuntar la imagen.');}
   }
-  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string;href?:string;alt?:string})=>{
+  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string;href?:string;alt?:string;width?:string;height?:string;padding?:string;margin?:string;radius?:string;fontWeight?:string;fontFamily?:string;textAlign?:string})=>{
     if(!site||selected===null)return;
     try{
       const next=patchSelectedElement(site.html,selected,changes);
@@ -493,8 +497,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
               <input className={BASE+' mt-1 w-full'} value={selectedValues.href} onChange={e=>setSelectedValues({...selectedValues,href:e.target.value})} placeholder="https://… o #seccion"/>
               <button className={btn+' mt-2'} onClick={()=>patch({href:selectedValues.href})}>Guardar enlace</button>
             </label>}
-            {activeLayer?.tag==='IMG'&&<div className="mb-4 rounded-lg border border-stroke p-3">
-              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold"><ImagePlus size={15} className="text-brand"/> Sustituir imagen / logo</div>
+            {['IMG','A','HEADER','DIV','SECTION','FIGURE'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
+              <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold"><ImagePlus size={15} className="text-brand"/> {activeLayer?.tag==='IMG'?'Sustituir imagen o logo':'Adjuntar logo o imagen'}</div>
               <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Adjuntar imagen para reemplazar la seleccionada"
                 className="block w-full text-[10px] text-mist" onChange={e=>{const file=e.target.files?.[0];if(file)void changeImage(file);e.currentTarget.value='';}}/>
               <p className="my-2 text-[10px] leading-4 text-faint">PNG, JPG, GIF o WebP. Máximo 5 MB. La imagen queda dentro del ZIP.</p>
@@ -519,6 +523,35 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
               if(!color||!background||!fontSize){setNotice('Revisa los códigos HEX/RGB o tamaño CSS.');return;}
               patch({color,background,fontSize});
             }}>Aplicar estilos</button>
+            <div className="mt-5 border-t border-stroke pt-4">
+              <h3 className="mb-3 text-[11px] font-semibold">Dimensiones y composición</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['width','Ancho'],['height','Alto'],['padding','Relleno'],
+                  ['margin','Margen'],['radius','Redondeo'],['fontWeight','Grosor de fuente'],
+                  ['fontFamily','Tipografía']
+                ] as const).map(([field,label])=><label key={field} className="text-[10px] text-mist">
+                  {label}<input className={BASE+' mt-1 w-full'} placeholder={field==='fontFamily'?'Arial, sans-serif':field==='fontWeight'?'700':'24px'}
+                    value={selectedValues[field]} onChange={e=>setSelectedValues({...selectedValues,[field]:e.target.value})}/>
+                </label>)}
+                <label className="text-[10px] text-mist">Alineación
+                  <select className={BASE+' mt-1 w-full'} value={selectedValues.textAlign}
+                    onChange={e=>setSelectedValues({...selectedValues,textAlign:e.target.value})}>
+                    <option value="">Heredada</option>
+                    <option value="left">Izquierda</option>
+                    <option value="center">Centro</option>
+                    <option value="right">Derecha</option>
+                    <option value="justify">Justificada</option>
+                  </select>
+                </label>
+              </div>
+              <p className="mt-2 text-[10px] leading-4 text-faint">Medidas en px, o porcentaje para ancho y alto. Vacío restablece el valor heredado.</p>
+              <button className={primary+' mt-3 w-full'} onClick={()=>patch({
+                width:selectedValues.width,height:selectedValues.height,padding:selectedValues.padding,
+                margin:selectedValues.margin,radius:selectedValues.radius,fontWeight:selectedValues.fontWeight,
+                fontFamily:selectedValues.fontFamily,textAlign:selectedValues.textAlign
+              })}>Aplicar medidas y tipografía</button>
+            </div>
           </>}
           <div className="mt-7 border-t border-stroke pt-4 text-[10px] leading-5 text-faint">Vista de edición protegida: el JavaScript importado no se ejecuta dentro del editor. Los archivos originales se conservan para exportación.</div>
         </aside>
