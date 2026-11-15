@@ -441,6 +441,7 @@ function applyStyles(){
   const px=Number(el('wcFont').value);
   if(px>=8&&px<=160)node.style.fontSize=px+'px';
   if(el('wcAlign').value)node.style.textAlign=el('wcAlign').value;
+  const weight=el('wcFontWeight').value;
   const family=el('wcFontFamily').value;
   if(FONT_FAMILIES.has(family)||window.WebCreatorFontLibrary?.has(family)){
    const meta=window.WebCreatorFontLibrary?.get(family);
@@ -449,14 +450,15 @@ function applyStyles(){
    if(meta?.source==='uploaded'){
     if(!window.WebCreatorFontLibrary.embed(state.doc,family))node.style.fontFamily=previousFont;
    }else if(!SYSTEM_FAMILIES.has(family)&&meta?.source!=='local'&&meta?.source!=='system'){
-    let link=[...state.doc.querySelectorAll('link[data-wc-font]')].find(x=>x.getAttribute('data-wc-font')===family);
+    let link=[...state.doc.querySelectorAll('link[data-wc-font]')].find(x=>x.getAttribute('data-wc-font')===family&&x.getAttribute('data-wc-font-weight')===(weight||'400'));
     if(!link){
      link=state.doc.createElement('link');link.rel='stylesheet';
-     link.setAttribute('data-wc-font',family);link.href=window.WebCreatorFontLibrary?.href(family)||fontHref(family);state.doc.head.append(link);
+     link.setAttribute('data-wc-font',family);
+     link.setAttribute('data-wc-font-weight',weight||'400');
+     link.href=window.WebCreatorFontLibrary?.href(family,weight)||fontHref(family);state.doc.head.append(link);
     }
    }
   }
-  const weight=el('wcFontWeight').value;
   if(['400','500','600','700','800','900'].includes(weight))node.style.fontWeight=weight;
   const line=Number(el('wcLineHeight').value);
   if(el('wcLineHeight').value!==''&&line>=.8&&line<=3)node.style.lineHeight=String(line);
