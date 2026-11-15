@@ -9,6 +9,7 @@ export type SiteBundle = {
   version: number;
   updatedAt: number;
   source: 'generated'|'imported';
+  agent?: {agentId:string;chatId:string;origin:string;title:string;linkedAt:number};
   versions: { number:number; html:string; savedAt:number }[];
 };
 export const MAX_IMPORT_BYTES=25_000_000;
@@ -65,15 +66,24 @@ export function siteFromZip(input:Uint8Array):SiteBundle {
   return {id:crypto.randomUUID(),name:siteTitle(html),html,entry,assets:output,
     version:0,updatedAt:Date.now(),source:'imported',versions:[]};
 }
+export function agentSnippet(chatId:string):string {
+  if(!/^[0-9a-f-]{36}$/i.test(chatId))throw Error('Identificador de chat inválido.');
+  return '<script src="https://agent-factory-free.francopdimauro.workers.dev/widget.js" data-chat="'+chatId+'" defer></'+'script>';
+}
 export function siteZip(site:SiteBundle,additionalSnippet?:string):Uint8Array {
   const archive:Record<string,Uint8Array>={...site.assets};
   let html=site.html;
-  if(additionalSnippet){
-    if(!/^<script src="https:\/\/agent-factory-free\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>$/i.test(additionalSnippet))
+  const snippet=additionalSnippet||(site.agent?agentSnippet(site.agent.chatId):undefined);
+  if(snippet){
+    if(!/^<script src="https:\/\/agent-factory-free\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>$/i.test(snippet))
       throw Error('Código de agente no autorizado.');
-    if(!html.includes(additionalSnippet))html=html.replace(/<\/body>/i,additionalSnippet+'\n</body>');
+    if(!html.includes(snippet))html=html.replace(/<\/body>/i,'\n<!-- Asistente de WayUp -->\n'+snippet+'\n</body>');
   }
   archive[site.entry]=strToU8(html);
+  if(site.agent){
+    const notice='WayUp Studio — asistente IA vinculado\n\nOrigen autorizado: '+site.agent.origin+'\nTítulo: '+site.agent.title+'\n\nEl chat requiere que el agente esté activo y conectado al backend.\nAl publicar, utiliza exactamente el dominio HTTPS autorizado.\nNunca incluyas claves privadas de IA en el HTML o ZIP.\n';
+    archive['WAYUP_AGENT_SETUP.txt']=strToU8(notice);
+  }
   if(Object.keys(archive).length>MAX_FILES)throw Error('El proyecto contiene demasiados archivos para exportar.');
   return zipSync(archive,{level:5});
 }
