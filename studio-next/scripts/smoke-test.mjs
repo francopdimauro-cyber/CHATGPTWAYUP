@@ -74,4 +74,22 @@ const malicious = serialized.replace('WAYAPP_STUDIO_LAYER_V1', 'OTRO_TIPO');
 assert.equal(parseStudioLayer(malicious),null);
 console.log('Correcto: copiar, pegar, cortar, duplicar, reordenar y deshacer cambios de capas.');
 
+const { parseColorCode, colorAsRgb } = await loadTS('lib/color-codes.ts');
+assert.equal(parseColorCode('#abc'),'#AABBCC');
+assert.equal(parseColorCode('#123456'),'#123456');
+assert.equal(parseColorCode('rgb(18, 34, 56)'),'rgb(18, 34, 56)');
+assert.equal(parseColorCode('rgba(18, 34, 56, 0.5)'),'rgba(18, 34, 56, 0.5)');
+assert.equal(parseColorCode('rgb(999, 2, 3)'),null);
+assert.equal(parseColorCode('url(https://site.test)'),null);
+assert.equal(colorAsRgb('#123456'),'rgb(18, 52, 86)');
+for (const id of ['marca-icono','marca-nombre','nav-inicio','nav-servicios','nav-planes','nav-metodo','nav-testimonios','nav-contacto','nav-cta']){
+  assert.ok(DEMO_PROJECT.sections.find(s=>s.id==='cabecera')?.children.includes(id),id+' en cabecera');
+  assert.ok(DEMO_PROJECT.elements[id],id+' editable');
+}
+const editedHeader=historyReducer(initial,{type:'modificar',elementId:'nav-contacto',patch:{text:'UBICACIÓN'}});
+assert.equal(editedHeader.present.elements['nav-contacto'].text,'UBICACIÓN');
+assert.equal(historyReducer(editedHeader,{type:'deshacer'}).present.elements['nav-contacto'].text,'CONTACTO');
+console.log('Correcto: campos HEX/RGB, navegación y cabecera editable e historial reversible.');
+
+
 console.log(`Correcto: ${paths.length} archivos TypeScript/TSX, 21 estilos, historial, acciones y enlaces.`);
