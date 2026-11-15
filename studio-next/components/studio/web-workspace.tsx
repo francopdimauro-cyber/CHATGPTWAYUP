@@ -5,6 +5,7 @@ import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, Fi
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
   Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3 } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
+import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
@@ -88,6 +89,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [stage,setStage]=useState<Stage>('home');
   const [site,setSite]=useState<SiteBundle|null>(null);
   const [savedSites,setSavedSites]=useState<SiteBundle[]>([]);
+  const [cloudItems,setCloudItems]=useState<CloudSiteSummary[]>([]);
+  const [cloudInfo,setCloudInfo]=useState('Inicia sesión para sincronizar tus proyectos.');
+  const [cloudBusy,setCloudBusy]=useState(false);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState('');
   const [fileError,setFileError]=useState('');
@@ -156,6 +160,31 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       if(saved.version===1 && !saved.agent)setPostSavePrompt(true);
       setSavedSites(await listSavedSites());
     }catch{setNotice('No fue posible guardar la web. Descarga una copia ZIP para no perder cambios.');}
+    finally{setBusy(false);}
+  }
+  async function refreshCloud(){
+    setCloudBusy(true);
+    try{const projects=await cloudListSites();setCloudItems(projects);setCloudInfo('Nube conectada · Proyectos privados de tu cuenta');}
+    catch{setCloudItems([]);setCloudInfo('Nube no disponible: inicia sesión y comprueba los bindings de Studio.');}
+    finally{setCloudBusy(false);}
+  }
+  async function openCloudSite(item:CloudSiteSummary){
+    setBusy(true);
+    try{changeSite(await cloudLoadSite(item));setNotice('Proyecto recuperado desde el almacenamiento privado.');}
+    catch(error){setNotice(error instanceof Error?error.message:'No se pudo abrir la versión remota.');}
+    finally{setBusy(false);}
+  }
+  async function onCloudSave(){
+    if(!site)return;
+    setBusy(true);
+    try{
+      const remote=await cloudSaveSite(site);
+      const local=await saveSite(remote);
+      setSite(local);setDirty(false);
+      setSavedSites(await listSavedSites());
+      await refreshCloud();
+      setNotice('Proyecto guardado de forma privada en la nube · versión '+remote.cloud?.version+'.');
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo guardar en la nube. La copia local permanece disponible.');}
     finally{setBusy(false);}
   }
   function createLocalWeb(){
@@ -346,6 +375,19 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           </button>)}
           {!savedSites.length&&<div className="rounded-xl border border-dashed border-stroke px-5 py-7 text-center text-[12px] text-faint">Todavía no tienes webs guardadas. Genera una o importa un ZIP.</div>}
         </div>
+        <div className="mt-8 border-t border-stroke pt-5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-[13px] font-semibold"><Globe size={15} className="text-brand"/> Tus proyectos en la nube</h2>
+            <button disabled={cloudBusy} onClick={()=>void refreshCloud()} className={btn}>Actualizar nube</button>
+          </div>
+          <p className="mb-3 text-[10px] leading-5 text-faint">{cloudInfo}</p>
+          <div className="grid gap-2">
+            {cloudItems.map(item=><button key={item.id} className="flex items-center justify-between gap-2 rounded-lg border border-stroke bg-panel p-3 text-left hover:border-brand/40" onClick={()=>void openCloudSite(item)}>
+              <span className="min-w-0 truncate text-[12px] font-semibold">{item.name}</span>
+              <span className="shrink-0 font-mono text-[10px] text-mist">v{item.version}</span>
+            </button>)}
+          </div>
+        </div>
         <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
       </>:<div className="rounded-2xl border border-stroke bg-panel p-5 sm:p-7">
         <div className="mb-5 flex items-center justify-between"><h2 className="text-[17px] font-bold">Crear web con WebCreator</h2><span className="rounded-full bg-brandsoft px-3 py-1 text-[10px] text-brand">Formulario completo</span></div>
@@ -381,6 +423,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           <span className="hidden sm:inline">{site.entry}</span>
           <span>{Object.keys(site.assets).length} recursos</span>
           {dirty&&<span className="text-amber-400">● Sin guardar</span>}
+          {site.cloud&&<span className="text-brand">Nube · v{site.cloud.version}</span>}
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={undo} disabled={!past.length} className={btn} title="Deshacer"><Undo2 size={14}/></button>
@@ -388,6 +431,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           <button onClick={()=>setView('preview')} className={btn+(view==='preview'?' border-brand text-brand':'')}><Paintbrush size={14}/> Visual</button>
           <button onClick={()=>setView('code')} className={btn+(view==='code'?' border-brand text-brand':'')}><CodeXml size={14}/> HTML</button>
           <button onClick={()=>void onSave()} disabled={busy} className={btn}><Save size={14}/> Guardar</button>
+          <button onClick={()=>void onCloudSave()} disabled={busy} className={btn} title="Guardar versión en Cloudflare con sesión y control de concurrencia"><Globe size={14}/> Guardar nube</button>
           <button onClick={()=>setStage('agent')} className={primary}><Bot size={14}/> Siguiente: Agente IA</button>
         </div>
       </div>
