@@ -238,10 +238,20 @@ export function attachLocalImage(site:SiteBundle,index:number,data:Uint8Array):S
   if(!kind)throw Error('Imagen no admitida: utiliza PNG, JPEG, GIF o WebP de hasta 5 MB.');
   const doc=new DOMParser().parseFromString(site.html,'text/html');
   const selected=selectableHtmlNode(doc,index);
-  if(!selected||selected.tagName!=='IMG')throw Error('Selecciona una imagen de la web.');
+  if(!selected)throw Error('Selecciona un elemento de la web.');
   const file='wayup-media/'+crypto.randomUUID()+'.'+kind.ext;
   if(!safePath(file))throw Error('Ruta de recurso inválida.');
-  return {...site,html:patchSelectedElement(site.html,index,{src:file}),
+  let html:string;
+  if(selected.tagName==='IMG'){
+    html=patchSelectedElement(site.html,index,{src:file});
+  }else if(['A','HEADER','DIV','SECTION','FIGURE'].includes(selected.tagName)){
+    const image=doc.createElement('img');
+    image.src=file;image.alt='Logotipo o imagen del negocio';
+    image.style.cssText='display:inline-block;width:42px;max-width:100%;height:auto;vertical-align:middle;object-fit:contain;margin-right:10px';
+    selected.prepend(image);
+    html=serializeEditedHtml(doc);
+  }else throw Error('Selecciona una imagen existente o su contenedor/cabecera para adjuntar un logo.');
+  return {...site,html,
     assets:{...site.assets,[(site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'')+file]:new Uint8Array(data)},updatedAt:Date.now()};
 }
 function serializeEditedHtml(doc:Document):string{
@@ -287,8 +297,19 @@ export function addHtmlSection(html:string):string{
   section.append(title,text);main.append(section);
   return serializeEditedHtml(doc);
 }
+function cssSize(value:string,maximum=3000,percentage=false):string{
+  const text=value.trim();
+  if(!text||text==='auto')return text;
+  const px=text.match(/^(\d{1,4}(?:\.\d{1,2})?)px$/);
+  if(px&&Number(px[1])<=maximum)return text;
+  const percent=percentage?text.match(/^(\d{1,3}(?:\.\d{1,2})?)%$/):null;
+  if(percent&&Number(percent[1])<=100)return text;
+  throw Error('Medida CSS no válida. Utiliza px, porcentaje permitido o auto.');
+}
 export function patchSelectedElement(html:string,index:number,changes:{
-  text?:string;color?:string;background?:string;fontSize?:string;href?:string;src?:string;alt?:string
+  text?:string;color?:string;background?:string;fontSize?:string;href?:string;src?:string;alt?:string;
+  width?:string;height?:string;padding?:string;margin?:string;radius?:string;
+  fontWeight?:string;fontFamily?:string;textAlign?:string
 }):string{
   const doc=new DOMParser().parseFromString(html,'text/html');
   const node=selectableHtmlNode(doc,index);
@@ -299,7 +320,26 @@ export function patchSelectedElement(html:string,index:number,changes:{
   }
   if(changes.color!==undefined)node.style.color=changes.color;
   if(changes.background!==undefined)node.style.backgroundColor=changes.background;
-  if(changes.fontSize!==undefined)node.style.fontSize=changes.fontSize;
+  if(changes.fontSize!==undefined)node.style.fontSize=cssSize(changes.fontSize,256);
+  if(changes.width!==undefined)node.style.width=cssSize(changes.width,3000,true);
+  if(changes.height!==undefined)node.style.height=cssSize(changes.height,3000,true);
+  if(changes.padding!==undefined)node.style.padding=cssSize(changes.padding,320);
+  if(changes.margin!==undefined)node.style.margin=cssSize(changes.margin,320);
+  if(changes.radius!==undefined)node.style.borderRadius=cssSize(changes.radius,1000);
+  if(changes.fontWeight!==undefined){
+    if(changes.fontWeight!==''&&!/^[1-9]00$/.test(changes.fontWeight))throw Error('Peso de tipografía no permitido.');
+    node.style.fontWeight=changes.fontWeight;
+  }
+  if(changes.fontFamily!==undefined){
+    if(changes.fontFamily.length>110||!/^[\w\s,\-'"]*$/u.test(changes.fontFamily))
+      throw Error('Fuente no permitida.');
+    node.style.fontFamily=changes.fontFamily;
+  }
+  if(changes.textAlign!==undefined){
+    if(!['','left','center','right','justify','start','end'].includes(changes.textAlign))
+      throw Error('Alineación no permitida.');
+    node.style.textAlign=changes.textAlign;
+  }
   if(changes.href!==undefined){
     if(node.tagName!=='A')throw Error('Este elemento no es un enlace.');
     if(!safeSiteLink(changes.href))throw Error('Enlace no permitido: utiliza HTTPS, un ancla o una ruta local.');
