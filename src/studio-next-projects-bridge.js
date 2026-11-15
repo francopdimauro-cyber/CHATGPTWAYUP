@@ -40,6 +40,54 @@ async function studioNextIdentity(request,env){
     return {ownerId:user.id};
   }catch{return {error:'No se pudo verificar la sesión.',status:503};}
 }
+
+/** Inspecciona el directorio ZIP sin descomprimir ni ejecutar contenidos. */
+function studioNextValidateZip(bytes){
+  const error=()=>{throw Object.assign(Error('ZIP no válido, peligroso o demasiado grande.'),{status:400});};
+  if(bytes.byteLength<22)error();
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  const u16=(offset)=>view.getUint16(offset,true);
+  const u32=(offset)=>view.getUint32(offset,true);
+  let eocd=-1;
+  for(let i=bytes.byteLength-22;i>=Math.max(0,bytes.byteLength-22-65535);i--){
+    if(u32(i)===0x06054b50&&i+22+u16(i+20)===bytes.byteLength){eocd=i;break;}
+  }
+  if(eocd<0||u16(eocd+4)!==0||u16(eocd+6)!==0)error();
+  const count=u16(eocd+10);
+  if(count<1||count>180||count!==u16(eocd+8))error();
+  const size=u32(eocd+12),offset=u32(eocd+16);
+  if(size===0xFFFFFFFF||offset===0xFFFFFFFF||offset+size!==eocd)error();
+  let current=offset,total=0,hasEntry=false;
+  const paths=new Set();
+  const decoder=new TextDecoder('utf-8',{fatal:true});
+  for(let i=0;i<count;i++){
+    if(current+46>eocd||u32(current)!==0x02014b50)error();
+    const flags=u16(current+8),method=u16(current+10);
+    const packed=u32(current+20),unpacked=u32(current+24);
+    const nameLen=u16(current+28),extraLen=u16(current+30),commentLen=u16(current+32);
+    const external=u32(current+38),localOffset=u32(current+42);
+    const length=46+nameLen+extraLen+commentLen;
+    if(nameLen<1||nameLen>240||current+length>eocd||method!==0&&method!==8||
+      flags&1||packed===0xFFFFFFFF||unpacked===0xFFFFFFFF||
+      unpacked>9_000_000||total+unpacked>65_000_000||localOffset+30>offset)error();
+    const fileType=(external>>>16)&0xF000;
+    if(fileType===0xA000)error(); // Enlaces simbólicos ZIP no permitidos
+    let name;
+    try{name=decoder.decode(bytes.subarray(current+46,current+46+nameLen));}catch{error();}
+    if(name.startsWith('/')||name.includes('\\')||name.includes('\0')||
+      name.split('/').some(p=>!p||p==='.'||p==='..')||
+      /^[A-Za-z]:/.test(name)||paths.has(name))error();
+    paths.add(name);
+    if(name==='index.html'||name.endsWith('/index.html'))hasEntry=true;
+    if(u32(localOffset)!==0x04034b50)error();
+    const dataStart=localOffset+30+u16(localOffset+26)+u16(localOffset+28);
+    if(dataStart+packed>offset)error();
+    total+=unpacked;
+    current+=length;
+  }
+  if(current!==eocd||!hasEntry)error();
+}
+
 async function studioNextBody(request){
   const declared=Number(request.headers.get('content-length')||0);
   if(declared>NEXT_PROJECT_MAX_ZIP)throw Object.assign(Error('ZIP demasiado grande.'),{status:413});
@@ -60,8 +108,7 @@ async function studioNextBody(request){
   if(size<4)throw Object.assign(Error('ZIP inválido.'),{status:400});
   const output=new Uint8Array(size);let cursor=0;
   for(const part of parts){output.set(part,cursor);cursor+=part.length;}
-  if(!(output[0]===80&&output[1]===75&&((output[2]===3&&output[3]===4)||(output[2]===5&&output[3]===6)||(output[2]===7&&output[3]===8))))
-    throw Object.assign(Error('Se esperaba un ZIP real.'),{status:400});
+  studioNextValidateZip(output);
   return output;
 }
 function studioNextObjectKey(owner,id,version){
