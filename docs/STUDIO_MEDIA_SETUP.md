@@ -1,26 +1,25 @@
 # Activación de imágenes · WebCreator Studio
 
 ## Estado del desarrollo
-- Implementado en la rama `feature/studio-pro-fonts`. NO publicado en el Worker de producción.
+- Implementado en `feature/studio-pro-fonts` y desplegado en Cloudflare el 15-11-2026. El Worker activo es `wayup-webcreator`.
 - Galería privada: imágenes JPEG, PNG y WebP hasta 5 MB por archivo; eliminación y reutilización entre webs.
 - Editor Canvas: elegir imágenes, sustituir o añadir al elemento/sección seleccionada, ajustar `object-fit`, `object-position`, ancho máximo y `alt`.
 - Exportación HTML/ZIP: los recursos privados de R2 referenciados se incrustan como data URI en el documento exportado, hasta 25 archivos y 28 MB de datos base64.
 - Generación de imágenes bajo demanda con `@cf/black-forest-labs/flux-1-schnell`, máximo **10 imágenes al día UTC**. Cada clic crea una imagen; no se generan automáticamente al abrir Studio.
 - Las cuotas de Workers AI son independientes de este límite y pueden aplicar restricciones o cargos.
 
-## Bloqueo actual
-La API de Cloudflare respondió: `403 / 10042 — Please enable R2 through the Cloudflare Dashboard`.
+## Recursos conectados (verificados por API)
+- Bucket R2 privado: `wayupstudio` (Europa occidental, Standard). Sin r2.dev público ni dominios personalizados.
+- Worker: `wayup-webcreator`.
+- Bindings activos: `OPENROUTER_API_KEY` (secreto), `USAGE_DB` (D1), `STUDIO_ASSETS` (R2 bucket `wayupstudio`), `AI` (Workers AI).
+- Migración `migrations/0003_studio_media.sql` aplicada y tabla `studio_image_quota` comprobada.
+- Despliegue activo: `b74016e9-27af-4eaf-94b7-7a42bfb9fa84` (100 %). Versión anterior recuperable: `1447cfb4-d644-484a-81c0-53e6c128830f`.
+- Código compilado y pruebas de GitHub Actions superadas. **Falta prueba interactiva de extremo a extremo desde una sesión autenticada en Cloudflare Access.**
 
-El Worker desplegado actualmente tiene:
-- `OPENROUTER_API_KEY` (secret)
-- `USAGE_DB` (D1)
-
-Todavía **NO** tiene `STUDIO_ASSETS` (R2) ni `AI` (Workers AI).
-
-## Para activar el módulo en Cloudflare (sin tocar WAYUP ni WAY.APP)
+## Referencia: preparación de Cloudflare (ya completada, no volver a crear recursos)
 1. Entrar a Cloudflare Dashboard con la cuenta asociada a `wayup-webcreator`.
 2. Abrir **R2 Object Storage** y activar R2 para esa cuenta. La activación puede requerir aceptar condiciones o configurar facturación; verificar costes antes de continuar.
-3. Crear un bucket privado llamado `wayup-webcreator-assets`. No habilitar un dominio público ni `r2.dev`.
+3. Crear un bucket privado llamado `wayupstudio`. No habilitar un dominio público ni `r2.dev`.
 4. Abrir **Workers & Pages → wayup-webcreator → Settings → Bindings**. Añadir R2 bucket binding con variable **`STUDIO_ASSETS`** apuntando al bucket creado.
 5. Añadir un binding de **Workers AI** llamado **`AI`**, si la cuenta y su plan lo permiten.
 6. Aplicar la migración SQL `migrations/0003_studio_media.sql` a la misma base D1 ya vinculada como `USAGE_DB`. Es una tabla nueva y no altera las tablas de generación.
@@ -38,7 +37,7 @@ Todavía **NO** tiene `STUDIO_ASSETS` (R2) ni `AI` (Workers AI).
 - La generación de imágenes debe utilizarse con prompts y fotografías de las que se tenga derecho de uso.
 
 ## Límites conocidos
-- R2 no está activado: no afirmar que guardar o generar imágenes funcione en producción.
+- R2 y el binding de Workers AI están conectados. No afirmar que la generación haya sido probada en navegador hasta completar la prueba interactiva.
 - El módulo de imágenes no modifica la IA principal de creación de webs ni añade fotografías automáticamente a cada generación.
 - La exportación incrusta imágenes por simplicidad; más adelante se puede producir un ZIP de archivos binarios con referencias relativas para sitios de gran tamaño.
 - Las peticiones de generación tienen cuota interna de 10 al día, pero no se ha configurado todavía un presupuesto de uso real de Workers AI en Cloudflare.
