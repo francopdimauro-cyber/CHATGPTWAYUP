@@ -239,5 +239,7 @@ export function parseWindowsFontList(raw: string): string[] {
   const value=JSON.parse(raw.replace(/^\uFEFF/,''));
   if(!value||value.format!=='wayup-local-fonts-v1'||!Array.isArray(value.families)||value.families.length>7000)
     throw new Error('El archivo no es un listado de WAYUP compatible.');
-  return [...new Set(value.families.filter(isSafeFontName).map((x:string)=>x.trim()))].slice(0,7000);
+  const names:unknown[]=value.families;
+  const valid:string[]=names.filter(isSafeFontName).map(name=>name.trim());
+  return [...new Set<string>(valid)].slice(0,7000);
 }
