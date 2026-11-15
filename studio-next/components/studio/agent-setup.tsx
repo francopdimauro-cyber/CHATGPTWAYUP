@@ -123,7 +123,8 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
         setMessage('Guardando el agente nuevo…');
         const created=await backend('POST','/agents',{config,source:'ai'});
         if(!isUUID(created.id))throw Error('El servidor no confirmó el agente.');
-        agentId=created.id;setSavedAgent({agentId});
+        const newId:string=created.id;
+        agentId=newId;setSavedAgent({agentId:newId});
       }
       if(!agentId)throw Error('No hay un agente seleccionado.');
       if(option==='new'){
