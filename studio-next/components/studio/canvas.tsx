@@ -112,9 +112,10 @@ function Node({node, selected, isDesign, onSelect, onMove, children, className =
 function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<CanvasProps, 'doc' | 'mode' | 'selectedId' | 'onSelect' | 'onMove' | 'device'>) {
   const design = mode === 'diseno';
   const items = doc.elements;
+  const order = new Map(doc.sections.flatMap(section=>section.children).map((id,index)=>[id,index]));
   const node = (id: string, className: string, extra?: CSSProperties) => {
     const entry = items[id]; if (!entry) return null;
-    return <Node key={id} node={entry} selected={selectedId === id} isDesign={design} onSelect={onSelect} onMove={onMove} className={className} extraStyle={extra}/>;
+    return <Node key={id} node={entry} selected={selectedId === id} isDesign={design} onSelect={onSelect} onMove={onMove} className={className} extraStyle={{zIndex:4+(order.get(id)??0),...extra}}/>;
   };
   const baseIds = new Set(['titulo','subtitulo','descripcion','cta','secundario']);
   const inserted = doc.sections.flatMap(section=>section.children)
@@ -136,7 +137,7 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
         {node('secundario', 'inline-flex min-h-[52px] items-center justify-center border border-white/35 text-center no-underline')}
       </div>
       {inserted.map((id,index)=><div key={id} className="absolute z-[3] max-w-[80%] text-center"
-        style={{left:`${18+(index%4)*16}%`,top:`${19+(Math.floor(index/4)%5)*12}%`}}>
+        style={{left:`${18+(index%4)*16}%`,top:`${19+(Math.floor(index/4)%5)*12}%`,zIndex:4+(order.get(id)??0)}}>
         {node(id,'max-w-full break-words leading-snug')}
       </div>)}
       <div className="pointer-events-none absolute bottom-8 left-8 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#ecebda] text-[#1c241f]">◷</div>
