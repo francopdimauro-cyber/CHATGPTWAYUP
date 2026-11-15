@@ -8,7 +8,7 @@ on:
       - '.github/workflows/wayapp-elite-editor-ci.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   studio:
     runs-on: ubuntu-latest
@@ -29,6 +29,18 @@ jobs:
         run: npm run typecheck
       - name: Compilar editor Next.js
         run: npm run build
+      - name: Preparar versión estática para Cloudflare
+        run: node scripts/package-worker-preview.mjs
+      - name: Guardar manifiesto compilado en rama de desarrollo
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add preview-artifacts/wayapp-editor/
+          if ! git diff --cached --quiet; then
+            git commit -m "build(editor): assets de preview verificados [skip ci]"
+            git push origin HEAD:feature/studio-next-elite-editor-20261115
+          fi
       - name: Guardar exportación estática del editor
         uses: actions/upload-artifact@v4
         with:
