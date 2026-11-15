@@ -5,8 +5,9 @@ import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, Fi
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
   Save, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
+import { strFromU8, strToU8 } from 'fflate';
 import { downloadBytes, listSavedSites, patchSelectedElement, safePreview,
-  saveSite, siteFromHtml, siteFromZip, siteZip, strFromU8, strToU8,
+  saveSite, siteFromHtml, siteFromZip, siteZip,
   type SiteBundle } from '@/lib/web-project-files';
 
 type Stage='home'|'create'|'editor'|'agent'|'export';
