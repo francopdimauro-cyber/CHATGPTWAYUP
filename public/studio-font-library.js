@@ -30,9 +30,11 @@ function register(data){
  if(prior?.source==='uploaded'&&data.source!=='uploaded')return;
  if(prior?.source==='local'&&data.source==='google')return;
  fonts.set(data.name,data);
- if(![...select.options].some(o=>o.value===data.name)){
-  const option=document.createElement('option');option.value=data.name;option.textContent=data.name;select.append(option);
- }
+ if(data.source==='uploaded'||data.source==='local')ensureOption(data.name);
+}
+function ensureOption(name){
+ if(!safeName(name)||[...select.options].some(o=>o.value===name))return;
+ const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);
 }
 function urlFor(item){
  if(item.source==='google'||item.source==='open'){
@@ -92,7 +94,7 @@ picker.addEventListener('click',event=>{
  if(filter){activeFilter=filter.dataset.fontFilter;picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===filter)));render();return}
  const choice=event.target.closest('[data-font]');
  if(choice&&fonts.has(choice.dataset.font)){
-  select.value=choice.dataset.font;render();
+  ensureOption(choice.dataset.font);select.value=choice.dataset.font;render();
   note('Fuente '+select.value+' seleccionada. Pulsa «Aplicar tipografía y estilos» para actualizar el elemento del Canvas.');
  }
 });
@@ -130,8 +132,10 @@ el('wcFontFile').addEventListener('change',async()=>{
  const mime=/\.woff2$/i.test(file.name)?'font/woff2':/\.woff$/i.test(file.name)?'font/woff':/\.ttf$/i.test(file.name)?'font/ttf':'font/otf';
  const reader=new FileReader();
  reader.onload=()=>{
-  const data=String(reader.result||'');
-  if(!/^data:[\w/+.-]+;base64,[A-Za-z0-9+/=]+$/.test(data)){note('No se pudo leer la fuente.');return}
+  const raw=String(reader.result||'');
+  const base64=raw.split(',')[1]||'';
+  if(!/^[A-Za-z0-9+/=]+$/.test(base64)){note('No se pudo leer la fuente.');return}
+  const data='data:'+mime+';base64,'+base64;
   register({name,source:'uploaded',category:'uploaded',mime,embedded:data});
   select.value=name;activeFilter='uploaded';
   picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fontFilter==='uploaded')));
@@ -167,7 +171,7 @@ function embed(doc,name){
  const style=doc.createElement('style');style.setAttribute('data-wc-font-upload',name);style.textContent=css;doc.head.append(style);return true;
 }
 window.WebCreatorFontLibrary={
- has:name=>fonts.has(name),get:name=>fonts.get(name)||null,href:name=>urlFor(fonts.get(name)||{}),
+ has:name=>fonts.has(name),get:name=>fonts.get(name)||null,href:name=>urlFor(fonts.get(name)||{}),ensureOption,
  hydrate,embed,refresh:render
 };
 render();
