@@ -8,6 +8,7 @@ const studio=read('public/studio.js');
 const styles=read('public/studio-font-library.css');
 const build=read('scripts/build.mjs');
 const bundled=read('dist/worker.js');
+const windows=read('scripts/export-windows-fonts.ps1');
 
 test('fonts library parses and is bundled into WebCreator Studio',()=>{
  assert.doesNotThrow(()=>new vm.Script(module,{filename:'studio-font-library.js'}));
@@ -39,4 +40,27 @@ test('font uploads are size-limited and included in saved HTML',()=>{
  assert.match(module,/data-wc-font-upload/);
  assert.match(studio,/WebCreatorFontLibrary\.embed\(state\.doc,family\)/);
  assert.match(studio,/WebCreatorFontLibrary\?\.hydrate\(state\.doc\)/);
+});
+
+test('all Windows font families can be imported through a user supplied manifest',()=>{
+ assert.match(module,/wcDownloadWindowsFonts/);
+ assert.match(module,/wcImportFontList/);
+ assert.match(module,/wayup-local-fonts-v1/);
+ assert.match(module,/payload\.families\.length>7000/);
+ assert.match(module,/file\.size>512000/);
+ assert.match(module,/rememberKey/);
+ assert.match(module,/wcRememberFonts/);
+ assert.match(windows,/InstalledFontCollection/);
+ assert.match(windows,/ConvertTo-Json/);
+ assert.match(windows,/Set-Content/);
+ assert.match(build,/windowsFontExporter=read\('scripts\/export-windows-fonts\.ps1'\)/);
+ assert.doesNotMatch(bundled,/__WAYUP_WINDOWS_FONT_EXPORTER__/);
+});
+test('open font library supports pagination and explicit font weights',()=>{
+ assert.match(module,/visibleLimit\+=22/);
+ assert.match(module,/wcFontMore/);
+ assert.match(module,/weights:Array\.isArray\(f\.weights\)/);
+ assert.match(module,/validWeight/);
+ assert.match(studio,/data-wc-font-weight/);
+ assert.match(bundled,/fontsource\/css/);
 });
