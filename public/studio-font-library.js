@@ -40,9 +40,11 @@ function ensureOption(name){
  if(!safeName(name)||[...select.options].some(o=>o.value===name))return;
  const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);
 }
-function urlFor(item){
+function urlFor(item,weight='400'){
  if(item.source==='google'||item.source==='open'){
-  if(/^[a-z0-9-]+$/.test(item.id||''))return 'https://cdn.jsdelivr.net/fontsource/css/'+item.id+'@latest/index.css';
+  const validWeight=/^[1-9]00$/.test(String(weight))&&item.weights?.includes(Number(weight));
+  const cssFile=validWeight?'/' + weight + '.css':'/index.css';
+  if(/^[a-z0-9-]+$/.test(item.id||''))return 'https://cdn.jsdelivr.net/fontsource/css/'+item.id+'@latest'+cssFile;
   if(item.source==='google')return 'https://fonts.googleapis.com/css2?family='+encodeURIComponent(item.name).replace(/%20/g,'+')+'&display=swap';
  }
  return '';
@@ -231,7 +233,7 @@ el('wcFontList').addEventListener('change',async()=>{
 });
 loadRemembered();
 window.WebCreatorFontLibrary={
- has:name=>fonts.has(name),get:name=>fonts.get(name)||null,href:name=>urlFor(fonts.get(name)||{}),ensureOption,
+ has:name=>fonts.has(name),get:name=>fonts.get(name)||null,href:(name,weight)=>urlFor(fonts.get(name)||{},weight),ensureOption,
  hydrate,embed,refresh:render
 };
 render();
