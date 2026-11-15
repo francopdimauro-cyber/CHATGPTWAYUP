@@ -1,0 +1,49 @@
+name: WayUp Studio · Web reales, ZIP y edición segura
+on:
+  push:
+    branches:
+      - feature/studio-real-web-import-export-20261115
+    paths:
+      - 'studio-next/**'
+      - '.github/workflows/wayup-studio-real-web-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: studio-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependencias del editor
+        run: npm install --no-audit --no-fund
+      - name: Verificar portapapeles, historial, sintaxis y herramientas
+        run: npm test
+      - name: Comprobar tipos con TypeScript
+        run: npm run typecheck
+      - name: Compilar editor Next.js
+        run: npm run build
+      - name: Preparar versión estática para Cloudflare
+        run: node scripts/package-worker-preview.mjs
+      - name: Guardar manifiesto compilado en rama de desarrollo
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add preview-artifacts/wayapp-editor/
+          if ! git diff --cached --quiet; then
+            git commit -m "build(editor): assets de preview verificados [skip ci]"
+            git push origin HEAD:feature/studio-real-web-import-export-20261115
+          fi
+      - name: Guardar exportación estática del editor
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayup-studio-real-web-static
+          path: studio-next/out
+          retention-days: 7
