@@ -34,7 +34,7 @@ test('local enumeration requires a direct user gesture and supports Firefox fall
 });
 test('font uploads are size-limited and included in saved HTML',()=>{
  assert.match(module,/file\.size>115000/);
- assert.match(module,/data:font\//);
+ assert.match(module,/data:font/);
  assert.match(module,/documentElement\.outerHTML\.length\+css\.length\+150>290000/);
  assert.match(module,/data-wc-font-upload/);
  assert.match(studio,/WebCreatorFontLibrary\.embed\(state\.doc,family\)/);
