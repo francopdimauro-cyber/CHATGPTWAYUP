@@ -223,7 +223,7 @@ el('wcButtonCustomize').addEventListener('click',()=>{
  if(text.length>170||!iconOptions.some(x=>x[0]===icon))return;
  const changed=studio.change(()=>{
   if(!n.hasAttribute('data-wc-btn-original-style'))n.setAttribute('data-wc-btn-original-style',n.getAttribute('style')||'');
-  n.setAttribute('data-wc-btn-preset',n.getAttribute('data-wc-btn-preset')||'custom');
+  n.setAttribute('data-wc-btn-preset','custom');
   if(text&&el('wcBtnText').dataset.touched==='true'){
    const nodes=getTextNodes(n);
    if(nodes.length){nodes[0].nodeValue=text;for(let i=1;i<nodes.length;i++)nodes[i].nodeValue='';}
