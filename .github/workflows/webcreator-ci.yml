@@ -8,6 +8,7 @@ on:
       - feature/wayup-vibrant-ui
       - feature/official-wayup-logo
       - feature/studio-pro-fonts
+      - feature/studio-editor-premium-v2
   pull_request:
     branches:
       - main
