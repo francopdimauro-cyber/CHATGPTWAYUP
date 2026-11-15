@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
-  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3 } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
@@ -98,7 +98,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [view,setView]=useState<View>('preview');
   const [device,setDevice]=useState<'desktop'|'mobile'>('desktop');
   const [selected,setSelected]=useState<number|null>(null);
-  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:'',width:'',height:'',padding:'',margin:'',radius:'',fontWeight:'',fontFamily:'',textAlign:''});
+  const [moveMode,setMoveMode]=useState(false);
+  const moveModeRef=useRef(false);
+  const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:'',width:'',height:'',padding:'',margin:'',radius:'',fontWeight:'',fontFamily:'',textAlign:'',posX:'0',posY:'0'});
   const [layerSearch,setLayerSearch]=useState('');
   const [draftHtml,setDraftHtml]=useState('');
   const [past,setPast]=useState<string[]>([]);
@@ -115,6 +117,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const previewFrame=useRef<HTMLIFrameElement>(null);
   const selectedRef=useRef<HTMLElement|null>(null);
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
+  useEffect(()=>{moveModeRef.current=moveMode;const doc=previewFrame.current?.contentDocument;if(doc?.body)doc.body.style.cursor=moveMode?'grab':'';},[moveMode]);
   const layers=useMemo(()=>site?htmlLayerOutline(site.html):[],[site]);
   const activeLayer=layers.find(layer=>layer.index===selected);
   const filteredLayers=layers.filter(layer=>(layer.tag+' '+layer.label+' '+layer.id).toLowerCase().includes(layerSearch.toLowerCase())).slice(0,250);
@@ -219,7 +222,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     }finally{setBusy(false);}
   }
 
-  function selectLayer(index:number){
+  function selectLayer(index:number,scroll=true){
     const element=previewFrame.current?.contentDocument?.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');
     if(!element)return;
     selectedRef.current?.removeAttribute('data-wayup-selected');
@@ -236,13 +239,16 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       width:element.style.width||'',height:element.style.height||'',
       padding:element.style.padding||'',margin:element.style.margin||'',
       radius:element.style.borderRadius||'',fontWeight:element.style.fontWeight||'',
-      fontFamily:element.style.fontFamily||'',textAlign:element.style.textAlign||''
+      fontFamily:element.style.fontFamily||'',textAlign:element.style.textAlign||'',
+      posX:element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/)?.[1]||'0',
+      posY:element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/)?.[2]||'0'
     });
-    element.scrollIntoView({block:'center',behavior:'smooth'});
+    if(scroll)element.scrollIntoView({block:'center',behavior:'smooth'});
   }
   function previewLoaded(){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
+    if(doc.body)doc.body.style.cursor=moveModeRef.current?'grab':'';
     doc.addEventListener('click',event=>{
       event.preventDefault();event.stopPropagation();
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
@@ -251,6 +257,46 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       if(Number.isSafeInteger(index))selectLayer(index);
     },true);
     doc.addEventListener('submit',event=>event.preventDefault(),true);
+    type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean};
+    let moving:Moving|null=null;
+    const clamp=(n:number)=>Math.max(-1200,Math.min(1200,Math.round(n)));
+    doc.addEventListener('pointerdown',event=>{
+      if(!moveModeRef.current||event.button!==0)return;
+      const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
+      if(!element)return;
+      const index=Number(element.dataset.wayupEdit);
+      if(!Number.isSafeInteger(index))return;
+      const position=element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/);
+      moving={element,index,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,
+        x:Number(position?.[1]||0),y:Number(position?.[2]||0),moved:false};
+      event.preventDefault();
+      selectLayer(index,false);
+      try{element.setPointerCapture(event.pointerId);}catch{}
+    },true);
+    doc.addEventListener('pointermove',event=>{
+      if(!moving||event.pointerId!==moving.pointerId)return;
+      const dx=event.clientX-moving.clientX,dy=event.clientY-moving.clientY;
+      if(!moving.moved&&Math.hypot(dx,dy)<3)return;
+      moving.moved=true;
+      moving.element.style.translate=clamp(moving.x+dx)+'px '+clamp(moving.y+dy)+'px';
+    },true);
+    doc.addEventListener('pointerup',event=>{
+      if(!moving||event.pointerId!==moving.pointerId)return;
+      const state=moving;moving=null;
+      try{state.element.releasePointerCapture(event.pointerId);}catch{}
+      if(!state.moved)return;
+      try{
+        const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
+        if(!site)return;
+        changeHtml(patchSelectedElement(site.html,state.index,{moveX:x,moveY:y}));
+        setNotice('Elemento desplazado en el HTML real. Deshacer restaura su posición.');
+      }catch(error){setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
+    },true);
+    doc.addEventListener('pointercancel',()=>{
+      if(!moving)return;
+      moving.element.style.translate=moving.x+'px '+moving.y+'px';
+      moving=null;
+    },true);
   }
   function modifyStructure(action:'duplicate'|'remove'|'up'|'down'){
     if(!site||selected===null)return;
@@ -274,7 +320,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       setNotice('Imagen incorporada al proyecto y al ZIP. Guarda la versión para conservarla.');
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo adjuntar la imagen.');}
   }
-  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string;href?:string;alt?:string;width?:string;height?:string;padding?:string;margin?:string;radius?:string;fontWeight?:string;fontFamily?:string;textAlign?:string})=>{
+  const patch=(changes:{text?:string;color?:string;background?:string;fontSize?:string;href?:string;alt?:string;width?:string;height?:string;padding?:string;margin?:string;radius?:string;fontWeight?:string;fontFamily?:string;textAlign?:string;moveX?:number;moveY?:number})=>{
     if(!site||selected===null)return;
     try{
       const next=patchSelectedElement(site.html,selected,changes);
@@ -433,6 +479,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           <button onClick={undo} disabled={!past.length} className={btn} title="Deshacer"><Undo2 size={14}/></button>
           <button onClick={redo} disabled={!future.length} className={btn} title="Rehacer"><Redo2 size={14}/></button>
           <button onClick={()=>setView('preview')} className={btn+(view==='preview'?' border-brand text-brand':'')}><Paintbrush size={14}/> Visual</button>
+          <button onClick={()=>setMoveMode(v=>!v)} aria-pressed={moveMode} className={btn+(moveMode?' border-brand text-brand':'')} title="Activa para arrastrar elementos directamente en la web importada"><Move size={14}/> Mover</button>
           <button onClick={()=>setView('code')} className={btn+(view==='code'?' border-brand text-brand':'')}><CodeXml size={14}/> HTML</button>
           <button onClick={()=>void onSave()} disabled={busy} className={btn}><Save size={14}/> Guardar</button>
           <button onClick={()=>void onCloudSave()} disabled={busy} className={btn} title="Guardar versión en Cloudflare con sesión y control de concurrencia"><Globe size={14}/> Guardar nube</button>
@@ -545,6 +592,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
                   </select>
                 </label>
               </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {([['posX','Posición X'],['posY','Posición Y']] as const).map(([key,label])=><label key={key} className="text-[10px] text-mist">{label}
+                  <input type="number" min={-1200} max={1200} step={1} className={BASE+' mt-1 w-full'}
+                    value={selectedValues[key]} onChange={e=>setSelectedValues({...selectedValues,[key]:e.target.value})}/>
+                </label>)}
+              </div>
+              <button className={btn+' mt-2 w-full'} onClick={()=>patch({moveX:Number(selectedValues.posX),moveY:Number(selectedValues.posY)})}>Aplicar posición</button>
               <p className="mt-2 text-[10px] leading-4 text-faint">Medidas en px, o porcentaje para ancho y alto. Vacío restablece el valor heredado.</p>
               <button className={primary+' mt-3 w-full'} onClick={()=>patch({
                 width:selectedValues.width,height:selectedValues.height,padding:selectedValues.padding,
