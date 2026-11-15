@@ -64,8 +64,25 @@ export function siteFromZip(input:Uint8Array):SiteBundle {
   const html=strFromU8(output[entry]);
   validateDocument(html);
   delete output[entry];
+  // El manifiesto contiene solo referencias públicas, nunca secretos ni tokens.
+  let agent:SiteBundle['agent'];
+  const metadata=output['WAYUP_STUDIO_PROJECT.json'];
+  if(metadata&&metadata.length<=4_096){
+    try{
+      const parsed=JSON.parse(strFromU8(metadata)) as {format?:string;agent?:SiteBundle['agent']};
+      const candidate=parsed.agent;
+      if(parsed.format==='wayup-studio-v1'&&candidate&&
+        /^[0-9a-f-]{36}$/i.test(candidate.agentId)&&
+        /^[0-9a-f-]{36}$/i.test(candidate.chatId)&&
+        /^https:\/\/[^\s/]+$/i.test(candidate.origin)&&
+        typeof candidate.title==='string'&&candidate.title.length<=120&&
+        Number.isFinite(candidate.linkedAt))
+        agent=candidate;
+    }catch{/* El ZIP sigue pudiendo importarse sin metadatos válidos. */}
+  }
+  delete output['WAYUP_STUDIO_PROJECT.json'];
   return {id:crypto.randomUUID(),name:siteTitle(html),html,entry,assets:output,
-    version:0,updatedAt:Date.now(),source:'imported',versions:[]};
+    version:0,updatedAt:Date.now(),source:'imported',versions:[],...(agent?{agent}:{})};
 }
 export function agentSnippet(chatId:string):string {
   if(!/^[0-9a-f-]{36}$/i.test(chatId))throw Error('Identificador de chat inválido.');
@@ -88,6 +105,11 @@ export function siteZip(site:SiteBundle,additionalSnippet?:string):Uint8Array {
   const html=htmlForExport(site,additionalSnippet);
   archive[site.entry]=strToU8(html);
   if(site.agent){
+    archive['WAYUP_STUDIO_PROJECT.json']=strToU8(JSON.stringify({
+      format:'wayup-studio-v1',
+      agent:{agentId:site.agent.agentId,chatId:site.agent.chatId,
+        origin:site.agent.origin,title:site.agent.title,linkedAt:site.agent.linkedAt}
+    }));
     const notice='WayUp Studio — asistente IA vinculado\n\nOrigen autorizado: '+site.agent.origin+'\nTítulo: '+site.agent.title+'\n\nEl chat requiere que el agente esté activo y conectado al backend.\nAl publicar, utiliza exactamente el dominio HTTPS autorizado.\nNunca incluyas claves privadas de IA en el HTML o ZIP.\n';
     archive['WAYUP_AGENT_SETUP.txt']=strToU8(notice);
   }
