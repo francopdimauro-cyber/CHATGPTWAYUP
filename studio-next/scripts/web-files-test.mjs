@@ -71,4 +71,17 @@ const again=strFromU8(unzipSync(files.siteZip(already))['index.html']);
 assert.equal((again.match(/data-chat=/g)||[]).length,1,'La reexportación no duplica el agente');
 assert.equal((files.htmlForExport(replaced).match(/widget\.js/g)||[]).length,0,'Sin agente, nada embebido');
 assert.throws(()=>files.agentSnippet('invalid'),/inválido/);
+
+assert.equal(files.safeSiteLink('https://example.test/contacto'),true,'HTTPS permitido');
+assert.equal(files.safeSiteLink('#contacto'),true,'Anclas permitidas');
+assert.equal(files.safeSiteLink('contacto.html'),true,'Rutas relativas permitidas');
+assert.equal(files.safeSiteLink('mailto:info@example.test'),true,'Correo permitido');
+for(const unsafe of ['javascript:alert(1)','data:text/html,hi','vbscript:msgbox(1)','http://example.test','//example.test','../secret','ftp://example.test']){
+  assert.equal(files.safeSiteLink(unsafe),false,'No aceptar URL insegura: '+unsafe);
+}
+assert.equal(files.detectSafeImage(fakeLogo)?.ext,'png','Detección mediante cabecera real');
+assert.equal(files.detectSafeImage(strToU8('<script>alert(1)</script>')),null,'No aceptar HTML disfrazado de imagen');
+assert.equal(files.detectSafeImage(new Uint8Array(5_000_001)),null,'Limitar peso de imágenes');
+console.log('Correcto: enlaces bloqueados por esquema y subidas de imágenes con firma y tamaño controlados.');
+
 console.log('Correcto: generador HTML seguro, ZIP importado/exportado sin pérdidas, rutas y agente único.');
