@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
-  Save, Search, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { downloadBytes, listSavedSites, patchSelectedElement, safePreview,
-  saveSite, siteFromHtml, siteFromZip, siteWithNewHtml, siteZip,
+  saveSite, siteFromHtml, siteFromZip, siteZip, strFromU8, strToU8,
   type SiteBundle } from '@/lib/web-project-files';
 
 type Stage='home'|'create'|'editor'|'agent'|'export';
