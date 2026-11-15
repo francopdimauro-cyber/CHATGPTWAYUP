@@ -27,7 +27,6 @@ export function StudioApp() {
   const [savedContent, setSavedContent] = useState(JSON.stringify(DEMO_PROJECT));
   const [notice, setNotice] = useState('');
   const [theme, setTheme] = useState<'light'|'dark'>('dark');
-  const [workspace, setWorkspace] = useState<'web'|'agent'|null>(null);
   const [contextSpot, setContextSpot] = useState<ContextSpot | null>(null);
   const internalClipboard = useRef('');
   const doc = history.present;
@@ -174,7 +173,12 @@ export function StudioApp() {
       onUndo={undo} onRedo={redo} onSave={onSave}
       canCopy={Boolean(selectedId && doc.elements[selectedId])}
       theme={theme} onTheme={()=>setTheme(v=>v==='dark'?'light':'dark')}
-      onCreateWeb={()=>setWorkspace('web')} onCreateAgent={()=>setWorkspace('agent')}
+      onCreateWeb={()=>window.open('https://wayup-webcreator.francopdimauro.workers.dev/','_blank','noopener,noreferrer')}
+      onCreateAgent={()=>{
+        const trigger=document.getElementById('wayup-agent-open');
+        if(trigger instanceof HTMLButtonElement)trigger.click();
+        else setNotice('El panel de agentes no está disponible. Recarga la página e inténtalo de nuevo.');
+      }}
       onCopy={()=>void runCommand('copy')} onCut={()=>void runCommand('cut')}
       onPaste={()=>void runCommand('paste')} onDuplicate={()=>void runCommand('duplicate')} onToggleLibrary={()=>{setNavCollapsed(false);setMobileNav(v=>!v)}} onToggleInspector={()=>setMobileInspector(v=>!v)}/>
     <Navigator doc={doc} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
