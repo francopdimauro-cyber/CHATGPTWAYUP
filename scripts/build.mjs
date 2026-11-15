@@ -14,6 +14,7 @@ const commandPalette=read('public/command-palette.js');
 const studioClient=read('public/studio.js');
 const mediaClient=read('public/studio-media.js');
 const mediaCss=read('public/studio-media.css');
+const studioPro=read('public/studio-pro.css');
 const mediaServer=read('src/studio-media.js');
 const studioServer=read('src/studio.js');
 const worker=read('src/worker.js');
@@ -21,7 +22,7 @@ if(!worker.includes('__WEBCREATOR_HTML__')||!worker.includes('/*__WEBCREATOR_STU
   throw new Error('Faltan puntos de inserción de Studio');
 if(!base.includes('id="downloadZip"')||!base.includes('id="preview"'))
   throw new Error('Faltan controles del constructor original');
-const html=base.replace('__WAYUP_OFFICIAL_LOGO__','data:image/png;base64,'+originalLogoBase64).replace('</head>','<style>\n'+css+'\n'+theme+'\n'+compact+'\n'+precisionDark+'\n'+vibrant+'\n'+urbanType+'\n'+officialCss+'\n'+mediaCss+'\n</style></head>')
+const html=base.replace('__WAYUP_OFFICIAL_LOGO__','data:image/png;base64,'+originalLogoBase64).replace('</head>','<style>\n'+css+'\n'+theme+'\n'+compact+'\n'+precisionDark+'\n'+vibrant+'\n'+urbanType+'\n'+officialCss+'\n'+mediaCss+'\n'+studioPro+'\n</style></head>')
   .replace('</body>','<script>\n'+studioClient+'\n</script><script>\n'+commandPalette+'\n</script><script>\n'+themeToggle+'\n</script><script>\n'+mediaClient+'\n</script></body>');
 const built=worker.replace('/*__WEBCREATOR_STUDIO_SERVER__*/',studioServer+'\n'+mediaServer)
   .replace('__WEBCREATOR_HTML__',JSON.stringify(html));
