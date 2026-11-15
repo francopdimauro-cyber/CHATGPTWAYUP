@@ -108,7 +108,7 @@ h3{font-size:22px;letter-spacing:-.03em;line-height:1.2}
 </div></section>
 <section class="contact wrap" id="contacto" data-wc-section="contacto">
 <div><span class="chip">Hablemos</span><h2>¿Empezamos?</h2>\${contact}</div>
-<a class="btn btn-primary" href="mailto:info@ejemplo.invalid" data-wayup-placeholder="true" title="Configura primero una dirección de contacto real">Configurar correo de contacto</a>
+<span class="btn btn-secondary">Añade tu correo real desde el editor para activar el contacto</span>
 </section></main>
 <footer class="footer"><div class="wrap">\${title} · Sitio web preparado con WayUp Studio.</div></footer>
 </body></html>\`;
