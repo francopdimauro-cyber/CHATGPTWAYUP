@@ -204,7 +204,6 @@ el('wcRememberFonts').addEventListener('change',()=>{
  }catch{note('El navegador no permite guardar preferencias locales.')}
 });
 el('wcDownloadWindowsFonts').addEventListener('click',()=>{
- if(windowsExporter==='__WAYUP_WINDOWS_FONT_EXPORTER__'){note('El exportador estará disponible en la versión compilada.');return}
  const blob=new Blob([windowsExporter],{type:'text/plain;charset=utf-8'});
  const url=URL.createObjectURL(blob);
  const a=document.createElement('a');a.href=url;a.download='wayup-exportar-fuentes.ps1';document.body.append(a);a.click();a.remove();
