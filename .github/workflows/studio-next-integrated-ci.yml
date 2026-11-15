@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - feature/studio-integrated-premium-theme-fonts
+      - feature/studio-next-unified-worker
   workflow_dispatch:
 
 permissions:
