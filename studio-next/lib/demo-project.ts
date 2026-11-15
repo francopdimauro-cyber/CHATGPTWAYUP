@@ -36,9 +36,9 @@ export const DEMO_PROJECT: ProjectDoc = {
   version: 3,
   lastEdited: '15 nov 2026, 08:07',
   sections: [
-    { id: 'cabecera', label: 'Cabecera', children: [] },
+    { id: 'cabecera', label: 'Cabecera', children: ['marca-icono','marca-nombre','nav-inicio','nav-servicios','nav-planes','nav-metodo','nav-testimonios','nav-contacto','nav-cta'] },
     { id: 'inicio', label: 'Inicio', children: ['titulo', 'subtitulo', 'descripcion', 'cta', 'secundario'] },
-    { id: 'servicios', label: 'Servicios', children: [] },
+    { id: 'servicios', label: 'Servicios', children: ['servicio-etiqueta','servicio-titulo','servicio-descripcion'] },
     { id: 'planes', label: 'Planes', children: [] },
     { id: 'metodo', label: 'Método', children: [] },
     { id: 'testimonios', label: 'Testimonios', children: [] },
@@ -46,6 +46,24 @@ export const DEMO_PROJECT: ProjectDoc = {
     { id: 'contacto', label: 'Contacto', children: [] },
   ],
   elements: {
+    'marca-icono':{
+      id:'marca-icono',label:'Símbolo de la marca',kind:'boton',sectionId:'cabecera',text:'!',href:'#inicio',
+      style:base({fontSize:24,fontWeight:900,color:'#0c1500',background:'#b3ee06',radius:999,paddingX:13,paddingY:6}),
+    },
+    'marca-nombre':{
+      id:'marca-nombre',label:'Nombre en cabecera',kind:'parrafo',sectionId:'cabecera',text:'Entrena-T',
+      style:base({fontSize:16,fontWeight:750,color:'#ffffff'}),
+    },
+    'nav-inicio':{id:'nav-inicio',label:'Menú: Inicio',kind:'boton',sectionId:'cabecera',text:'INICIO',href:'#inicio',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
+    'nav-servicios':{id:'nav-servicios',label:'Menú: Servicios',kind:'boton',sectionId:'cabecera',text:'SERVICIOS',href:'#servicios',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
+    'nav-planes':{id:'nav-planes',label:'Menú: Planes',kind:'boton',sectionId:'cabecera',text:'PLANES',href:'#planes',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
+    'nav-metodo':{id:'nav-metodo',label:'Menú: Método',kind:'boton',sectionId:'cabecera',text:'MÉTODO',href:'#metodo',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
+    'nav-testimonios':{id:'nav-testimonios',label:'Menú: Testimonios',kind:'boton',sectionId:'cabecera',text:'TESTIMONIOS',href:'#testimonios',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
+    'nav-contacto':{id:'nav-contacto',label:'Menú: Contacto',kind:'boton',sectionId:'cabecera',text:'CONTACTO',href:'#contacto',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
+    'nav-cta':{id:'nav-cta',label:'Botón superior',kind:'boton',sectionId:'cabecera',text:'EMPEZAR',href:'#contacto',style:base({fontSize:10,fontWeight:800,color:'#101609',background:'#b3ee06',radius:6,paddingX:16,paddingY:12})},
+    'servicio-etiqueta':{id:'servicio-etiqueta',label:'Etiqueta de servicios',kind:'parrafo',sectionId:'servicios',text:'Entrena-T Parquesol',style:base({fontSize:10,fontWeight:750,color:'#b3ee06'})},
+    'servicio-titulo':{id:'servicio-titulo',label:'Título de servicios',kind:'subtitulo',sectionId:'servicios',text:'Entrenamiento diseñado para ti',style:base({fontSize:24,fontWeight:650,color:'#ffffff'})},
+    'servicio-descripcion':{id:'servicio-descripcion',label:'Descripción de servicios',kind:'parrafo',sectionId:'servicios',text:'Metodología cercana, programas personalizados y objetivos reales.',style:base({fontSize:12,fontWeight:400,color:'#abb2a9'})},
     titulo: {
       id: 'titulo', label: 'Título principal', kind: 'titulo', sectionId: 'inicio', text: 'ENTRENAMIENTO PERSONAL',
       style: base({ fontSize: 53, fontWeight: 700, color: '#ffffff' }),
