@@ -19,7 +19,21 @@ export function loadLocalDemo(fallback: ProjectDoc): ProjectDoc {
     const doc: unknown = JSON.parse(raw);
     if (!doc || typeof doc !== 'object') return fallback;
     const candidate = doc as Partial<ProjectDoc>;
-    return candidate.id === fallback.id && candidate.elements && candidate.sections ? candidate as ProjectDoc : fallback;
+    if (candidate.id !== fallback.id || !candidate.elements || !Array.isArray(candidate.sections)) return fallback;
+    // Compatible con documentos locales anteriores a la cabecera editable.
+    // Conserva la edición del usuario y añade solo los nuevos nodos de la plantilla.
+    const present=candidate as ProjectDoc;
+    const elements={...fallback.elements,...present.elements};
+    const sections=present.sections.map(section=>{
+      const base=fallback.sections.find(item=>item.id===section.id);
+      if(!base)return section;
+      const required=base.children.filter(id=>!section.children.includes(id));
+      return {...section,children:[...section.children,...required]};
+    });
+    for(const section of fallback.sections){
+      if(!sections.some(item=>item.id===section.id)) sections.push(section);
+    }
+    return {...present,elements,sections};
   } catch { return fallback; }
 }
 
