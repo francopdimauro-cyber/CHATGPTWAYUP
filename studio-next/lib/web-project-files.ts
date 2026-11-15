@@ -309,7 +309,7 @@ function cssSize(value:string,maximum=3000,percentage=false):string{
 export function patchSelectedElement(html:string,index:number,changes:{
   text?:string;color?:string;background?:string;fontSize?:string;href?:string;src?:string;alt?:string;
   width?:string;height?:string;padding?:string;margin?:string;radius?:string;
-  fontWeight?:string;fontFamily?:string;textAlign?:string
+  fontWeight?:string;fontFamily?:string;textAlign?:string;moveX?:number;moveY?:number
 }):string{
   const doc=new DOMParser().parseFromString(html,'text/html');
   const node=selectableHtmlNode(doc,index);
@@ -339,6 +339,12 @@ export function patchSelectedElement(html:string,index:number,changes:{
     if(!['','left','center','right','justify','start','end'].includes(changes.textAlign))
       throw Error('Alineación no permitida.');
     node.style.textAlign=changes.textAlign;
+  }
+  if(changes.moveX!==undefined||changes.moveY!==undefined){
+    const x=changes.moveX??0,y=changes.moveY??0;
+    if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>1200||Math.abs(y)>1200)
+      throw Error('El desplazamiento debe estar entre -1200 y 1200 píxeles.');
+    node.style.translate=Math.round(x)+'px '+Math.round(y)+'px';
   }
   if(changes.href!==undefined){
     if(node.tagName!=='A')throw Error('Este elemento no es un enlace.');
