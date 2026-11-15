@@ -146,8 +146,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
     assets[path]=url;urls.push(url);
   }
   const doc=new DOMParser().parseFromString(site.html,'text/html');
-  const eligible=Array.from(doc.body.querySelectorAll<HTMLElement>('*'))
-    .filter(node=>!['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','TEMPLATE','LINK','META'].includes(node.tagName));
+  const eligible=editableHtmlNodes(doc);
   eligible.forEach((node,i)=>node.dataset.wayupEdit=String(i));
   for(const node of Array.from(doc.querySelectorAll('script,iframe,object,embed,base,meta[http-equiv],template'))){
     node.remove();
@@ -188,12 +187,107 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   doc.head.append(previewStyles);
   return {html:'<!DOCTYPE html>\n'+doc.documentElement.outerHTML,revoke:()=>urls.forEach(url=>URL.revokeObjectURL(url))};
 }
+
+/** Índices DOM estables para vista protegida, árbol y operaciones reales. */
+const BLOCKED_EDITOR_TAGS = new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','TEMPLATE','LINK','META']);
+export function editableHtmlNodes(doc:Document):HTMLElement[]{
+  return Array.from(doc.body.querySelectorAll<HTMLElement>('*'))
+    .filter(node=>!BLOCKED_EDITOR_TAGS.has(node.tagName));
+}
 export const selectableHtmlNode=(doc:Document,index:number):HTMLElement|null=>{
-  const elements=Array.from(doc.body.querySelectorAll<HTMLElement>('*'))
-    .filter(node=>!['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','TEMPLATE','LINK','META'].includes(node.tagName));
-  return elements[index]||null;
+  if(!Number.isSafeInteger(index)||index<0)return null;
+  return editableHtmlNodes(doc)[index]||null;
 };
-export function patchSelectedElement(html:string,index:number,changes:{text?:string;color?:string;background?:string;fontSize?:string}):string{
+export type HtmlLayer = {index:number;tag:string;label:string;depth:number;id:string};
+export function htmlLayerOutline(html:string):HtmlLayer[]{
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const nodes=editableHtmlNodes(doc);
+  const visible=new Set(['HEADER','MAIN','SECTION','ARTICLE','ASIDE','FOOTER','NAV','DIV','H1','H2','H3','H4','P','A','BUTTON','IMG','FORM']);
+  return nodes.flatMap((node,index)=>{
+    if(!visible.has(node.tagName))return [];
+    const label=(node.getAttribute('aria-label')||node.getAttribute('alt')||
+      (node.children.length===0?node.textContent:'')||node.getAttribute('id')||node.tagName)
+      ?.replace(/\s+/g,' ').trim().slice(0,54)||node.tagName;
+    let depth=0,parent=node.parentElement;
+    while(parent&&parent!==doc.body){if(['HEADER','MAIN','SECTION','ARTICLE','ASIDE','FOOTER','NAV'].includes(parent.tagName))depth++;parent=parent.parentElement;}
+    return [{index,tag:node.tagName,label,depth:Math.min(3,depth),id:node.id||''}];
+  }).slice(0,400);
+}
+export function safeSiteLink(value:string):boolean{
+  const raw=value.trim();
+  if(!raw||raw.length>1400||/[\u0000-\u001f]/.test(raw))return false;
+  if(raw.startsWith('#'))return /^#[\w\-:.]+$/.test(raw);
+  if(raw.startsWith('/')&&!raw.startsWith('//'))return !/\\/.test(raw);
+  if(/^(mailto:|tel:)/i.test(raw))return !/[<>\s]/.test(raw);
+  if(/^https:\/\//i.test(raw)){try{const url=new URL(raw);return Boolean(url.hostname)&&!url.username&&!url.password;}catch{return false}}
+  return safePath(raw.split(/[?#]/)[0])&&!raw.startsWith('//');
+}
+export function detectSafeImage(bytes:Uint8Array):{mime:string;ext:string}|null{
+  if(bytes.byteLength<12||bytes.byteLength>5_000_000)return null;
+  if(bytes[0]===137&&bytes[1]===80&&bytes[2]===78&&bytes[3]===71&&bytes[4]===13&&bytes[5]===10)return {mime:'image/png',ext:'png'};
+  if(bytes[0]===255&&bytes[1]===216&&bytes[2]===255)return {mime:'image/jpeg',ext:'jpg'};
+  const head=String.fromCharCode(...bytes.slice(0,12));
+  if(head.startsWith('GIF87a')||head.startsWith('GIF89a'))return {mime:'image/gif',ext:'gif'};
+  if(head.slice(0,4)==='RIFF'&&head.slice(8,12)==='WEBP')return {mime:'image/webp',ext:'webp'};
+  return null;
+}
+export function attachLocalImage(site:SiteBundle,index:number,data:Uint8Array):SiteBundle{
+  const kind=detectSafeImage(data);
+  if(!kind)throw Error('Imagen no admitida: utiliza PNG, JPEG, GIF o WebP de hasta 5 MB.');
+  const doc=new DOMParser().parseFromString(site.html,'text/html');
+  const selected=selectableHtmlNode(doc,index);
+  if(!selected||selected.tagName!=='IMG')throw Error('Selecciona una imagen de la web.');
+  const file='wayup-media/'+crypto.randomUUID()+'.'+kind.ext;
+  if(!safePath(file))throw Error('Ruta de recurso inválida.');
+  return {...site,html:patchSelectedElement(site.html,index,{src:file}),
+    assets:{...site.assets,[file]:new Uint8Array(data)},updatedAt:Date.now()};
+}
+function serializeEditedHtml(doc:Document):string{
+  return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
+}
+export type HtmlStructureAction='duplicate'|'remove'|'up'|'down';
+export function editHtmlStructure(html:string,index:number,action:HtmlStructureAction):string{
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const node=selectableHtmlNode(doc,index);
+  if(!node||!node.parentElement||node===doc.body||node===doc.documentElement)throw Error('Elemento no editable.');
+  if(action==='remove'){
+    node.remove();
+  }else if(action==='duplicate'){
+    if(node.querySelector('script,iframe,object,embed'))throw Error('Este bloque contiene código activo: revísalo en HTML antes de duplicarlo.');
+    const copy=node.cloneNode(true) as HTMLElement;
+    const suffix='-copia-'+crypto.randomUUID().slice(0,8);
+    const ids=new Map<string,string>();
+    for(const item of [copy,...Array.from(copy.querySelectorAll<HTMLElement>('[id]'))]){
+      if(item.id){const previous=item.id;item.id=previous+suffix;ids.set(previous,item.id);}
+    }
+    for(const anchor of Array.from(copy.querySelectorAll<HTMLAnchorElement>('a[href^="#"]'))){
+      const target=anchor.getAttribute('href')?.slice(1)||'';
+      if(ids.has(target))anchor.setAttribute('href','#'+ids.get(target));
+    }
+    node.after(copy);
+  }else{
+    const sibling=action==='up'?node.previousElementSibling:node.nextElementSibling;
+    if(!sibling)throw Error('El elemento ya está en el extremo de su contenedor.');
+    if(action==='up')sibling.before(node);else sibling.after(node);
+  }
+  return serializeEditedHtml(doc);
+}
+export function addHtmlSection(html:string):string{
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const main=doc.querySelector('main')||doc.body;
+  const section=doc.createElement('section');
+  const id='seccion-'+crypto.randomUUID().slice(0,8);
+  section.id=id;
+  section.dataset.wcSection=id;
+  section.style.cssText='padding:64px 6%;max-width:1200px;margin:0 auto';
+  const title=doc.createElement('h2');title.textContent='Nueva sección';
+  const text=doc.createElement('p');text.textContent='Edita este contenido desde el inspector visual.';
+  section.append(title,text);main.append(section);
+  return serializeEditedHtml(doc);
+}
+export function patchSelectedElement(html:string,index:number,changes:{
+  text?:string;color?:string;background?:string;fontSize?:string;href?:string;src?:string;alt?:string
+}):string{
   const doc=new DOMParser().parseFromString(html,'text/html');
   const node=selectableHtmlNode(doc,index);
   if(!node)throw Error('El elemento seleccionado ya no existe.');
@@ -204,5 +298,20 @@ export function patchSelectedElement(html:string,index:number,changes:{text?:str
   if(changes.color!==undefined)node.style.color=changes.color;
   if(changes.background!==undefined)node.style.backgroundColor=changes.background;
   if(changes.fontSize!==undefined)node.style.fontSize=changes.fontSize;
-  return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
+  if(changes.href!==undefined){
+    if(node.tagName!=='A')throw Error('Este elemento no es un enlace.');
+    if(!safeSiteLink(changes.href))throw Error('Enlace no permitido: utiliza HTTPS, un ancla o una ruta local.');
+    node.setAttribute('href',changes.href.trim());
+  }
+  if(changes.src!==undefined){
+    if(node.tagName!=='IMG'||!safePath(changes.src)||!/^wayup-media\/[\w-]+\.(png|jpg|webp|gif)$/i.test(changes.src))
+      throw Error('Ruta de imagen no autorizada.');
+    node.setAttribute('src',changes.src);
+    node.removeAttribute('srcset');
+  }
+  if(changes.alt!==undefined){
+    if(node.tagName!=='IMG')throw Error('Este elemento no es una imagen.');
+    node.setAttribute('alt',changes.alt.slice(0,250));
+  }
+  return serializeEditedHtml(doc);
 }
