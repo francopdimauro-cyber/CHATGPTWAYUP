@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   CodeXml, Eye, Grip, LayoutGrid, Minus, Monitor, MousePointer2,
   Plus, Smartphone, Tablet
@@ -149,7 +149,7 @@ export function Canvas({ doc, mode, device, zoom, selectedId, onSelect, onMode, 
   const width = VIEWPORT[device];
   const isDesign = mode === 'diseno';
   const code = useMemo(()=>renderCode(doc),[doc]);
-  const context = (event: React.MouseEvent<HTMLElement>) => {
+  const context = (event: ReactMouseEvent<HTMLElement>) => {
     if (!isDesign) return;
     if (!(event.target as Element).closest('.stage-grid')) return;
     event.preventDefault();
