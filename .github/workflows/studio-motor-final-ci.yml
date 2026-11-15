@@ -5,7 +5,7 @@ on:
       - feature/studio-final-motor-estructura-medios-20261115
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   motor-final:
     runs-on: ubuntu-latest
@@ -29,3 +29,22 @@ jobs:
         run: npm run typecheck
       - name: Compilar editor (sin publicar)
         run: npm run build
+      - name: Empaquetar artefactos de la preview nueva
+        run: node scripts/package-worker-preview.mjs
+      - name: Guardar artefactos compilados en esta rama de desarrollo
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add preview-artifacts/wayapp-editor/
+          if ! git diff --cached --quiet; then
+            git commit -m "build(studio): artefactos validados del motor final [skip ci]"
+            git push origin HEAD:feature/studio-final-motor-estructura-medios-20261115
+          fi
+      - name: Entregar compilación estática para pruebas
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayup-studio-final-preview
+          path: studio-next/out
+          retention-days: 7
+
