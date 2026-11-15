@@ -1,0 +1,37 @@
+name: WayApp Studio Next · Editor élite y menú contextual
+on:
+  push:
+    branches:
+      - feature/studio-next-elite-editor-20261115
+    paths:
+      - 'studio-next/**'
+      - '.github/workflows/wayapp-elite-editor-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  studio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: studio-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependencias del editor
+        run: npm install --no-audit --no-fund
+      - name: Verificar portapapeles, historial, sintaxis y herramientas
+        run: npm test
+      - name: Comprobar tipos con TypeScript
+        run: npm run typecheck
+      - name: Compilar editor Next.js
+        run: npm run build
+      - name: Guardar exportación estática del editor
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayapp-studio-elite-static
+          path: studio-next/out
+          retention-days: 7
