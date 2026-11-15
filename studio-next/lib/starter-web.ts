@@ -44,14 +44,14 @@ export function starterHtml(input:StarterBrief):string{
   const imageCaption=input.style.trim()?safe(input.style,140):'Profesional, claro y contemporáneo';
   const title=safe(name,100);
   const desc=safe(description,155);
-  return \`<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>\${title} | Servicios profesionales</title>
-<meta name="description" content="\${desc}">
+<title>${title} | Servicios profesionales</title>
+<meta name="description" content="${desc}">
 <style>
-:root{--bg:\${p.bg};--panel:\${p.panel};--ink:\${p.ink};--muted:\${p.muted};--accent:\${p.accent};--accent-text:\${p.on};--max:1200px}
+:root{--bg:${p.bg};--panel:${p.panel};--ink:${p.ink};--muted:${p.muted};--accent:${p.accent};--accent-text:${p.on};--max:1200px}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
 a{color:inherit}a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 .wrap{width:min(90%,var(--max));margin:auto}
@@ -87,29 +87,29 @@ h3{font-size:22px;letter-spacing:-.03em;line-height:1.2}
 </head>
 <body>
 <header class="site-header" data-wc-section="cabecera"><div class="wrap header-row">
-<a class="brand" href="#inicio">\${title}</a>
+<a class="brand" href="#inicio">${title}</a>
 <nav class="nav" aria-label="Navegación principal"><a href="#inicio">Inicio</a><a href="#servicios">Servicios</a><a href="#contacto">Contacto</a></nav>
 </div></header>
 <main>
 <section class="wrap hero" id="inicio" data-wc-section="inicio">
-<div><span class="chip">\${safe(input.industry||'Servicios profesionales',120)}</span>
-<h1>\${title}<br><span style="color:var(--accent)">a tu manera.</span></h1>
-<p class="lead">\${desc}</p>
-<div class="actions"><a class="btn btn-primary" href="#contacto">\${goal}</a><a class="btn btn-secondary" href="#servicios">Nuestros servicios</a></div>
+<div><span class="chip">${safe(input.industry||'Servicios profesionales',120)}</span>
+<h1>${title}<br><span style="color:var(--accent)">a tu manera.</span></h1>
+<p class="lead">${desc}</p>
+<div class="actions"><a class="btn btn-primary" href="#contacto">${goal}</a><a class="btn btn-secondary" href="#servicios">Nuestros servicios</a></div>
 </div>
-<div class="editorial-card"><span class="chip">Hecho para ti</span><strong>Una nueva forma de avanzar.</strong><span style="color:var(--muted);font-size:12px">\${audience}</span></div>
+<div class="editorial-card"><span class="chip">Hecho para ti</span><strong>Una nueva forma de avanzar.</strong><span style="color:var(--muted);font-size:12px">${audience}</span></div>
 </section>
 <section class="section" id="servicios" data-wc-section="servicios"><div class="wrap">
-<div class="section-head"><div><span class="chip">Qué hacemos</span><h2>Servicios con intención.</h2></div><p>\${desc}</p></div>
-<div class="services">\${blocks}</div></div></section>
+<div class="section-head"><div><span class="chip">Qué hacemos</span><h2>Servicios con intención.</h2></div><p>${desc}</p></div>
+<div class="services">${blocks}</div></div></section>
 <section class="section" data-wc-section="filosofia"><div class="wrap">
 <span class="chip">Nuestra filosofía</span><h2>El detalle marca<br>la diferencia.</h2>
-<p class="lead">\${imageCaption}. \${audience}.</p>
+<p class="lead">${imageCaption}. ${audience}.</p>
 </div></section>
 <section class="contact wrap" id="contacto" data-wc-section="contacto">
-<div><span class="chip">Hablemos</span><h2>¿Empezamos?</h2>\${contact}</div>
+<div><span class="chip">Hablemos</span><h2>¿Empezamos?</h2>${contact}</div>
 <span class="btn btn-secondary">Añade tu correo real desde el editor para activar el contacto</span>
 </section></main>
-<footer class="footer"><div class="wrap">\${title} · Sitio web preparado con WayUp Studio.</div></footer>
-</body></html>\`;
+<footer class="footer"><div class="wrap">${title} · Sitio web preparado con WayUp Studio.</div></footer>
+</body></html>`;
 }
