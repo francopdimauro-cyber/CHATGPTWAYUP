@@ -1,0 +1,28 @@
+name: WAY UP Studio · Motor final (aislado)
+on:
+  push:
+    branches:
+      - feature/studio-final-motor-estructura-medios-20261115
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  motor-final:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    defaults:
+      run:
+        working-directory: studio-next
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+      - name: Tests de motor HTML, ZIP, archivos y agentes
+        run: npm test
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Compilar editor (sin publicar)
+        run: npm run build
