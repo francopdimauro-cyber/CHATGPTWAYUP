@@ -364,7 +364,7 @@ function applyCode(){
   if(html.length>300000||!/<html\b/i.test(html)||!/<\/html\s*>\s*$/i.test(html)){
     status('El código debe ser HTML completo (máximo 300.000 caracteres).',true);return false;
   }
-  if(html!==serialize(state.doc)){remember();state.doc=parse(html);state.selected=-1;sync()}
+  if(html!==serialize(state.doc)){remember();state.doc=parse(html);state.selected=-1;el('wcSourceCode').value=serialize(state.doc);sync()}
   return true;
 }
 async function save(label='Edición en Studio'){
@@ -432,8 +432,8 @@ el('wcStudio').addEventListener('keydown',e=>{
  if(e.key.toLowerCase()==='z'){e.preventDefault();el(e.shiftKey?'wcRedo':'wcUndo').click()}
  if(e.key.toLowerCase()==='y'){e.preventDefault();el('wcRedo').click()}
 });
-el('wcUndo').addEventListener('click',()=>{if(!check()||!state.undo.length||!applyCode())return;state.redo.push(serialize(state.doc));state.doc=parse(state.undo.pop());state.selected=-1;sync();render()});
-el('wcRedo').addEventListener('click',()=>{if(!check()||!state.redo.length||!applyCode())return;state.undo.push(serialize(state.doc));state.doc=parse(state.redo.pop());state.selected=-1;sync();render()});
+el('wcUndo').addEventListener('click',()=>{if(!check()||!state.undo.length||!applyCode())return;state.redo.push(serialize(state.doc));state.doc=parse(state.undo.pop());state.selected=-1;if(state.code)el('wcSourceCode').value=serialize(state.doc);sync();render()});
+el('wcRedo').addEventListener('click',()=>{if(!check()||!state.redo.length||!applyCode())return;state.undo.push(serialize(state.doc));state.doc=parse(state.redo.pop());state.selected=-1;if(state.code)el('wcSourceCode').value=serialize(state.doc);sync();render()});
 el('wcSave').addEventListener('click',()=>save());
 el('wcEditMode').addEventListener('click',()=>{if(!check()||!applyCode())return;state.mode='edit';state.code=false;render()});
 el('wcPreviewMode').addEventListener('click',()=>{if(!check()||!applyCode())return;state.mode='preview';state.code=false;render()});
