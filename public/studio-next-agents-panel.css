@@ -1,0 +1,33 @@
+/* Capa visual no invasiva, adaptada a los tokens de WAYUP Studio Next. */
+#wayup-agent-open{height:33px;display:inline-flex;align-items:center;gap:7px;background:#687fff14;border:1px solid #7896ff42;color:#d6e0ff;padding:0 12px;border-radius:9px;font:600 11px system-ui,sans-serif;white-space:nowrap}
+#wayup-agent-open:hover{background:#687fff27;border-color:#7795ff99}
+#wayup-agent-workspace{position:fixed;inset:0;z-index:99999;pointer-events:none;font:12px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;color:#ecf0f4}
+#wayup-agent-workspace[data-open="true"]{pointer-events:auto}
+#wayup-agent-workspace .wa-backdrop{position:absolute;inset:0;background:#05070cc2;backdrop-filter:blur(4px);opacity:0;transition:opacity .2s}
+#wayup-agent-workspace[data-open="true"] .wa-backdrop{opacity:1}
+#wayup-agent-workspace .wa-drawer{position:absolute;top:0;right:0;bottom:0;width:min(510px,100vw);background:#0f1219;border-left:1px solid #ffffff17;box-shadow:-24px 0 70px #0009;transform:translateX(102%);transition:transform .24s;display:flex;flex-direction:column}
+#wayup-agent-workspace[data-open="true"] .wa-drawer{transform:translateX(0)}
+#wayup-agent-workspace .wa-header{display:flex;align-items:center;justify-content:space-between;padding:22px 24px;border-bottom:1px solid #ffffff12}
+#wayup-agent-workspace .wa-heading{font-size:18px;font-weight:760;letter-spacing:-.045em}
+#wayup-agent-workspace .wa-muted{color:#97a3b5}
+#wayup-agent-workspace .wa-scroll{padding:24px;overflow-y:auto;flex:1;scrollbar-width:thin}
+#wayup-agent-workspace .wa-section{border:1px solid #ffffff12;border-radius:13px;background:#171b23;padding:18px;margin-bottom:15px}
+#wayup-agent-workspace h3{font-size:12px;font-weight:760;margin:0 0 13px;color:#e3e8f3}
+#wayup-agent-workspace label{display:block;margin:10px 0 5px;color:#b3becc;font-size:11px;font-weight:590}
+#wayup-agent-workspace input,#wayup-agent-workspace select,#wayup-agent-workspace textarea{box-sizing:border-box;display:block;width:100%;min-height:37px;border:1px solid #ffffff1b;background:#0d1017;border-radius:8px;padding:9px 11px;color:#e9effb;font:12px/1.45 system-ui,sans-serif;outline:none}
+#wayup-agent-workspace textarea{min-height:72px;resize:vertical}
+#wayup-agent-workspace input:focus,#wayup-agent-workspace select:focus,#wayup-agent-workspace textarea:focus{border-color:#7697ff}
+#wayup-agent-workspace button{cursor:pointer;border-radius:8px;border:1px solid #ffffff23;background:#ffffff08;color:#e0e8f6;min-height:34px;padding:6px 12px;font-size:11px;font-weight:660}
+#wayup-agent-workspace button:hover:not(:disabled){background:#ffffff17}
+#wayup-agent-workspace button:disabled{opacity:.45;cursor:not-allowed}
+#wayup-agent-workspace button.wa-primary{background:#dfe7fa;color:#111827;border-color:#e5e9ff}
+#wayup-agent-workspace button.wa-primary:hover:not(:disabled){background:white}
+#wayup-agent-workspace button.wa-blue{background:#496df2;color:#fff;border-color:#5d80ff}
+#wayup-agent-workspace button.wa-blue:hover:not(:disabled){background:#6283ff}
+#wayup-agent-workspace .wa-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+#wayup-agent-workspace .wa-notice{font-size:11px;color:#aebdd8;background:#5778ff10;border:1px solid #6489ff24;border-radius:9px;padding:10px 12px;margin:12px 0}
+#wayup-agent-workspace .wa-status{font-size:11px;color:#9eaec5;margin:10px 0;white-space:pre-wrap}
+#wayup-agent-workspace .wa-status[data-error="true"]{color:#ffa8ae}
+#wayup-agent-workspace a{color:#a5baff;text-decoration:underline;text-underline-offset:2px}
+#wayup-agent-workspace [hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){#wayup-agent-workspace *{transition:none!important}}
