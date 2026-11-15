@@ -46,6 +46,7 @@ async function refresh(){
  status("wa-list-status",available.length+" agentes activos · "+chats.length+" chats publicados");
 }
 async function signInState(){
+ if(!$('wa-manager')||!$('wa-login'))return;
  try{
   const x=await http("GET","/auth/me");
   $("wa-login").hidden=true;$("wa-manager").hidden=false;
