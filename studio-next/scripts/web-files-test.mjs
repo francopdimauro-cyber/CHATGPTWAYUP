@@ -66,6 +66,12 @@ const doc=strFromU8(out['index.html']);
 assert.equal((doc.match(/data-chat=/g)||[]).length,1,'El widget aparece una vez');
 assert.ok(doc.includes(agent.chatId));
 assert.match(strFromU8(out['WAYUP_AGENT_SETUP.txt']),/dominio HTTPS autorizado/i);
+const restored=files.siteFromZip(files.siteZip(withAgent));
+assert.equal(restored.agent?.agentId,agent.agentId,'Agente restaurado tras guardar ZIP');
+assert.equal(restored.agent?.chatId,agent.chatId,'Chat restaurado tras guardar ZIP');
+assert.equal(restored.agent?.origin,agent.origin,'Dominio autorizado restaurado');
+assert.ok(!('WAYUP_STUDIO_PROJECT.json' in restored.assets),'Manifiesto interno no aparece como recurso público');
+
 const already={...withAgent,html:files.htmlForExport(withAgent)};
 const again=strFromU8(unzipSync(files.siteZip(already))['index.html']);
 assert.equal((again.match(/data-chat=/g)||[]).length,1,'La reexportación no duplica el agente');
