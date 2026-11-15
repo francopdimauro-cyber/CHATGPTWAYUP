@@ -302,7 +302,9 @@ function selectIndex(index){
   if(node.tagName==='IMG')el('wcImageGroup').open=true;
   if(node.tagName==='A')el('wcLinkGroup').open=true;
   const font=node.style.fontFamily.split(',')[0].replace(/["']/g,'').trim();
-  el('wcFontFamily').value=FONT_FAMILIES.has(font)?font:'';
+  window.WebCreatorFontLibrary?.hydrate(state.doc);
+  el('wcFontFamily').value=(FONT_FAMILIES.has(font)||window.WebCreatorFontLibrary?.has(font))?font:'';
+  window.WebCreatorFontLibrary?.refresh();
   el('wcFontWeight').value=['400','500','600','700','800','900'].includes(node.style.fontWeight)?node.style.fontWeight:'';
   el('wcLineHeight').value=/^(?:\d+(?:\.\d+)?)$/.test(node.style.lineHeight)?node.style.lineHeight:'';
   el('wcLetterSpacing').value=/^-?\d+(?:\.\d+)?px$/.test(node.style.letterSpacing)?parseFloat(node.style.letterSpacing):'';
@@ -341,7 +343,7 @@ async function load(id){
   try{
     const data=await api('/api/projects/'+id);
     state.id=data.id;state.name=data.name;state.version=data.version;
-    state.doc=parse(data.html);state.saved=serialize(state.doc);state.selected=-1;state.undo=[];state.redo=[];state.mode='edit';state.code=false;
+    state.doc=parse(data.html);window.WebCreatorFontLibrary?.hydrate(state.doc);state.saved=serialize(state.doc);state.selected=-1;state.undo=[];state.redo=[];state.mode='edit';state.code=false;
     sync();render();window.WebCreatorMedia?.warmPreview(serialize(state.doc),()=>{if(state.id===data.id&&!state.code)render()});await list();el('wcVersions').replaceChildren();el('wcTag').textContent='Sin selección';el('wcElementName').textContent='Selecciona algo en el lienzo.';
     status('Abierto '+state.name+'. Puedes guardar nuevas versiones cuando quieras.');
   }catch(e){status('No se pudo abrir: '+e.message,true)}
@@ -439,13 +441,17 @@ function applyStyles(){
   if(px>=8&&px<=160)node.style.fontSize=px+'px';
   if(el('wcAlign').value)node.style.textAlign=el('wcAlign').value;
   const family=el('wcFontFamily').value;
-  if(FONT_FAMILIES.has(family)){
+  if(FONT_FAMILIES.has(family)||window.WebCreatorFontLibrary?.has(family)){
+   const meta=window.WebCreatorFontLibrary?.get(family);
+   const previousFont=node.style.fontFamily;
    node.style.fontFamily=SYSTEM_FAMILIES.has(family)?family:'"'+family+'",sans-serif';
-   if(!SYSTEM_FAMILIES.has(family)){
+   if(meta?.source==='uploaded'){
+    if(!window.WebCreatorFontLibrary.embed(state.doc,family))node.style.fontFamily=previousFont;
+   }else if(!SYSTEM_FAMILIES.has(family)&&meta?.source!=='local'&&meta?.source!=='system'){
     let link=[...state.doc.querySelectorAll('link[data-wc-font]')].find(x=>x.getAttribute('data-wc-font')===family);
     if(!link){
      link=state.doc.createElement('link');link.rel='stylesheet';
-     link.setAttribute('data-wc-font',family);link.href=fontHref(family);state.doc.head.append(link);
+     link.setAttribute('data-wc-font',family);link.href=window.WebCreatorFontLibrary?.href(family)||fontHref(family);state.doc.head.append(link);
     }
    }
   }
