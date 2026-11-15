@@ -125,6 +125,7 @@ export function FontPicker({value,onChange}:{value:string;onChange(nextFamily:st
       addFonts(all);
       setStatus('Catálogo completo disponible: Google Fonts y otras fuentes abiertas.');
     }).catch(error=>{
+      loaded.current=false;
       if((error as Error)?.name!=='AbortError'){
         loaded.current=false;
         setStatus('Catálogo temporalmente no disponible. Puedes usar las fuentes incluidas o importar las tuyas.');
