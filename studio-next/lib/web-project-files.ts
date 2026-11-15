@@ -10,6 +10,7 @@ export type SiteBundle = {
   updatedAt: number;
   source: 'generated'|'imported';
   agent?: {agentId:string;chatId:string;origin:string;title:string;linkedAt:number};
+  cloud?: {id:string;version:number};
   versions: { number:number; html:string; savedAt:number }[];
 };
 export const MAX_IMPORT_BYTES=25_000_000;
