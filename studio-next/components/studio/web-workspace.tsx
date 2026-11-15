@@ -235,7 +235,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
     }
-    setFileError('');setBusy(true);setNotice('Generando una web con el motor WebCreator…');
+    setFileError('');setBusy(true);setNotice('Generando la web con el motor IA conectado…');
     try{
       const html=await streamGeneratedWeb(briefFrom(form),setNotice);
       const generated=siteFromHtml(html,form.name.trim());
@@ -494,7 +494,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
             <strong>Conexión del generador IA</strong>
             <button className={btn} onClick={()=>void refreshWebAI()}>Comprobar conexión</button>
           </div>
-          <p className="mt-2">{webAIReady?'WebCreator conectado y autorizado.':webAIReason||'Inicia sesión para comprobar el generador.'}</p>
+          <p className="mt-2">{webAIReady?(webAIReason||'Generador IA conectado.'):(webAIReason||'Inicia sesión para comprobar el generador.')}</p>
           {!webAIReady&&<button className={btn+' mt-3'} onClick={()=>setWebLoginOpen(v=>!v)}>
             <Bot size={14}/> Acceder con mi cuenta
           </button>}
