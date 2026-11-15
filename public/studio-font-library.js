@@ -100,6 +100,7 @@ picker.addEventListener('click',event=>{
 });
 el('wcFontSearch').addEventListener('input',render);
 el('wcFontSearch').addEventListener('focus',loadRemote,{once:true});
+picker.addEventListener('pointerdown',loadRemote,{once:true});
 el('wcDetectFonts').addEventListener('click',async()=>{
  if(typeof window.queryLocalFonts!=='function'){
   note('Este navegador no permite enumerar fuentes del equipo. En Chrome/Edge puedes autorizarlo; aquí introduce el nombre exacto o importa un archivo .woff2/.woff/.ttf/.otf.');
