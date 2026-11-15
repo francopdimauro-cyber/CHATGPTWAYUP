@@ -49,11 +49,15 @@ function urlFor(item,weight='400'){
  }
  return '';
 }
+function installUploadedPreview(name,data){
+ if(!safeName(name)||!/^data:font\/(?:woff2?|ttf|otf);base64,[A-Za-z0-9+/=]+$/.test(data))return;
+ const id='wc-font-upload-'+idOf(name);
+ let style=document.getElementById(id);
+ if(!style){style=document.createElement('style');style.id=id;document.head.append(style)}
+ const format=data.startsWith('data:font/woff2;')?'woff2':data.startsWith('data:font/woff;')?'woff':data.startsWith('data:font/ttf;')?'truetype':'opentype';
+ style.textContent='@font-face{font-family:"'+name+'";src:url("'+data+'") format("'+format+'");font-weight:400;font-style:normal;font-display:swap}';
+}
 function preview(item){
- if(item.source==='uploaded'){
-  const style=document.getElementById('wcFontLocalPreview');
-  if(!style||!style.textContent.includes(item.name))return;
- }
  if(item.source!=='google'&&item.source!=='open')return;
  const id='wc-font-prev-'+idOf(item.name);
  if(document.getElementById(id))return;
@@ -148,9 +152,7 @@ el('wcFontFile').addEventListener('change',async()=>{
   register({name,source:'uploaded',category:'uploaded',mime,embedded:data});
   select.value=name;activeFilter='uploaded';
   picker.querySelectorAll('[data-font-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.fontFilter==='uploaded')));
-  const css='@font-face{font-family:"'+name+'";src:url("'+data+'") format("'+(/woff2$/.test(mime)?'woff2':/woff$/.test(mime)?'woff':/ttf$/.test(mime)?'truetype':'opentype')+'");font-weight:400;font-style:normal;font-display:swap}';
-  let style=el('wcFontLocalPreview');if(!style){style=document.createElement('style');style.id='wcFontLocalPreview';document.head.append(style)}
-  style.textContent+=css;
+  installUploadedPreview(name,data);
   render();note('Fuente importada. Se incrustará en el HTML al aplicarla si el proyecto cabe en el límite de almacenamiento. Comprueba su licencia de redistribución.');
  };
  reader.onerror=()=>note('No se pudo leer el archivo.');
@@ -165,6 +167,7 @@ function hydrate(doc){
   const match=style.textContent.match(/url\("(data:font\/(?:woff2?|ttf|otf);base64,[A-Za-z0-9+/=]+)"\)/);
   if(!match)continue;
   register({name,source:'uploaded',embedded:match[1],category:'uploaded'});
+  installUploadedPreview(name,match[1]);
  }
 }
 function embed(doc,name){
