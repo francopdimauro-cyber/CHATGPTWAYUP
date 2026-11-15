@@ -20,4 +20,4 @@ jobs:
           node --check public/studio-next-agents-panel.js
           node --check scripts/patch-studio-next-agent-preview.mjs
       - name: Pruebas del parche no invasivo y del puente de sesión
-        run: node --test tests/studio-next-agents-bridge.test.mjs tests/studio-next-agente-zip.test.mjs
+        run: node --test tests/studio-next-agents-bridge.test.mjs tests/studio-next-agente-zip.test.mjs tests/studio-next-auto-agent.test.mjs
