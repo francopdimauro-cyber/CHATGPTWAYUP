@@ -28,7 +28,10 @@ const VIEWPORT = { escritorio: 1060, tableta: 768, movil: 390 } as const;
 function renderCode(doc: ProjectDoc) {
   const esc = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const text = (id: string) => esc(doc.elements[id]?.text || '');
-  return `<!-- Previsualización de la estructura principal del proyecto -->\n<section id="inicio" class="hero">\n  <h1>${text('titulo')}</h1>\n  <h2>${text('subtitulo')}</h2>\n  <p>${text('descripcion')}</p>\n  <div class="acciones">\n    <a href="${esc(doc.elements.cta?.href || '#contacto')}">${text('cta')}</a>\n    <a href="${esc(doc.elements.secundario?.href || '#servicios')}">${text('secundario')}</a>\n  </div>\n</section>`;
+  const menu = ['nav-inicio','nav-servicios','nav-planes','nav-metodo','nav-testimonios','nav-contacto']
+    .filter(id=>doc.elements[id])
+    .map(id=>`<a href="${esc(doc.elements[id]?.href||'#inicio')}">${text(id)}</a>`).join('\\n    ');
+  return `<!-- Previsualización de la estructura principal del proyecto -->\n<header><a href="#inicio">${text('marca-nombre')}</a><nav>\n    ${menu}\n  </nav><a href="${esc(doc.elements['nav-cta']?.href||'#contacto')}">${text('nav-cta')}</a></header>\n<section id="inicio" class="hero">\n  <h1>${text('titulo')}</h1>\n  <h2>${text('subtitulo')}</h2>\n  <p>${text('descripcion')}</p>\n  <div class="acciones">\n    <a href="${esc(doc.elements.cta?.href || '#contacto')}">${text('cta')}</a>\n    <a href="${esc(doc.elements.secundario?.href || '#servicios')}">${text('secundario')}</a>\n  </div>\n</section>`;
 }
 
 function Node({node, selected, isDesign, onSelect, onMove, children, className = '', extraStyle}: {
@@ -117,16 +120,25 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
     const entry = items[id]; if (!entry) return null;
     return <Node key={id} node={entry} selected={selectedId === id} isDesign={design} onSelect={onSelect} onMove={onMove} className={className} extraStyle={{zIndex:4+(order.get(id)??0),...extra}}/>;
   };
-  const baseIds = new Set(['titulo','subtitulo','descripcion','cta','secundario']);
+  const baseIds = new Set([
+    'titulo','subtitulo','descripcion','cta','secundario',
+    'marca-icono','marca-nombre','nav-inicio','nav-servicios','nav-planes','nav-metodo','nav-testimonios','nav-contacto','nav-cta',
+    'servicio-etiqueta','servicio-titulo','servicio-descripcion',
+  ]);
   const inserted = doc.sections.flatMap(section=>section.children)
     .filter((id,index,ids)=>!baseIds.has(id)&&ids.indexOf(id)===index&&Boolean(items[id]));
   return <div className="min-h-[620px] overflow-hidden bg-[#080b09] text-white" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
-    <nav className="flex h-[76px] items-center justify-between border-b border-white/10 bg-[#090c0a] px-[5%]" aria-label="Navegación de la web en edición">
-      <div className="flex items-center gap-2.5"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#b3ee06] text-2xl font-black text-black">!</span><span className="text-[16px] font-[750] tracking-[-.05em]">Entrena-T</span></div>
-      <div className={`items-center gap-[26px] text-[10px] font-bold tracking-[.035em] ${device === 'movil' ? 'hidden' : 'hidden min-[620px]:flex'}`}>
-        {['INICIO','SERVICIOS','PLANES','MÉTODO','TESTIMONIOS','CONTACTO'].map(x=><span key={x} className="opacity-90">{x}</span>)}
+    <nav className="relative z-20 flex min-h-[76px] items-center justify-between gap-2 border-b border-white/10 bg-[#090c0a] px-[5%]" aria-label="Navegación de la web en edición">
+      <div className="flex items-center gap-2.5">
+        {node('marca-icono','flex min-h-10 min-w-10 shrink-0 items-center justify-center text-center no-underline')}
+        {node('marca-nombre','shrink-0 leading-tight tracking-[-.05em]')}
       </div>
-      <span className="hidden rounded-md bg-[#b3ee06] px-4 py-3 text-[10px] font-extrabold text-[#101609] sm:block">EMPEZAR</span>
+      <div className={`items-center gap-[clamp(7px,2vw,26px)] text-[10px] font-bold tracking-[.035em] ${device==='movil'?'hidden':'hidden min-[620px]:flex'}`}>
+        {['nav-inicio','nav-servicios','nav-planes','nav-metodo','nav-testimonios','nav-contacto'].map(id=>node(id,'whitespace-nowrap no-underline'))}
+      </div>
+      <div className={device==='movil'?'hidden':'hidden sm:flex'}>
+        {node('nav-cta','shrink-0 items-center justify-center whitespace-nowrap no-underline')}
+      </div>
     </nav>
     <section id="inicio" className="relative flex min-h-[510px] flex-col items-center justify-center px-[5%] pb-14 pt-12 text-center" style={{background: 'radial-gradient(ellipse 55% 48% at 50% 55%, #172009 0%, #090c09 68%, #070908 100%)'}}>
       {node('titulo', 'mx-auto my-0 max-w-full leading-[1.05] tracking-[-.058em]')}
@@ -143,7 +155,11 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
       <div className="pointer-events-none absolute bottom-8 left-8 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#ecebda] text-[#1c241f]">◷</div>
       <div className="pointer-events-none absolute bottom-8 right-8 flex h-12 w-12 items-center justify-center rounded-full bg-[#b3ee06] text-[24px] text-black shadow-[0_0_23px_#b3ee0663]">✆</div>
     </section>
-    <div id="servicios" className="border-t border-white/10 bg-[#101410] px-8 py-14 text-center"><span className="font-mono text-[10px] uppercase tracking-[.2em] text-[#b3ee06]">Entrena-T Parquesol</span><p className="mt-3 text-xl font-semibold">Entrenamiento diseñado para ti</p><p className="mx-auto mt-3 max-w-lg text-[12px] leading-relaxed text-[#abb2a9]">Metodología cercana, programas personalizados y objetivos reales.</p></div>
+    <div id="servicios" className="flex flex-col items-center border-t border-white/10 bg-[#101410] px-8 py-14 text-center">
+      {node('servicio-etiqueta','mx-auto font-mono uppercase tracking-[.2em]')}
+      <div className="mt-3">{node('servicio-titulo','mx-auto')}</div>
+      <div className="mx-auto mt-3 max-w-lg leading-relaxed">{node('servicio-descripcion','mx-auto')}</div>
+    </div>
   </div>;
 }
 
