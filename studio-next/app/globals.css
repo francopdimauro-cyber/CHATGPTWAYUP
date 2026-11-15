@@ -156,3 +156,98 @@ button:disabled { cursor: not-allowed; }
 .wayapp-context-menu .wayapp-context-item kbd {font-variant-numeric:tabular-nums}
 @keyframes wayapp-context-in {from{opacity:0;transform:translateY(-4px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.wayapp-context-menu{animation:none}}
+
+/* WAYUP STUDIO · Dual Appearance System
+   El lienzo representa la web del cliente y NO hereda el tema del editor. */
+:root[data-studio-theme="light"] {
+  color-scheme:light;
+  --color-app:#edf2fa;
+  --color-panel:#ffffff;
+  --color-elevated:#f5f8ff;
+  --color-raised:#e8effc;
+  --color-stroke:#dce5f3;
+  --color-faint:#64738d;
+  --color-mist:#51617e;
+  --color-ink:#17243d;
+  --color-brand:#2855ee;
+  --color-brandsoft:#e8eeff;
+  --ui-divider:rgb(21 47 99 / 11%);
+  --ui-surface:#f6f9ff;
+  --shadow-panel:0 14px 44px rgb(27 49 102 / 11%),0 1px 6px rgb(27 49 102 / 5%);
+}
+:root[data-studio-theme="light"] body,
+:root[data-studio-theme="light"] .studio-shell{background:var(--color-app);color:var(--color-ink)}
+:root[data-studio-theme="light"] :is(.studio-header,.studio-left,.studio-right,.studio-status) {
+  background:#fff!important;border-color:#dce4f0!important;
+  color:#1e2b43;
+}
+:root[data-studio-theme="light"] .studio-center{background:#f1f4fb}
+:root[data-studio-theme="light"] .studio-center>div:first-child {
+  background:#f9fbff!important;border-color:#dce4f0!important;
+}
+:root[data-studio-theme="light"] .stage-grid {
+  background-color:#eff2f8;
+  background-image:radial-gradient(circle,#afbed22b .82px,transparent 1px);
+}
+:root[data-studio-theme="light"] :is(.studio-header,.studio-left,.studio-right,.studio-status,.studio-center>div:first-child) [class*="text-[#"]{
+  color:#566784!important;
+}
+:root[data-studio-theme="light"] :is(.studio-header,.studio-left,.studio-right) :is(h1,h2,h3,strong,[class*="font-bold"],[class*="font-semibold"]){color:#24314a}
+:root[data-studio-theme="light"] :is(.studio-header,.studio-left,.studio-right) [class*="bg-[#"] {
+  background:#f4f7fd!important;
+}
+:root[data-studio-theme="light"] :is(.studio-header,.studio-left,.studio-right) [class*="border-white"] {
+  border-color:#dce5f1!important;
+}
+:root[data-studio-theme="light"] .studio-left .panel-row:hover {
+  background:#eaf0fb;color:#24449b;
+}
+:root[data-studio-theme="light"] .studio-left .panel-row[data-selected="true"]{
+  background:#e8efff;color:#244fd7;
+}
+:root[data-studio-theme="light"] .studio-center .ui-segment,
+:root[data-studio-theme="light"] .studio-shell .ui-segment{
+  background:#f1f5fd;border-color:#d7e2f0;
+}
+:root[data-studio-theme="light"] .studio-shell .ui-segment button{
+  color:#566784;
+}
+:root[data-studio-theme="light"] .studio-shell .ui-segment button[aria-pressed="true"]{
+  background:#fff;border-color:#c9d7eb;color:#1e4ad4;box-shadow:0 2px 7px #122a5614;
+}
+:root[data-studio-theme="light"] .studio-shell .ui-icon{color:#586d8a}
+:root[data-studio-theme="light"] .studio-shell .ui-icon:hover:not(:disabled){
+  background:#e5edfd;color:#244bd6;
+}
+:root[data-studio-theme="light"] .studio-shell .ui-icon:disabled{color:#b3bece}
+:root[data-studio-theme="light"] .studio-shell .ui-ghost {
+  background:#f7faff;color:#2c4b87;border-color:#d8e4fb;
+}
+:root[data-studio-theme="light"] .studio-shell .ui-primary {
+  background:#2855ee;color:white;border-color:#2855ee;
+}
+:root[data-studio-theme="light"] .studio-shell .ui-primary:hover:not(:disabled){background:#1743d9}
+:root[data-studio-theme="light"] :is(.studio-left,.studio-right) .field-input,
+:root[data-studio-theme="light"] :is(.studio-left,.studio-right) .field-color {
+  background:#f8faff;color:#233552;border-color:#cdd9ee;
+}
+:root[data-studio-theme="light"] :is(.studio-left,.studio-right) .field-label,
+:root[data-studio-theme="light"] :is(.studio-left,.studio-right) .panel-heading{color:#465877}
+:root[data-studio-theme="light"] :is(.studio-left,.studio-right) .panel-kicker{color:#4967a1}
+:root[data-studio-theme="light"] :is(.studio-left,.studio-right) input::placeholder{color:#8292ab}
+:root[data-studio-theme="light"] .studio-shell .ui-tag {
+  background:#edf2fc;border-color:#d2ddf0;color:#526685;
+}
+:root[data-studio-theme="light"] .wayapp-context-menu {
+  background:linear-gradient(160deg,#fff,#f2f6fd);
+  border-color:#bfcff0;color:#21324f;box-shadow:0 16px 40px #25447a29;
+}
+:root[data-studio-theme="light"] .wayapp-context-menu .wayapp-context-item{color:#273957}
+:root[data-studio-theme="light"] .wayapp-context-menu .wayapp-context-item:hover:not(:disabled){
+  color:#173fab;background:#e7eefe;
+}
+:root[data-studio-theme="light"] .wayapp-context-menu .wayapp-context-item:disabled{color:#a4afc2}
+:root[data-studio-theme="light"] .stage-grid>.absolute:first-child{
+  background:#fff!important;border-color:#d4e0f0!important;
+}
+@media (prefers-reduced-motion:reduce){:root[data-studio-theme] *{scroll-behavior:auto}}
