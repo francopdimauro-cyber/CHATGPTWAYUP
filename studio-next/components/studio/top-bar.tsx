@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, ChevronDown, ChevronRight, Cloud, FolderOpen, Menu, PanelRightOpen, Redo2, Save, Undo2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Cloud, FolderOpen, Menu, PanelRightOpen, Redo2, Save, Undo2, Copy, Scissors, Clipboard, Files } from 'lucide-react';
 import type { ProjectDoc } from '@/lib/studio-types';
 
 interface TopBarProps {
@@ -9,14 +9,19 @@ interface TopBarProps {
   saving: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  canCopy: boolean;
   onUndo(): void;
   onRedo(): void;
+  onCopy(): void;
+  onCut(): void;
+  onPaste(): void;
+  onDuplicate(): void;
   onSave(): void;
   onToggleLibrary(): void;
   onToggleInspector(): void;
 }
 
-export function TopBar({ project, dirty, saving, canUndo, canRedo, onUndo, onRedo, onSave, onToggleLibrary, onToggleInspector }: TopBarProps) {
+export function TopBar({ project, dirty, saving, canUndo, canRedo, canCopy, onUndo, onRedo, onCopy, onCut, onPaste, onDuplicate, onSave, onToggleLibrary, onToggleInspector }: TopBarProps) {
   return (
     <header className="studio-header flex items-center justify-between border-b border-white/[.07] bg-[#11141a]/95 px-3 backdrop-blur-xl sm:px-5" aria-label="Barra superior de WAY UP Studio">
       <div className="flex min-w-0 items-center gap-3">
@@ -38,6 +43,13 @@ export function TopBar({ project, dirty, saving, canUndo, canRedo, onUndo, onRed
         <span className="mx-1 hidden h-5 w-px bg-white/[.09] md:block" />
         <button className="ui-icon" disabled={!canUndo} onClick={onUndo} title="Deshacer (Ctrl + Z)" aria-label="Deshacer"><Undo2 size={16}/></button>
         <button className="ui-icon" disabled={!canRedo} onClick={onRedo} title="Rehacer (Ctrl + Mayús + Z)" aria-label="Rehacer"><Redo2 size={16}/></button>
+        <span className="mx-1 hidden h-5 w-px bg-white/[.08] lg:block"/>
+        <div className="hidden items-center gap-0.5 lg:flex" role="group" aria-label="Herramientas de edición">
+          <button className="ui-icon" disabled={!canCopy} onClick={onCopy} title="Copiar capa (Ctrl + C)" aria-label="Copiar capa"><Copy size={15}/></button>
+          <button className="ui-icon" disabled={!canCopy} onClick={onCut} title="Cortar capa (Ctrl + X)" aria-label="Cortar capa"><Scissors size={15}/></button>
+          <button className="ui-icon" onClick={onPaste} title="Pegar capa (Ctrl + V)" aria-label="Pegar capa"><Clipboard size={15}/></button>
+          <button className="ui-icon" disabled={!canCopy} onClick={onDuplicate} title="Duplicar capa (Ctrl + D)" aria-label="Duplicar capa"><Files size={15}/></button>
+        </div>
         <button className="ui-primary ml-1" onClick={onSave} disabled={!dirty || saving} aria-label={saving ? 'Guardando' : 'Guardar proyecto'}>
           {saving ? <Cloud size={14} className="animate-pulse"/> : dirty ? <Save size={14}/> : <Check size={14}/>}
           <span className="hidden sm:inline">{saving ? 'Guardando…' : dirty ? 'Guardar cambios' : 'Guardado'}</span>
