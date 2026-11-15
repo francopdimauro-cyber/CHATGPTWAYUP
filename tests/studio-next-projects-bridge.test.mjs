@@ -6,6 +6,8 @@ const ROOT='https://preview.test/studio-api/projects';
 const OWNER='6f29a13c-849e-4b41-b343-5c5e11a96b73';
 const PROJECT='3208a443-5e7c-4228-9a84-a479e5cadf91';
 const cookie='af_session=token-de-prueba';
+const validZip=Uint8Array.from(Buffer.from('UEsDBBQAAAAIAK65b12z6AIzQgAAAFgAAAAKAAAAaW5kZXguaHRtbLNRTMlPLqksSFXIKMnNsbOBkqmJKXY2JZklOal2wSWlKZn5NvoQno0+RC4pP6USqM7QziM/JxEoaAiUgYjpg40AAFBLAQIUAxQAAAAIAK65b12z6AIzQgAAAFgAAAAKAAAAAAAAAAAAAACAAQAAAABpbmRleC5odG1sUEsFBgAAAAABAAEAOAAAAGoAAAAAAA==','base64'));
+
 function environment(overrides={}){
   const statements=[];
   const db={
@@ -64,7 +66,7 @@ test('Crear proyecto exige ZIP, sesión, origen y usa R2 privado',async()=>{
   const env=environment();
   const out=await wayupStudioProjectsBridge(req(ROOT,'POST',{
     'Cookie':cookie,'Origin':'https://preview.test','Content-Type':'application/zip'
-  },new Uint8Array([80,75,3,4,0,0,0,0])),env);
+  },validZip),env);
   assert.equal(out.status,201);
   assert.equal(env.STUDIO_FILES.files.size,1);
   assert.ok([...env.STUDIO_FILES.files.keys()][0].startsWith('studio/'+OWNER+'/'));
@@ -77,12 +79,20 @@ test('Rechazar HTML sin archivarlo como ZIP',async()=>{
   assert.equal(out.status,400);
   assert.equal(env.STUDIO_FILES.files.size,0);
 });
+test('No se almacena un ZIP con cabecera falsa aunque parezca comprimido',async()=>{
+  const env=environment();
+  const out=await wayupStudioProjectsBridge(req(ROOT,'POST',{
+    'Cookie':cookie,'Origin':'https://preview.test','Content-Type':'application/zip'
+  },new Uint8Array([80,75,3,4,0,0,0,0])),env);
+  assert.equal(out.status,400);
+  assert.equal(env.STUDIO_FILES.files.size,0);
+});
 test('Concurrencia optimista: una versión obsoleta devuelve 409',async()=>{
   const env=environment();
   const out=await wayupStudioProjectsBridge(req(ROOT+'/'+PROJECT,'PUT',{
     'Cookie':cookie,'Origin':'https://preview.test','Content-Type':'application/zip',
     'X-Expected-Version':'2'
-  },new Uint8Array([80,75,3,4,0,0,0,0])),env);
+  },validZip),env);
   assert.equal(out.status,409);
   assert.equal(env.STUDIO_FILES.files.size,0);
 });
