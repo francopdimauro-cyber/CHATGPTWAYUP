@@ -30,12 +30,17 @@ window.WebCreatorCanvasDragBridge=(function canvasDragBridge(){
   draw();
  }
  addEventListener('message',event=>{
-  if(event.source!==parent||event.data?.wcHighlight!==true)return;
+  if(event.source!==parent)return;
+  if(event.data?.wcRestoreScroll===true){scrollTo(0,Math.max(0,Number(event.data.y)||0));return}
+  if(event.data?.wcHighlight!==true)return;
   mode=event.data.wcDragMode==='order'?'order':'move';
   snap=event.data.wcDragSnap===8?8:0;
   selected(nodes()[event.data.index]||null);
  });
- addEventListener('scroll',draw,true);
+ addEventListener('scroll',()=>{
+   draw();
+   parent.postMessage({webCreatorCanvas:true,type:'scroll',y:Math.max(0,scrollY)},'*');
+ },true);
  addEventListener('resize',draw,true);
  function getTarget(event){
   const tag=event.target;
@@ -123,10 +128,10 @@ window.WebCreatorCanvasDragBridge=(function canvasDragBridge(){
   }
   suppressClickUntil=performance.now()+260;
   if(d.mode==='move'){
-   if(d.nextX!==d.offset[0]||d.nextY!==d.offset[1])send('move',d.node,{x:d.nextX,y:d.nextY});
+   if(d.nextX!==d.offset[0]||d.nextY!==d.offset[1])send('move',d.node,{x:d.nextX,y:d.nextY,frameScrollY:Math.max(0,scrollY)});
    else if(d.original)d.node.style.setProperty('translate',d.original,d.priority);
    else d.node.style.removeProperty('translate');
-  }else if(d.after)send('reorder',d.node,{target:Number(d.after.getAttribute('data-wc-index')),before:d.before});
+  }else if(d.after)send('reorder',d.node,{target:Number(d.after.getAttribute('data-wc-index')),before:d.before,frameScrollY:Math.max(0,scrollY)});
   draw();
  }
  addEventListener('pointermove',move,true);
