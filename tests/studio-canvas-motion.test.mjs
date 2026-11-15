@@ -46,6 +46,7 @@ function simulation(){
   }
   getBoundingClientRect(){return this.rect||{left:50,top:55,right:240,bottom:100,width:190,height:45}}
   setPointerCapture(){}
+  addEventListener(){}
   append(){}
  }
  const parentElement=new Element('section');
