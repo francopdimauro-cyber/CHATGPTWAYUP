@@ -49,6 +49,9 @@ export type EditorAction =
   | { type: 'modificar'; elementId: string; patch: Partial<StudioElement>; description?: string }
   | { type: 'estilo'; elementId: string; patch: Partial<ElementStyle> }
   | { type: 'restaurar'; doc: ProjectDoc }
+  | { type: 'insertar'; element: StudioElement; afterId?: string }
+  | { type: 'eliminar'; elementId: string }
+  | { type: 'ordenar'; elementId: string; direction: -1 | 1 }
   | { type: 'deshacer' }
   | { type: 'rehacer' };
 
