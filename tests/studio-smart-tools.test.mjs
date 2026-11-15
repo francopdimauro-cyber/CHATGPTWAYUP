@@ -31,7 +31,8 @@ test('inspector reports human names and breadcrumbs for selected buttons',()=>{
 test('insertion palette adds editable shapes, images and links through the editor',()=>{
  for(const kind of ['button','rectangle','circle','line','card','badge','image'])
   assert.match(smart,new RegExp('data-wc-insert="'+kind+'"'));
- assert.match(smart,/studio\.change\(\(\)=>parent\.append\(n\)/);
+ assert.match(smart,/canInsertAfter/);
+ assert.match(smart,/parent\.append\(n\)/);
  assert.match(smart,/studio\.selectNode\(n\)/);
  assert.match(smart,/data-wc-kind/);
  assert.match(smart,/wcApplyShape/);
