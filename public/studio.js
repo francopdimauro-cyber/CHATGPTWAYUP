@@ -303,6 +303,7 @@ function selectIndex(index){
   if(node.tagName==='A')el('wcLinkGroup').open=true;
   const font=node.style.fontFamily.split(',')[0].replace(/["']/g,'').trim();
   window.WebCreatorFontLibrary?.hydrate(state.doc);
+  window.WebCreatorFontLibrary?.ensureOption(font);
   el('wcFontFamily').value=(FONT_FAMILIES.has(font)||window.WebCreatorFontLibrary?.has(font))?font:'';
   window.WebCreatorFontLibrary?.refresh();
   el('wcFontWeight').value=['400','500','600','700','800','900'].includes(node.style.fontWeight)?node.style.fontWeight:'';
