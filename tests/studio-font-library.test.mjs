@@ -24,7 +24,7 @@ test('font catalog supports public sources without an API key',()=>{
  assert.match(module,/loadedRemote=true/);
  assert.match(module,/Array\.isArray\(data\)/);
  assert.match(module,/fonts\.googleapis\.com\/css2/);
- assert.match(module,/slice\(0,22\)/);
+ assert.match(module,/slice\(0,visibleLimit\)/);
 });
 test('local enumeration requires a direct user gesture and supports Firefox fallback',()=>{
  assert.match(module,/wcDetectFonts.*addEventListener\('click'/);
