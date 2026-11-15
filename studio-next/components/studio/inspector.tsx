@@ -8,6 +8,7 @@ import {
 import type { ElementStyle, InspectorTab, ProjectDoc, StudioElement } from '@/lib/studio-types';
 import { BUTTON_PRESETS } from '@/lib/demo-project';
 import { FontPicker } from './font-picker';
+import { parseColorCode, colorAsRgb } from '@/lib/color-codes';
 
 interface InspectorProps {
   doc: ProjectDoc;
@@ -39,11 +40,44 @@ function NumberField({ label, value, unit, min, max, onCommit }: {label: string;
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange(v: string): void }) {
-  const valid = /^#[\da-f]{6}$/i.test(value);
-  return <label className="block min-w-0"><span className="field-label">{label}</span><span className="field-color">
-    <input aria-label={`Elegir ${label.toLowerCase()}`} type="color" value={valid ? value : '#242933'} onChange={e=>onChange(e.target.value)}/>
-    <code className="truncate">{valid ? value.toUpperCase() : 'Sin color'}</code>
-  </span></label>;
+  const [raw, setRaw] = useState(value);
+  const [mode, setMode] = useState<'hex'|'rgb'>('hex');
+  const [error, setError] = useState('');
+  useEffect(()=>{setRaw(mode==='rgb' ? (colorAsRgb(value)||value) : value);setError('');},[value,mode]);
+  const normalized = parseColorCode(raw);
+  const commit = () => {
+    const color=parseColorCode(raw);
+    if(!color){setError('Código no válido. Usa #RRGGBB o rgb(255, 255, 255).');return;}
+    setError('');
+    if(color!==value)onChange(color);
+    else setRaw(mode==='rgb'?(colorAsRgb(value)||color):color);
+  };
+  return <div className="block min-w-0">
+    <div className="mb-[7px] flex items-center justify-between gap-2">
+      <label htmlFor={`wayup-color-${label.replace(/\s+/g,'-')}`} className="field-label mb-0!">{label}</label>
+      <button type="button" onClick={()=>setMode(m=>m==='hex'?'rgb':'hex')}
+        className="rounded px-1.5 py-0.5 font-mono text-[9px] text-brand hover:bg-brandsoft"
+        title="Cambiar formato HEX / RGB" aria-label={`Cambiar formato del color de ${label}`}>
+        {mode.toUpperCase()} ↔
+      </button>
+    </div>
+    <div className="field-color min-w-0 gap-1.5">
+      <span aria-hidden="true" className="h-[23px] w-[23px] shrink-0 rounded-[5px] border border-white/20"
+        style={{background:normalized||value}}/>
+      <input
+        id={`wayup-color-${label.replace(/\s+/g,'-')}`}
+        type="text" value={raw} spellCheck={false}
+        aria-invalid={Boolean(error)}
+        aria-label={`${label}: escribe código HEX o RGB`}
+        placeholder={mode==='hex'?'#FFFFFF':'rgb(255, 255, 255)'}
+        className="min-w-0 flex-1 bg-transparent px-1 font-mono text-[10.5px] tracking-[-.015em] text-ink outline-none"
+        onChange={event=>{setRaw(event.target.value);if(error)setError('');}}
+        onBlur={commit}
+        onKeyDown={event=>{if(event.key==='Enter'){event.currentTarget.blur();}if(event.key==='Escape'){setRaw(mode==='rgb'?(colorAsRgb(value)||value):value);setError('');event.currentTarget.blur();}}}
+      />
+    </div>
+    {error&&<p role="alert" className="mt-1 text-[10px] text-rose-400">{error}</p>}
+  </div>;
 }
 
 function ControlLine({label,children}:{label:string;children:ReactNode}) {
