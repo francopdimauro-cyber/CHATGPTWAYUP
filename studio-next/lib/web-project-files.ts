@@ -70,15 +70,21 @@ export function agentSnippet(chatId:string):string {
   if(!/^[0-9a-f-]{36}$/i.test(chatId))throw Error('Identificador de chat inválido.');
   return '<script src="https://agent-factory-free.francopdimauro.workers.dev/widget.js" data-chat="'+chatId+'" defer></'+'script>';
 }
-export function siteZip(site:SiteBundle,additionalSnippet?:string):Uint8Array {
-  const archive:Record<string,Uint8Array>={...site.assets};
+export function htmlForExport(site:SiteBundle,additionalSnippet?:string):string {
   let html=site.html;
   const snippet=additionalSnippet||(site.agent?agentSnippet(site.agent.chatId):undefined);
   if(snippet){
     if(!/^<script src="https:\/\/agent-factory-free\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>$/i.test(snippet))
       throw Error('Código de agente no autorizado.');
+    // Si el cliente reemplaza el agente, no deben publicarse dos widgets activos.
+    html=html.replace(/\s*<!--\s*Asistente de WayUp\s*-->\s*<script src="https:\/\/agent-factory-free\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>/gi,'');
     if(!html.includes(snippet))html=html.replace(/<\/body>/i,'\n<!-- Asistente de WayUp -->\n'+snippet+'\n</body>');
   }
+  return html;
+}
+export function siteZip(site:SiteBundle,additionalSnippet?:string):Uint8Array {
+  const archive:Record<string,Uint8Array>={...site.assets};
+  const html=htmlForExport(site,additionalSnippet);
   archive[site.entry]=strToU8(html);
   if(site.agent){
     const notice='WayUp Studio — asistente IA vinculado\n\nOrigen autorizado: '+site.agent.origin+'\nTítulo: '+site.agent.title+'\n\nEl chat requiere que el agente esté activo y conectado al backend.\nAl publicar, utiliza exactamente el dominio HTTPS autorizado.\nNunca incluyas claves privadas de IA en el HTML o ZIP.\n';
