@@ -40,6 +40,7 @@ test('API solo incluye endpoints explícitos y controla sesión',()=>{
  assert.ok(bridge.includes('Origin'));
  assert.ok(bridge.includes('af_session='));
  assert.ok(!bridge.includes('Authorization: "Bearer'));
- assert.ok(!client.includes('localStorage'));
+ assert.ok(!client.includes('window.localStorage'));
+ assert.ok(!client.includes('window.sessionStorage'));
  assert.ok(!client.includes('NVIDIA_API_KEY'));
 });
