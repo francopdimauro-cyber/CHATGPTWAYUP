@@ -1,0 +1,23 @@
+name: WAYUP Studio Next · Agentes integrados en preview
+on:
+  push:
+    branches:
+      - feature/studio-next-agentes-bridge-20261115
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Comprobar sintaxis de todos los módulos de la integración
+        run: |
+          node --check src/studio-next-agents-bridge.js
+          node --check public/studio-next-agents-panel.js
+          node --check scripts/patch-studio-next-agent-preview.mjs
+      - name: Pruebas del parche no invasivo y del puente de sesión
+        run: node --test tests/studio-next-agents-bridge.test.mjs
