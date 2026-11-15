@@ -418,7 +418,35 @@ el('wcTablet').addEventListener('click',()=>setDevice('tablet'));
 el('wcMobile').addEventListener('click',()=>setDevice('mobile'));
 el('wcApplyText').addEventListener('click',()=>{const node=currentNode();if(node&&!node.children.length)update(()=>{node.textContent=el('wcText').value},'Texto actualizado.')});
 for(const id of ['wcColor','wcBackground'])el(id).addEventListener('input',()=>{el(id).dataset.touched='true'});
-el('wcApplyStyle').addEventListener('click',()=>{const node=currentNode();if(!node)return;update(()=>{if(el('wcColor').dataset.touched==='true')node.style.color=el('wcColor').value;if(el('wcBackground').dataset.touched==='true')node.style.backgroundColor=el('wcBackground').value;const px=Number(el('wcFont').value);if(px>=8&&px<=160)node.style.fontSize=px+'px';if(el('wcAlign').value)node.style.textAlign=el('wcAlign').value},'Estilos aplicados sin IA.')});
+function applyStyles(){
+ const node=currentNode();if(!node)return status('Selecciona un elemento del lienzo primero.',true);
+ update(()=>{
+  if(el('wcColor').dataset.touched==='true')node.style.color=el('wcColor').value;
+  if(el('wcBackground').dataset.touched==='true')node.style.backgroundColor=el('wcBackground').value;
+  const px=Number(el('wcFont').value);
+  if(px>=8&&px<=160)node.style.fontSize=px+'px';
+  if(el('wcAlign').value)node.style.textAlign=el('wcAlign').value;
+  const family=el('wcFontFamily').value;
+  if(FONT_FAMILIES.has(family)){
+   node.style.fontFamily=SYSTEM_FAMILIES.has(family)?family:'"'+family+'",sans-serif';
+   if(!SYSTEM_FAMILIES.has(family)){
+    let link=[...state.doc.querySelectorAll('link[data-wc-font]')].find(x=>x.getAttribute('data-wc-font')===family);
+    if(!link){
+     link=state.doc.createElement('link');link.rel='stylesheet';
+     link.setAttribute('data-wc-font',family);link.href=fontHref(family);state.doc.head.append(link);
+    }
+   }
+  }
+  const weight=el('wcFontWeight').value;
+  if(['400','500','600','700','800','900'].includes(weight))node.style.fontWeight=weight;
+  const line=Number(el('wcLineHeight').value);
+  if(el('wcLineHeight').value!==''&&line>=.8&&line<=3)node.style.lineHeight=String(line);
+  const tracking=Number(el('wcLetterSpacing').value);
+  if(el('wcLetterSpacing').value!==''&&tracking>=-8&&tracking<=15)node.style.letterSpacing=tracking+'px';
+ },'Propiedades del elemento actualizadas.');
+}
+el('wcApplyStyle').addEventListener('click',applyStyles);
+el('wcApplyAppearance').addEventListener('click',applyStyles);
 el('wcApplyImage').addEventListener('click',()=>{
   const node=currentNode();if(node?.tagName!=='IMG')return;
   const src=el('wcSrc').value.trim();
