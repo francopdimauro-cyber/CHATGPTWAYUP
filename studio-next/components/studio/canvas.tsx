@@ -17,6 +17,7 @@ interface CanvasProps {
   onMode(mode: Mode): void;
   onDevice(device: Device): void;
   onZoom(value: number): void;
+  onMove(id: string, x: number, y: number): void;
   onContextMenu(x: number, y: number, layerId: string | null): void;
 }
 
