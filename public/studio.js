@@ -16,7 +16,7 @@ const shell=`<div id="wcStudio" role="dialog" aria-modal="true" aria-label="WAYU
   </div>
   <div class="wc-top-context"><span class="wc-context-led" aria-hidden="true"></span><div><small>PROYECTO EN EDICIÓN</small><strong id="wcHeaderTitle">Elige una web</strong></div></div>
   <div class="wc-tools wc-top-actions">
-   <button type="button" id="wcLibraryMobile" class="wc-toolbar-quiet" title="Abrir biblioteca" aria-label="Abrir biblioteca">▤ <span>Mis webs</span></button>
+   <button type="button" id="wcLibraryMobile" class="wc-toolbar-quiet" title="Abrir biblioteca" aria-label="Abrir biblioteca" aria-expanded="false">▤ <span>Mis webs</span></button>
    <button type="button" id="wcImport" class="wc-toolbar-quiet" title="Importar HTML">↥ <span>Importar</span></button><input type="file" accept=".html,.htm,text/html" id="wcFile" class="wc-hidden">
    <button type="button" id="wcRename" class="wc-toolbar-quiet" title="Cambiar nombre">✎ <span>Nombre</span></button>
    <span class="wc-toolbar-divider" aria-hidden="true"></span>
@@ -292,6 +292,7 @@ function selectIndex(index){
   const nodes=state.doc?.querySelectorAll(selector);
   if(!nodes||!Number.isInteger(index)||index<0||index>=nodes.length)return;
   state.selected=index;const node=nodes[index];
+  setInspector('design');
   el('wcTag').textContent=node.tagName.toLowerCase()+(node.id?' #'+node.id:'');
   el('wcElementName').textContent=(node.textContent||node.getAttribute('alt')||node.getAttribute('aria-label')||'Elemento visual').trim().slice(0,75)||'Elemento sin texto';
   el('wcImageEmpty').classList.toggle('wc-hidden',node.tagName==='IMG');
@@ -418,7 +419,8 @@ el('wcPreviewMode').addEventListener('click',()=>{if(!check()||!applyCode())retu
 el('wcCodeMode').addEventListener('click',()=>{if(!check())return;if(state.code&&!applyCode())return;state.code=!state.code;render()});
 function setDevice(value){
  device=value;
- el('wcFrame').className=value==='desktop'?'':value;
+ el('wcFrame').classList.remove('mobile','tablet');
+ if(value!=='desktop')el('wcFrame').classList.add(value);
  setControls();
 }
 el('wcDesktop').addEventListener('click',()=>setDevice('desktop'));
