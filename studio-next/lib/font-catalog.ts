@@ -109,10 +109,24 @@ export function ensureFontStylesheet(entry:FontEntry):void {
 }
 export const WAYUP_WINDOWS_FONT_EXPORT = String.raw`$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-$families = @(New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name } | Sort-Object -Unique
+$collection = New-Object System.Drawing.Text.InstalledFontCollection
+$families = @($collection.Families | ForEach-Object { $_.Name } | Sort-Object -Unique)
 $payload = @{ format = 'wayup-local-fonts-v1'; families = @($families) }
 $json = ConvertTo-Json -InputObject $payload -Depth 4
 $desktop = [Environment]::GetFolderPath('Desktop')
 [System.IO.File]::WriteAllText((Join-Path $desktop 'wayup-fuentes-windows.json'), $json, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "Listado de fuentes guardado en el Escritorio."
 `;
+
+/** Restore stylesheet links for fonts already used in a saved local project. */
+export function ensureDocumentFont(styleFamily:string):void {
+  const family=familyFromCSS(styleFamily);
+  if(!validFamily(family))return;
+  const present=initialFonts.find(entry=>fontLookup(entry.family)===fontLookup(family));
+  if(present){ensureFontStylesheet(present);return}
+  try {
+    const remembered:unknown=JSON.parse(localStorage.getItem(FONT_NAMES_KEY)||'[]');
+    if(Array.isArray(remembered)&&remembered.includes(family))return;
+  }catch{/* Browser without local storage. */}
+  ensureFontStylesheet({family,source:'google',id:fontSlug(family)});
+}
