@@ -16,6 +16,7 @@ const shell=`<div id="wcStudio" role="dialog" aria-modal="true" aria-label="WAYU
   </div>
   <div class="wc-top-context"><span class="wc-context-led" aria-hidden="true"></span><div><small>PROYECTO EN EDICIÓN</small><strong id="wcHeaderTitle">Elige una web</strong></div></div>
   <div class="wc-tools wc-top-actions">
+   <button type="button" id="wcLibraryMobile" class="wc-toolbar-quiet" title="Abrir biblioteca" aria-label="Abrir biblioteca">▤ <span>Mis webs</span></button>
    <button type="button" id="wcImport" class="wc-toolbar-quiet" title="Importar HTML">↥ <span>Importar</span></button><input type="file" accept=".html,.htm,text/html" id="wcFile" class="wc-hidden">
    <button type="button" id="wcRename" class="wc-toolbar-quiet" title="Cambiar nombre">✎ <span>Nombre</span></button>
    <span class="wc-toolbar-divider" aria-hidden="true"></span>
@@ -185,7 +186,7 @@ async function list(){
       const icon=document.createElement('span');icon.className='wc-thumb';icon.textContent='▤';
       const text=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small');
       title.textContent=row.name;meta.textContent='Versión '+row.version+' · '+String(row.updated_at||'').slice(0,16);
-      text.append(title,meta);b.append(icon,text);b.addEventListener('click',()=>load(row.id));root.append(b);
+      text.append(title,meta);b.append(icon,text);b.addEventListener('click',()=>{el('wcStudio').classList.remove('wc-show-library');load(row.id)});root.append(b);
     }
   }catch(e){status('Error en biblioteca: '+e.message,true)}
 }
@@ -203,10 +204,13 @@ function drawSections(){
    name.textContent=label.slice(0,35);btn.append(no,name);
    btn.addEventListener('click',()=>{
      if(state.code)return status('Sal de Código para navegar por secciones.',true);
-     state.mode='edit';render();
+     const changed=state.mode!=='edit';state.mode='edit';
+     if(changed)render();
      const index=[...state.doc.querySelectorAll(selector)].indexOf(node);
      if(index>=0)selectIndex(index);
-     try{el('wcFrame').contentWindow.postMessage({wcNavigateTo:index},'*')}catch{}
+     const navigate=()=>{try{el('wcFrame').contentWindow.postMessage({wcNavigateTo:index},'*')}catch{}};
+     if(changed)el('wcFrame').addEventListener('load',navigate,{once:true});
+     else navigate();
    });
    list.append(btn);
  }
@@ -294,7 +298,7 @@ function selectIndex(index){
   el('wcLinkEmpty').classList.toggle('wc-hidden',node.tagName==='A');
   if(node.tagName==='IMG')el('wcImageGroup').open=true;
   if(node.tagName==='A')el('wcLinkGroup').open=true;
-  const font=node.style.fontFamily.replace(/["']/g,'');
+  const font=node.style.fontFamily.split(',')[0].replace(/["']/g,'').trim();
   el('wcFontFamily').value=FONT_FAMILIES.has(font)?font:'';
   el('wcFontWeight').value=['400','500','600','700','800','900'].includes(node.style.fontWeight)?node.style.fontWeight:'';
   el('wcLineHeight').value=/^(?:\d+(?:\.\d+)?)$/.test(node.style.lineHeight)?node.style.lineHeight:'';
@@ -379,6 +383,10 @@ el('wcOpenResult')?.addEventListener('click',()=>dispatchEvent(new Event('wc-stu
 el('wcClose').addEventListener('click',close);
 el('wcReload').addEventListener('click',list);
 el('wcProjectSearch').addEventListener('input',list);
+el('wcLibraryMobile').addEventListener('click',()=>{
+ const shown=el('wcStudio').classList.toggle('wc-show-library');
+ el('wcLibraryMobile').setAttribute('aria-expanded',String(shown));
+});
 el('wcLibraryCollapse').addEventListener('click',()=>{
  const collapsed=el('wcStudio').classList.toggle('wc-library-collapsed');
  el('wcLibraryCollapse').setAttribute('aria-expanded',String(!collapsed));
