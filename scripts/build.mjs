@@ -60,7 +60,7 @@ if(existsSync(nextHtml)){
     }
     walk(root);
   }
-  const htmlBody=html.toString('utf8'),references=[...htmlBody.matchAll(/["'](\/_next\/static\/[^"']+)["']/g)].map(m=>m[1]);
+  const htmlBody=html.toString('utf8'),references=[...htmlBody.matchAll(/\/_next\/static\/[a-zA-Z0-9._/-]+/g)].map(m=>m[0]);
   for(const path of references)if(!Object.hasOwn(nextAssets,path))throw Error('Falta un recurso de Studio Next: '+path);
 }
 if(process.env.STUDIO_NEXT_BUNDLE_REQUIRED==='1'&&!nextAssets['/'])
