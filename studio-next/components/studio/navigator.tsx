@@ -12,6 +12,7 @@ interface NavigatorProps {
   doc: ProjectDoc;
   selectedId: string | null;
   onSelect(id: string | null): void;
+  onContextMenu(x: number, y: number, layerId: string | null): void;
   collapsed: boolean;
   onCollapse(): void;
   mobileOpen: boolean;
@@ -26,7 +27,7 @@ const treeIcon = (node: StudioElement) => {
   return Square;
 };
 
-export function Navigator({ doc, selectedId, onSelect, collapsed, onCollapse, mobileOpen, onCloseMobile }: NavigatorProps) {
+export function Navigator({ doc, selectedId, onSelect, onContextMenu, collapsed, onCollapse, mobileOpen, onCloseMobile }: NavigatorProps) {
   const [tab, setTab] = useState<'capas' | 'proyectos'>('capas');
   const [search, setSearch] = useState('');
   const [closed, setClosed] = useState<string[]>([]);
@@ -70,7 +71,7 @@ export function Navigator({ doc, selectedId, onSelect, collapsed, onCollapse, mo
                 {!folded && section.children.filter(id=>!search||doc.elements[id]?.label.toLowerCase().includes(search.toLowerCase())||section.label.toLowerCase().includes(search.toLowerCase())).map(id=>{
                   const node=doc.elements[id];if(!node)return null;
                   const Icon=treeIcon(node);
-                  return <button key={id} className="panel-row ml-4 flex h-[30px] w-[calc(100%-16px)] items-center gap-2 rounded-md pl-4 pr-2 text-left text-[10.5px] text-[#8591a4]" data-selected={selectedId===id} onClick={()=>onSelect(id)}>
+                  return <button key={id} className="panel-row ml-4 flex h-[30px] w-[calc(100%-16px)] items-center gap-2 rounded-md pl-4 pr-2 text-left text-[10.5px] text-[#8591a4]" data-selected={selectedId===id} onClick={()=>onSelect(id)} onContextMenu={event=>{event.preventDefault();onContextMenu(event.clientX,event.clientY,id);}}>
                     <Icon size={13} className="shrink-0 opacity-75"/><span className="min-w-0 flex-1 truncate">{node.label}</span>
                     {selectedId===id&&<span className="h-1 w-1 rounded-full bg-[#8ca5ff]"/>}
                   </button>;
