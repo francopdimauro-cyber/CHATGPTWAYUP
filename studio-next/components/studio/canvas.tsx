@@ -17,7 +17,7 @@ interface CanvasProps {
   onMode(mode: Mode): void;
   onDevice(device: Device): void;
   onZoom(value: number): void;
-  onMove(id: string, x: number, y: number): void;
+  onContextMenu(x: number, y: number, layerId: string | null): void;
 }
 
 type Drag = { id: string; pointerId: number; startX: number; startY: number; originX: number; originY: number; moved: boolean; target: HTMLElement };
@@ -27,7 +27,7 @@ const VIEWPORT = { escritorio: 1060, tableta: 768, movil: 390 } as const;
 function renderCode(doc: ProjectDoc) {
   const esc = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
   const text = (id: string) => esc(doc.elements[id]?.text || '');
-  return `<!-- Previsualización de la estructura principal del proyecto -->\n<section id="inicio" class="hero">\n  <h1>${text('titulo')}</h1>\n  <h2>${text('subtitulo')}</h2>\n  <p>${text('descripcion')}</p>\n  <div class="acciones">\n    <a href="${esc(doc.elements.cta.href || '#contacto')}">${text('cta')}</a>\n    <a href="${esc(doc.elements.secundario.href || '#servicios')}">${text('secundario')}</a>\n  </div>\n</section>`;
+  return `<!-- Previsualización de la estructura principal del proyecto -->\n<section id="inicio" class="hero">\n  <h1>${text('titulo')}</h1>\n  <h2>${text('subtitulo')}</h2>\n  <p>${text('descripcion')}</p>\n  <div class="acciones">\n    <a href="${esc(doc.elements.cta?.href || '#contacto')}">${text('cta')}</a>\n    <a href="${esc(doc.elements.secundario?.href || '#servicios')}">${text('secundario')}</a>\n  </div>\n</section>`;
 }
 
 function Node({node, selected, isDesign, onSelect, onMove, children, className = '', extraStyle}: {
@@ -89,7 +89,7 @@ function Node({node, selected, isDesign, onSelect, onMove, children, className =
     event.currentTarget.dataset.dragging = 'false';
   }
 
-  const shared = { 'data-selected': selected, 'data-draggable': isDesign,
+  const shared = { 'data-studio-layer-id': node.id, 'data-selected': selected, 'data-draggable': isDesign,
     onPointerDown: pointerDown, onPointerMove: pointerMove, onPointerUp: pointerUp,
     onPointerCancel: pointerCancel, style,
     className: `canvas-element relative ${className}` } as const;
@@ -115,6 +115,9 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
     const entry = items[id]; if (!entry) return null;
     return <Node key={id} node={entry} selected={selectedId === id} isDesign={design} onSelect={onSelect} onMove={onMove} className={className} extraStyle={extra}/>;
   };
+  const baseIds = new Set(['titulo','subtitulo','descripcion','cta','secundario']);
+  const inserted = doc.sections.flatMap(section=>section.children)
+    .filter((id,index,ids)=>!baseIds.has(id)&&ids.indexOf(id)===index&&Boolean(items[id]));
   return <div className="min-h-[620px] overflow-hidden bg-[#080b09] text-white" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
     <nav className="flex h-[76px] items-center justify-between border-b border-white/10 bg-[#090c0a] px-[5%]" aria-label="Navegación de la web en edición">
       <div className="flex items-center gap-2.5"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#b3ee06] text-2xl font-black text-black">!</span><span className="text-[16px] font-[750] tracking-[-.05em]">Entrena-T</span></div>
@@ -126,11 +129,15 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
     <section id="inicio" className="relative flex min-h-[510px] flex-col items-center justify-center px-[5%] pb-14 pt-12 text-center" style={{background: 'radial-gradient(ellipse 55% 48% at 50% 55%, #172009 0%, #090c09 68%, #070908 100%)'}}>
       {node('titulo', 'mx-auto my-0 max-w-full leading-[1.05] tracking-[-.058em]')}
       {node('subtitulo', 'mx-auto mb-7 mt-1.5 max-w-full leading-[1.1] tracking-[-.04em]')}
-      {node('descripcion', 'mx-auto my-0 max-w-[650px] leading-[1.75] tracking-[-.01em]', {fontSize: device === 'movil' ? 13 : items.descripcion.style.fontSize})}
+      {node('descripcion', 'mx-auto my-0 max-w-[650px] leading-[1.75] tracking-[-.01em]', {fontSize: device === 'movil' ? 13 : items.descripcion?.style.fontSize ?? 16})}
       <div className="mt-11 flex flex-wrap items-center justify-center gap-3.5">
         {node('cta', 'inline-flex min-h-[52px] items-center justify-center text-center no-underline')}
         {node('secundario', 'inline-flex min-h-[52px] items-center justify-center border border-white/35 text-center no-underline')}
       </div>
+      {inserted.map((id,index)=><div key={id} className="absolute z-[3] max-w-[80%] text-center"
+        style={{left:`${18+(index%4)*16}%`,top:`${19+(Math.floor(index/4)%5)*12}%`}}>
+        {node(id,'max-w-full break-words leading-snug')}
+      </div>)}
       <div className="pointer-events-none absolute bottom-8 left-8 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#ecebda] text-[#1c241f]">◷</div>
       <div className="pointer-events-none absolute bottom-8 right-8 flex h-12 w-12 items-center justify-center rounded-full bg-[#b3ee06] text-[24px] text-black shadow-[0_0_23px_#b3ee0663]">✆</div>
     </section>
@@ -138,11 +145,18 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
   </div>;
 }
 
-export function Canvas({ doc, mode, device, zoom, selectedId, onSelect, onMode, onDevice, onZoom, onMove }: CanvasProps) {
+export function Canvas({ doc, mode, device, zoom, selectedId, onSelect, onMode, onDevice, onZoom, onMove, onContextMenu }: CanvasProps) {
   const width = VIEWPORT[device];
   const isDesign = mode === 'diseno';
   const code = useMemo(()=>renderCode(doc),[doc]);
-  return <main className="studio-center relative flex h-full min-w-0 flex-col overflow-hidden bg-app" aria-label="Área del Canvas">
+  const context = (event: React.MouseEvent<HTMLElement>) => {
+    if (!isDesign) return;
+    if (!(event.target as Element).closest('.stage-grid')) return;
+    event.preventDefault();
+    const layer=(event.target as Element).closest<HTMLElement>('[data-studio-layer-id]');
+    onContextMenu(event.clientX,event.clientY,layer?.dataset.studioLayerId??null);
+  };
+  return <main onContextMenu={context} className="studio-center relative flex h-full min-w-0 flex-col overflow-hidden bg-app" aria-label="Área del Canvas">
     <div className="relative z-10 flex min-h-[67px] shrink-0 items-center justify-between gap-2 border-b border-white/[.06] bg-[#101217] px-4 xl:px-6">
       <div className="min-w-0"><div className="mb-1 hidden items-center gap-1.5 font-mono text-[9px] uppercase tracking-[.13em] text-faint sm:flex"><span className="text-brand">Espacio de trabajo</span><span>/</span><span>Inicio</span></div><div className="truncate text-[12px] font-[680] tracking-[-.016em] text-[#dce2ed]">{doc.name} <span className="ml-1 hidden font-normal text-faint lg:inline">/ Página de inicio</span></div></div>
       <div className="hidden items-center gap-1 text-[10px] text-faint xl:flex"><span className="h-[6px] w-[6px] rounded-full bg-emerald-500"/> Vista en edición</div>
