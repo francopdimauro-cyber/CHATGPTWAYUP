@@ -155,18 +155,20 @@ function readSettings(n){
  el('wcBtnFont').value=parseInt(n.style.fontSize,10)||15;
  const padding=n.style.padding.split(/\s+/);el('wcBtnPadY').value=parseInt(padding[0],10)||12;
  el('wcBtnPadX').value=parseInt(padding[1],10)||22;
- el('wcBtnShadow').value=p?.shadow||'none';
+ el('wcBtnShadow').value=Object.entries(shadows).find(([,css])=>css===n.style.getPropertyValue('box-shadow'))?.[0]||p?.shadow||'none';
  el('wcBtnWidth').value=n.style.width==='100%'?'full':/^\d+px$/.test(n.style.width)?'fixed':'auto';
  el('wcBtnWidthPx').disabled=el('wcBtnWidth').value!=='fixed';
  el('wcBtnWidthPx').value=parseInt(n.style.width,10)||240;
  el('wcBtnIcon').value=n.querySelector('[data-wc-btn-icon]')?.textContent||'';
  el('wcBtnText').value=labelFor(n);
+ for(const id of ['wcBtnBg','wcBtnFg','wcBtnBorder','wcBtnText','wcBtnIcon'])el(id).dataset.touched='false';
  el('wcButtonTextHint').textContent=n.querySelector('svg,i,[class*="icon"]')?'Se conservarán los iconos originales; este control modifica el texto principal.':'El texto se modifica sin cambiar el destino del botón.';
 }
 function showSelection(node){
  const n=node&&['A','BUTTON'].includes(node.tagName)?node:null;
  quick.hidden=!n;
  group.classList.toggle('wc-hidden',!n);
+ if(n&&!group.dataset.seen){group.open=true;group.dataset.seen='1';}
  if(n){
   const p=presets.find(x=>x.id===n.getAttribute('data-wc-btn-preset'));
   el('wcButtonCurrent').textContent=p?'Estilo actual: '+p.name:n.hasAttribute('data-wc-btn-original-style')?'Estilo personalizado':'Estilo original de la web';
@@ -204,6 +206,7 @@ el('wcButtonRestore').addEventListener('click',()=>{
  },'Estilo original restaurado.');
  if(changed){studio.selectNode(n);readSettings(n);renderGallery();}
 });
+for(const id of ['wcBtnBg','wcBtnFg','wcBtnBorder','wcBtnText','wcBtnIcon'])el(id).addEventListener('input',()=>{el(id).dataset.touched='true'});
 el('wcBtnWidth').addEventListener('change',()=>{el('wcBtnWidthPx').disabled=el('wcBtnWidth').value!=='fixed'});
 el('wcButtonCustomize').addEventListener('click',()=>{
  const n=current();if(!n)return;
@@ -221,22 +224,27 @@ el('wcButtonCustomize').addEventListener('click',()=>{
  const changed=studio.change(()=>{
   if(!n.hasAttribute('data-wc-btn-original-style'))n.setAttribute('data-wc-btn-original-style',n.getAttribute('style')||'');
   n.setAttribute('data-wc-btn-preset',n.getAttribute('data-wc-btn-preset')||'custom');
-  if(text){
+  if(text&&el('wcBtnText').dataset.touched==='true'){
    const nodes=getTextNodes(n);
    if(nodes.length){nodes[0].nodeValue=text;for(let i=1;i<nodes.length;i++)nodes[i].nodeValue='';}
    else{const caption=n.ownerDocument.createElement('span');caption.textContent=text;n.append(caption)}
   }
-  const previous=n.querySelector('[data-wc-btn-icon]');if(previous)previous.remove();
-  if(icon){const badge=n.ownerDocument.createElement('span');badge.setAttribute('data-wc-btn-icon','');badge.setAttribute('aria-hidden','true');badge.textContent=icon;badge.style.cssText='font-size:1em;line-height:1';n.insertBefore(badge,n.firstChild);}
+  if(el('wcBtnIcon').dataset.touched==='true'){
+   const previous=n.querySelector('[data-wc-btn-icon]');if(previous)previous.remove();
+   if(icon){const badge=n.ownerDocument.createElement('span');badge.setAttribute('data-wc-btn-icon','');badge.setAttribute('aria-hidden','true');badge.textContent=icon;badge.style.cssText='font-size:1em;line-height:1';n.insertBefore(badge,n.firstChild);}
+  }
   prop(n,'display','inline-flex');prop(n,'align-items','center');prop(n,'justify-content','center');prop(n,'gap','8px');
-  prop(n,'background',bg);prop(n,'color',fg);prop(n,'border','1.5px solid '+border);prop(n,'border-radius',radius+'px');
+  if(el('wcBtnBg').dataset.touched==='true')prop(n,'background',bg);
+  if(el('wcBtnFg').dataset.touched==='true')prop(n,'color',fg);
+  if(el('wcBtnBorder').dataset.touched==='true')prop(n,'border','1.5px solid '+border);
+  prop(n,'border-radius',radius+'px');
   prop(n,'font-size',font+'px');prop(n,'padding',y+'px '+x+'px');prop(n,'box-shadow',shadows[shadow]);
   if(el('wcBtnWidth').value==='full')prop(n,'width','100%');
   else if(el('wcBtnWidth').value==='fixed')prop(n,'width',fixed+'px');
   else n.style.removeProperty('width');
   ensureEffects(n.ownerDocument);
  },'Propiedades del botón guardadas.');
- if(changed){studio.selectNode(n);el('wcButtonCurrent').textContent='Estilo personalizado';renderGallery();}
+ if(changed){studio.selectNode(n);readSettings(n);el('wcButtonCurrent').textContent='Estilo personalizado';renderGallery();}
 });
 showSelection(studio.getSelection());
 })();
