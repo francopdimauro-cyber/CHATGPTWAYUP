@@ -5,8 +5,9 @@ import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, Fi
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
   Save, Smartphone, Sparkles, Undo2, X } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
+import { AgentSetup, type LinkedAgent } from './agent-setup';
 import { strFromU8, strToU8 } from 'fflate';
-import { downloadBytes, listSavedSites, patchSelectedElement, safePreview,
+import { downloadBytes, htmlForExport, listSavedSites, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
   type SiteBundle } from '@/lib/web-project-files';
 
@@ -97,6 +98,7 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
   const [past,setPast]=useState<string[]>([]);
   const [future,setFuture]=useState<string[]>([]);
   const [dirty,setDirty]=useState(false);
+  const [postSavePrompt,setPostSavePrompt]=useState(false);
   const [form,setForm]=useState<Record<string,string>>({
     name:'',industry:'',audience:'',goal:'Conseguir contactos y clientes',
     style:'Editorial, moderno, profesional y responsive',
@@ -117,7 +119,7 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
   },[site]);
   const changeSite=(value:SiteBundle)=>{
     setSite(value);setDraftHtml(value.html);setPast([]);setFuture([]);setDirty(false);
-    setSelected(null);setNotice('');setView('preview');setStage('editor');
+    setSelected(null);setNotice('');setPostSavePrompt(false);setView('preview');setStage('editor');
   };
   const undo=()=>{
     if(!site||!past.length)return;
@@ -146,6 +148,7 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
     try{
       const saved=await saveSite(site);
       setSite(saved);setDirty(false);setNotice('Versión '+saved.version+' guardada en este dispositivo.');
+      if(saved.version===1 && !saved.agent)setPostSavePrompt(true);
       setSavedSites(await listSavedSites());
     }catch{setNotice('No fue posible guardar la web. Descarga una copia ZIP para no perder cambios.');}
     finally{setBusy(false);}
@@ -193,10 +196,24 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
       setNotice('Elemento actualizado en el HTML de la web.');
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo actualizar el elemento.');}
   };
-  const goAgent=()=>{if(site)onAgent(site);};
+  async function handleAgentLinked(agent:LinkedAgent){
+    if(!site)return;
+    const attached:SiteBundle={...site,agent,updatedAt:Date.now()};
+    setSite(attached);setDirty(true);
+    setNotice('El asistente se ha vinculado a esta web. Se añadirá al ZIP y HTML exportados.');
+    try{
+      const saved=await saveSite(attached);
+      setSite(saved);setDirty(false);
+      setSavedSites(await listSavedSites());
+      setNotice('Agente vinculado y guardado. Descarga web + agente.');
+    }catch{
+      setNotice('Agente vinculado en esta sesión, pero no se pudo guardar en este dispositivo. Descarga el ZIP ahora.');
+    }
+    setStage('export');setPostSavePrompt(false);
+  }
   function exportHtml(){
     if(!site)return;
-    const bytes=strToU8(site.html);
+    const bytes=strToU8(htmlForExport(site));
     downloadBytes(bytes,cleanName(site.name)+'.html','text/html;charset=utf-8');
     setNotice('HTML descargado.');
   }
@@ -205,7 +222,7 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
     try{
       const bytes=siteZip(site);
       downloadBytes(bytes,cleanName(site.name)+'.zip','application/zip');
-      setNotice('ZIP completo descargado con recursos y HTML actualizados.');
+      setNotice(site.agent?'ZIP descargado con web y agente vinculado.':'ZIP descargado con HTML y recursos actualizados.');
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo exportar.');}
   }
   const editInputs=(id:keyof typeof form,label:string,placeholder:string,required=false)=>(
@@ -370,33 +387,33 @@ export function WebWorkspace({onClose,onAgent}:BrowserEditorProps){
         </aside>
       </div>
     </main>}
-    {site&&(stage==='agent'||stage==='export')&&<main className="scroll-subtle mx-auto w-full max-w-[730px] flex-1 overflow-y-auto px-6 py-10">
-      <button onClick={()=>setStage(stage==='agent'?'editor':'agent')} className={btn+' mb-7'}><ArrowLeft size={14}/> Volver</button>
-      {stage==='agent'?<>
-        <div className="mb-2 text-[11px] font-bold uppercase tracking-[.16em] text-brand">03 / ASISTENTE IA</div>
-        <h1 className="text-[30px] font-bold tracking-[-.04em]">¿Quieres asociar un agente a esta web?</h1>
-        <p className="mt-3 text-[13px] leading-6 text-mist">Puedes crear uno a partir del contenido real de <strong>{site.name}</strong>, definir su rol, objetivo y capacidades y dejarlo preparado para embeber en tu web.</p>
-        <div className="mt-7 grid gap-3 sm:grid-cols-2">
-          <button onClick={goAgent} className="flex flex-col items-start gap-3 rounded-xl border border-brand/30 bg-brandsoft p-5 text-left hover:border-brand">
-            <Bot size={24} className="text-brand"/><span className="text-[15px] font-bold">Sí, añadir agente IA</span>
-            <span className="text-[11px] leading-5 text-mist">Abrir configuración y vincular el agente de forma segura al proyecto.</span>
-          </button>
-          <button onClick={()=>setStage('export')} className="flex flex-col items-start gap-3 rounded-xl border border-stroke bg-panel p-5 text-left hover:border-brand">
-            <Download size={24} className="text-brand"/><span className="text-[15px] font-bold">Ahora no</span>
-            <span className="text-[11px] leading-5 text-mist">Exportar la web sin asistente y añadirlo cuando quieras.</span>
-          </button>
-        </div>
-      </>:<>
-        <div className="mb-2 text-[11px] font-bold uppercase tracking-[.16em] text-brand">04 / ENTREGA</div>
-        <h1 className="text-[30px] font-bold tracking-[-.04em]">Tu web, lista para llevar.</h1>
-        <p className="mt-3 text-[13px] leading-6 text-mist">Descarga el HTML actualizado o el proyecto completo, manteniendo CSS, imágenes, recursos y carpetas del ZIP original.</p>
-        <div className="mt-7 flex flex-col gap-3">
-          <button onClick={exportZip} className={primary+' w-full justify-start py-4 text-[13px]'}><FileArchive size={19}/> Descargar proyecto ZIP completo</button>
-          <button onClick={exportHtml} className={btn+' w-full justify-start py-4 text-[13px]'}><FileCode2 size={19}/> Descargar HTML actualizado</button>
-          <button onClick={()=>setStage('editor')} className={btn+' w-full justify-start py-4'}><Paintbrush size={17}/> Seguir editando</button>
-        </div>
-        <div className="mt-6 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">Si importaste una web con scripts originales, esos archivos se conservarán en el ZIP. Revísalos antes de desplegar el resultado. Los agentes necesitan su backend funcionando para responder.</div>
-      </>}
+    {site&&stage==='agent'&&<main className="scroll-subtle mx-auto w-full max-w-[790px] flex-1 overflow-y-auto px-6 py-10">
+      <AgentSetup site={site} onBack={()=>setStage('editor')} onSkip={()=>setStage('export')} onLinked={agent=>void handleAgentLinked(agent)}/>
     </main>}
+    {site&&stage==='export'&&<main className="scroll-subtle mx-auto w-full max-w-[730px] flex-1 overflow-y-auto px-6 py-10">
+      <button onClick={()=>setStage('agent')} className={btn+' mb-7'}><ArrowLeft size={14}/> Volver al agente</button>
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-[.16em] text-brand">04 / ENTREGA</div>
+      <h1 className="text-[30px] font-bold tracking-[-.04em]">Tu web, lista para llevar.</h1>
+      <p className="mt-3 text-[13px] leading-6 text-mist">Descarga el HTML o el ZIP con la web real y sus recursos. {site.agent?'El asistente está vinculado y se incluye automáticamente.':'Puedes asociar un agente en cualquier momento.'}</p>
+      {site.agent&&<div className="mt-5 rounded-xl border border-brand/30 bg-brandsoft p-4 text-[12px] leading-6 text-ink"><Bot size={16} className="mr-2 inline text-brand"/>Agente: <strong>{site.agent.title}</strong><div className="text-[10px] text-mist">Dominio autorizado: {site.agent.origin}</div></div>}
+      <div className="mt-7 flex flex-col gap-3">
+        <button onClick={exportZip} className={primary+' w-full justify-start py-4 text-[13px]'}><FileArchive size={19}/> Descargar {site.agent?'web + agente':'proyecto ZIP completo'}</button>
+        <button onClick={exportHtml} className={btn+' w-full justify-start py-4 text-[13px]'}><FileCode2 size={19}/> Descargar HTML {site.agent?'con widget':'actualizado'}</button>
+        <button onClick={()=>setStage('editor')} className={btn+' w-full justify-start py-4'}><Paintbrush size={17}/> Seguir editando</button>
+      </div>
+      <div className="mt-6 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">Los agentes necesitan un backend activo y deben publicarse en el dominio HTTPS autorizado. Si la web importada incluye scripts, revisa su procedencia antes de publicarlos.</div>
+    </main>}
+    {postSavePrompt&&stage==='editor'&&<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPostSavePrompt(false)}}>
+      <div role="dialog" aria-modal="true" aria-labelledby="wayup-link-agent-question" className="w-full max-w-[470px] rounded-2xl border border-stroke bg-panel p-7 shadow-panel">
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brandsoft text-brand"><Bot size={25}/></div>
+        <h2 id="wayup-link-agent-question" className="text-[22px] font-semibold tracking-tight">¡Web guardada! ¿Le añadimos un agente IA?</h2>
+        <p className="mt-3 text-[12px] leading-6 text-mist">Usaremos los contenidos de esta web para proponerte un rol, objetivo y capacidades. Podrás revisarlo todo antes de crear y publicar el agente.</p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button className={primary} onClick={()=>{setPostSavePrompt(false);setStage('agent')}}><Bot size={15}/> Sí, configurar agente</button>
+          <button className={btn} onClick={()=>{setPostSavePrompt(false);setStage('export')}}>No, exportar web</button>
+          <button className={btn} onClick={()=>setPostSavePrompt(false)}>Seguir editando</button>
+        </div>
+      </div>
+    </div>}
   </div>;
 }
