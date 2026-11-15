@@ -379,7 +379,7 @@ async function save(label='Edición en Studio'){
     state.version=row.version;state.saved=html;
     if(serialize(state.doc)===html){state.undo=[];state.redo=[]}
     sync();await list();
-    status('✓ Guardada versión '+state.version+(serialize(state.doc)===html?'.':' (hay cambios posteriores sin guardar).'));
+    status('✓ Guardada versión '+state.version+(!state.dirty&&!hasRawCodeChanges()?'.':' (hay cambios posteriores sin guardar).'));
   }catch(e){status('No se pudo guardar: '+e.message,true)}
   finally{state.saving=false;sync()}
 }
