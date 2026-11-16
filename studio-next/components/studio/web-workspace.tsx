@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2, Tablet,
-  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search, MousePointer2, SquarePlus } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
@@ -14,7 +14,10 @@ import { CanvasMenu, type CanvasCommand } from './canvas-menu';
 import { SeoPanel } from './seo-panel';
 import { AgentLibrary } from './agent-library';
 import { CreatorWizard, type Direction } from './creator-wizard';
-import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, writeSeo, type EditResult } from '@/lib/element-editing';
+import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
+import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
+import { blockById, isSectionBlock } from '@/lib/canvas-blocks';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, insertSnippet, moveElementTo, canContain, writeSeo, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
@@ -109,13 +112,18 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const [view,setView]=useState<View>('preview');
   const [device,setDevice]=useState<'desktop'|'tablet'|'mobile'>('desktop');
   const [selected,setSelected]=useState<number|null>(null);
-  const [moveMode,setMoveMode]=useState(false);
-  const moveModeRef=useRef(false);
+  // Herramientas del lienzo: seleccionar (V), mover/reordenar (M) e insertar (I).
+  const [tool,setTool]=useState<'select'|'move'|'insert'>('select');
+  const toolRef=useRef<'select'|'move'|'insert'>('select');
+  const moveMode=tool==='move';
+  const moveModeRef={get current(){return toolRef.current==='move';}};
+  const setMoveMode=(v:boolean|((p:boolean)=>boolean))=>{const next=typeof v==='function'?v(toolRef.current==='move'):v;setTool(next?'move':'select');};
   const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:'',width:'',height:'',padding:'',margin:'',radius:'',fontWeight:'',fontFamily:'',textAlign:'',posX:'0',posY:'0'});
   const [explorerOpen,setExplorerOpen]=useState(false);
   const [inspectorOpen,setInspectorOpen]=useState(false);
   const pendingSectionRef=useRef<string|null>(null);
   const pendingIndexRef=useRef<number|null>(null);
+  const siteRef=useRef<SiteBundle|null>(null);
   const [elementInfo,setElementInfo]=useState<ElementInfo|null>(null);
   const [canvasMenu,setCanvasMenu]=useState<{x:number;y:number}|null>(null);
   const [seoOpen,setSeoOpen]=useState(false);
@@ -137,8 +145,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const fileInput=useRef<HTMLInputElement>(null);
   const previewFrame=useRef<HTMLIFrameElement>(null);
   const selectedRef=useRef<HTMLElement|null>(null);
+  siteRef.current=site;
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
-  useEffect(()=>{moveModeRef.current=moveMode;const doc=previewFrame.current?.contentDocument;if(doc?.body)doc.body.style.cursor=moveMode?'grab':'';},[moveMode]);
+  useEffect(()=>{toolRef.current=tool;const doc=previewFrame.current?.contentDocument;if(doc?.body)doc.body.style.cursor=tool==='move'?'grab':'';
+    if(tool!=='select')clearHandles(doc);else if(selectedRef.current)drawResize(selectedRef.current);},[tool]);
   const layers=useMemo(()=>site?htmlLayerOutline(site.html):[],[site]);
   const sections=useMemo(()=>{try{return site?listSections(site.html):[];}catch{return [];}},[site]);
   const sectionsRef=useRef(sections);sectionsRef.current=sections;
@@ -285,6 +295,29 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
           id:element.id||'',title:element.getAttribute('title')||'',ariaLabel:element.getAttribute('aria-label')||''}});
     }catch{setElementInfo(null);}
     if(scroll)element.scrollIntoView({block:'center',behavior:'smooth'});
+    if(toolRef.current==='select')drawResize(element);
+  }
+  /** Tiradores de redimensionado: se ven en vivo y se guardan al soltar (un paso de deshacer). */
+  function drawResize(element:HTMLElement){
+    const doc=element.ownerDocument;
+    const index=Number(element.dataset.wayupEdit);
+    drawHandles(doc,element,size=>{
+      if(!siteRef.current)return;
+      tryEdit(()=>setStyles(siteRef.current!.html,index,size),'Tamaño actualizado: '+Object.values(size).join(' × ')+'.');
+    });
+  }
+  /** Inserta un bloque de la biblioteca en la posición indicada o junto a la selección. */
+  function insertBlock(id:string,drop?:{index:number;position:'before'|'after'|'inside'}){
+    const block=blockById(id);const current=siteRef.current;
+    if(!block||!current)return;
+    let index:number|null=drop?.index??selected;
+    let position=drop?.position??'after';
+    if(!drop&&index!==null){
+      const el=previewFrame.current?.contentDocument?.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');
+      if(el&&!isSectionBlock(block)&&canContain(el)&&el.children.length===0)position='inside';
+      if(el&&isSectionBlock(block)){const s=el.closest<HTMLElement>('section,header,footer,[data-wc-section]');if(s?.dataset.wayupEdit)index=Number(s.dataset.wayupEdit);position='after';}
+    }
+    tryEdit(()=>insertSnippet(current.html,index,block.html,position),block.name+' añadido. Edítalo en Propiedades o con doble clic.');
   }
   /** Aplica una operación sobre el HTML real y conserva la selección resultante tras recargar la vista. */
   function applyEdit(result:EditResult,message:string){
@@ -360,6 +393,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(mod&&k==='v')return go(()=>runCanvasCommand('paste'));
     if(mod&&k==='d')return go(()=>runCanvasCommand('duplicate'));
     if(mod&&k==='h')return go(()=>runCanvasCommand('hide'));
+    if(!mod&&!e.altKey&&k==='v')return go(()=>setTool('select'));
+    if(!mod&&!e.altKey&&k==='m')return go(()=>setTool('move'));
+    if(!mod&&!e.altKey&&k==='i')return go(()=>setTool('insert'));
     if(selected===null)return;
     if(k==='delete'||k==='backspace')return go(()=>runCanvasCommand('delete'));
     if(k==='enter')return go(()=>runCanvasCommand('edit-text'));
@@ -412,45 +448,68 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const rect=previewFrame.current!.getBoundingClientRect();
       setCanvasMenu({x:rect.left+event.clientX,y:rect.top+event.clientY});
     },true);
-    type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean};
+    type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean;free:boolean};
     let moving:Moving|null=null;
     const clamp=(n:number)=>Math.max(-1200,Math.min(1200,Math.round(n)));
     doc.addEventListener('pointerdown',event=>{
-      if(!moveModeRef.current||event.button!==0)return;
+      if(toolRef.current!=='move'||event.button!==0)return;
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
-      if(!element)return;
+      if(!element||element===doc.body)return;
       const index=Number(element.dataset.wayupEdit);
       if(!Number.isSafeInteger(index))return;
       const position=element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/);
       moving={element,index,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,
-        x:Number(position?.[1]||0),y:Number(position?.[2]||0),moved:false};
+        x:Number(position?.[1]||0),y:Number(position?.[2]||0),moved:false,free:event.altKey};
       event.preventDefault();
       selectLayer(index,false);
-      try{element.setPointerCapture(event.pointerId);}catch{}
     },true);
     doc.addEventListener('pointermove',event=>{
       if(!moving||event.pointerId!==moving.pointerId)return;
       const dx=event.clientX-moving.clientX,dy=event.clientY-moving.clientY;
-      if(!moving.moved&&Math.hypot(dx,dy)<3)return;
-      moving.moved=true;
-      moving.element.style.translate=clamp(moving.x+dx)+'px '+clamp(moving.y+dy)+'px';
+      if(!moving.moved&&Math.hypot(dx,dy)<4)return;
+      if(!moving.moved){moving.moved=true;moving.element.style.opacity='0.45';moving.element.style.pointerEvents='none';doc.body.style.cursor='grabbing';}
+      if(moving.free){moving.element.style.translate=clamp(moving.x+dx)+'px '+clamp(moving.y+dy)+'px';return;}
+      const drop=computeDrop(doc,event.clientX,event.clientY,{exclude:moving.element});
+      showIndicator(doc,drop,drop?(drop.position==='inside'?'Dentro':drop.position==='before'?'Antes':'Después'):'');
     },true);
-    doc.addEventListener('pointerup',event=>{
-      if(!moving||event.pointerId!==moving.pointerId)return;
-      const state=moving;moving=null;
-      try{state.element.releasePointerCapture(event.pointerId);}catch{}
-      if(!state.moved)return;
-      try{
-        const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
-        if(!site)return;
-        changeHtml(patchSelectedElement(site.html,state.index,{moveX:x,moveY:y}));
-        setNotice('Elemento desplazado en el HTML real. Deshacer restaura su posición.');
-      }catch(error){setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
-    },true);
-    doc.addEventListener('pointercancel',()=>{
+    const finishMove=(event:PointerEvent|null)=>{
       if(!moving)return;
-      moving.element.style.translate=moving.x+'px '+moving.y+'px';
-      moving=null;
+      const state=moving;moving=null;
+      state.element.style.opacity='';state.element.style.pointerEvents='';doc.body.style.cursor=toolRef.current==='move'?'grab':'';
+      hideIndicator(doc);
+      if(!state.moved||!event||!siteRef.current)return;
+      const current=siteRef.current;
+      if(state.free){
+        const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
+        try{changeHtml(patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}));setNotice('Elemento desplazado libremente (Alt). Deshacer restaura su posición.');}
+        catch(error){setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
+        return;
+      }
+      const drop=computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
+      if(!drop){setNotice('Suelta sobre otro elemento de la web para colocarlo.');return;}
+      tryEdit(()=>moveElementTo(current.html,state.index,drop.index,drop.position),'Elemento movido '+(drop.position==='inside'?'dentro del contenedor':drop.position==='before'?'antes':'después')+'.');
+    };
+    doc.addEventListener('pointerup',event=>finishMove(event),true);
+    doc.addEventListener('pointercancel',()=>finishMove(null),true);
+    // Soltar bloques arrastrados desde el panel «Insertar».
+    let dragSection=false;
+    doc.addEventListener('dragenter',event=>{dragSection=false;event.preventDefault();},true);
+    doc.addEventListener('dragover',event=>{
+      if(!event.dataTransfer?.types.includes(BLOCK_MIME))return;
+      event.preventDefault();event.dataTransfer.dropEffect='copy';
+      dragSection=event.dataTransfer.types.includes(SECTION_MIME);
+      const drop=computeDrop(doc,event.clientX,event.clientY,{sectionLevel:dragSection});
+      showIndicator(doc,drop,drop?(drop.position==='inside'?'Insertar dentro':drop.position==='before'?'Insertar antes':'Insertar después'):'');
+    },true);
+    doc.addEventListener('dragleave',event=>{if(!event.relatedTarget)hideIndicator(doc);},true);
+    doc.addEventListener('drop',event=>{
+      const id=event.dataTransfer?.getData(BLOCK_MIME);
+      hideIndicator(doc);
+      if(!id)return;
+      event.preventDefault();
+      const block=blockById(id);if(!block)return;
+      const drop=computeDrop(doc,event.clientX,event.clientY,{sectionLevel:isSectionBlock(block)});
+      insertBlock(id,drop?{index:drop.index,position:drop.position}:undefined);
     },true);
   }
   function modifyStructure(action:'duplicate'|'remove'|'up'|'down'){
@@ -628,10 +687,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             <button onClick={undo} disabled={!past.length} className={btn+' w-[34px] px-0'} title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><Undo2 size={14}/></button>
             <button onClick={redo} disabled={!future.length} className={btn+' w-[34px] px-0'} title="Rehacer (Ctrl+Mayús+Z)" aria-label="Rehacer"><Redo2 size={14}/></button>
           </div>
-          <div role="group" aria-label="Modo del editor" className="flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px]">
-            <button onClick={()=>{setView('preview');setMoveMode(false);}} aria-pressed={view==='preview'&&!moveMode} className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&!moveMode?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><Paintbrush size={13}/> Diseño</button>
-            <button onClick={()=>{setView('preview');setMoveMode(v=>!v);}} aria-pressed={moveMode} className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(moveMode?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')} title="Arrastra elementos directamente en la web"><Move size={13}/> Mover</button>
-            <button onClick={()=>{setView('code');setMoveMode(false);}} aria-pressed={view==='code'} className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='code'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><CodeXml size={13}/> Código</button>
+          <div role="group" aria-label="Herramientas del lienzo" className="flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px]">
+            <button onClick={()=>{setView('preview');setTool('select');}} aria-pressed={view==='preview'&&tool==='select'} title="Seleccionar y editar (V)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='select'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><MousePointer2 size={13}/> Seleccionar</button>
+            <button onClick={()=>{setView('preview');setTool('move');}} aria-pressed={view==='preview'&&tool==='move'} title="Arrastrar para reordenar · Alt+arrastrar para desplazar libremente (M)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='move'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><Move size={13}/> Mover</button>
+            <button onClick={()=>{setView('preview');setTool('insert');}} aria-pressed={view==='preview'&&tool==='insert'} title="Insertar textos, botones, formas, imágenes y secciones (I)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='insert'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><SquarePlus size={13}/> Insertar</button>
+            <button onClick={()=>{setView('code');setTool('select');}} aria-pressed={view==='code'} title="Código HTML" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='code'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><CodeXml size={13}/> Código</button>
           </div>
           <span className="hidden items-center gap-2 pl-1 text-[10.5px] text-faint xl:flex">
             <span className="rounded bg-brandsoft px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-wider text-brand">{site.source==='generated'?'Generada':'Importada'}</span>
@@ -663,13 +723,17 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               </div>
               <span className="hidden font-mono text-[10px] text-faint sm:block">{device==='mobile'?'390':device==='tablet'?'820':'1280'} px</span>
             </div>
-            <div className="scroll-subtle flex-1 overflow-auto p-3 sm:p-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
+            <div className="relative min-h-0 flex-1">
+            {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onClose={()=>setTool('select')}
+              target={selected!==null?'después del elemento seleccionado (o dentro, si es un contenedor vacío)':'al final de la página'}/>}
+            <div className="scroll-subtle absolute inset-0 overflow-auto p-3 sm:p-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
               <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel transition-[max-width] duration-300"
                 style={{maxWidth:device==='mobile'?390:device==='tablet'?820:1280}}>
                 <iframe title="Previsualización segura de la web importada" ref={previewFrame} onLoad={previewLoaded}
                   sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={preview?.html||''}
                   className="h-full min-h-[620px] w-full border-0 bg-white"/>
               </div>
+            </div>
             </div>
           </>:<>
             <div className="flex items-center justify-between border-b border-stroke px-4 py-3 text-[11px] text-mist"><span><FileCode2 size={13} className="mr-2 inline text-brand"/> {site.entry}</span><span>{site.html.length.toLocaleString('es-ES')} caracteres · HTML editado directamente</span></div>

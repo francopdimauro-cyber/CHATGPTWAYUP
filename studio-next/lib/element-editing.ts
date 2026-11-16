@@ -210,23 +210,41 @@ export function copyElement(html:string,index:number):string{
   const copy=node.cloneNode(true) as HTMLElement;stripActive(copy);
   return copy.outerHTML;
 }
-export function pasteElement(html:string,targetIndex:number|null,clip:string,position:'after'|'inside'='after'):EditResult{
-  if(!clip||clip.length>400000)throw Error('No hay nada que pegar.');
+export type DropPosition='before'|'after'|'inside';
+/** Elementos que nunca pueden contener otros (vacíos o de texto/medios). */
+const NO_CHILDREN=new Set(['IMG','INPUT','BR','HR','TEXTAREA','SELECT','VIDEO','AUDIO','IFRAME','SVG','PICTURE','SOURCE']);
+export function canContain(el:Element):boolean{return !NO_CHILDREN.has(el.tagName)&&!['P','H1','H2','H3','H4','H5','H6','A','BUTTON','SPAN','LABEL','LI'].includes(el.tagName);}
+function place(doc:Document,piece:Element,targetIndex:number|null,position:DropPosition):void{
+  if(targetIndex===null){(doc.querySelector('main')||doc.body).append(piece);return;}
+  const target=nodeAt(doc,targetIndex);
+  if(position==='inside'){
+    if(!canContain(target))throw Error('No se puede colocar dentro de este elemento: elige antes o después.');
+    target.append(piece);
+  }else if(position==='before')target.before(piece);else target.after(piece);
+}
+/** Inserta un fragmento HTML (pegado o de la biblioteca) saneado y con IDs únicos. */
+export function insertSnippet(html:string,targetIndex:number|null,snippet:string,position:DropPosition='after'):EditResult{
+  if(!snippet||snippet.length>400000)throw Error('No hay nada que insertar.');
   const doc=parse(html);
-  const holder=doc.createElement('div');holder.innerHTML=clip;
+  const holder=doc.createElement('div');holder.innerHTML=snippet;
   const piece=holder.firstElementChild;
-  if(!piece)throw Error('El contenido copiado no es válido.');
+  if(!piece)throw Error('El contenido no es válido.');
   stripActive(piece);
   uniquifyIds(doc,piece);
-  if(targetIndex===null){(doc.querySelector('main')||doc.body).append(piece);}
-  else{
-    const target=nodeAt(doc,targetIndex);
-    if(position==='inside'){
-      if(['IMG','INPUT','BR','HR'].includes(target.tagName))throw Error('No se puede pegar dentro de este elemento.');
-      target.append(piece);
-    }else target.after(piece);
-  }
+  place(doc,piece,targetIndex,position);
   return {html:serialize(doc),index:indexOf(doc,piece)};
+}
+export function pasteElement(html:string,targetIndex:number|null,clip:string,position:'after'|'inside'='after'):EditResult{
+  if(!clip)throw Error('No hay nada que pegar.');
+  return insertSnippet(html,targetIndex,clip,position);
+}
+/** Mueve un elemento a otra posición del documento (arrastrar para reordenar). */
+export function moveElementTo(html:string,index:number,targetIndex:number,position:DropPosition):EditResult{
+  const doc=parse(html);const node=nodeAt(doc,index);const target=nodeAt(doc,targetIndex);
+  if(node===target||node.contains(target))throw Error('No se puede mover un elemento dentro de sí mismo.');
+  if(position==='inside'&&!canContain(target))throw Error('No se puede colocar dentro de este elemento.');
+  if(position==='inside')target.append(node);else if(position==='before')target.before(node);else target.after(node);
+  return {html:serialize(doc),index:indexOf(doc,node)};
 }
 export function duplicateElement(html:string,index:number):EditResult{
   const doc=parse(html);const node=nodeAt(doc,index);
