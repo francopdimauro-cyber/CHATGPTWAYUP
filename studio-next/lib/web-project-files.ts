@@ -284,7 +284,7 @@ export function attachLocalImage(site:SiteBundle,index:number,data:Uint8Array):S
     }else{
       // Foto de contenido: ancho completo y adaptable. En el bloque «Imagen», sustituye al marcador.
       image.alt='Imagen';
-      image.style.cssText='display:block;width:100%;max-width:100%;height:auto;object-fit:cover;border-radius:12px';
+      image.style.cssText='display:block;width:100%;max-width:100%;height:auto;object-fit:cover';
       const placeholder=selected.tagName==='FIGURE'?selected.querySelector(':scope > div'):null;
       if(placeholder&&!placeholder.querySelector('img'))placeholder.replaceWith(image);
       else selected.prepend(image);

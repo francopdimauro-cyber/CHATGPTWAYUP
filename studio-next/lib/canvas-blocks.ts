@@ -4,7 +4,7 @@
  * de la web (inherit / currentColor / --accent si existe). Sin scripts ni recursos externos.
  * Los datos de ejemplo son marcadores claramente editables: nunca inventan información real.
  */
-export type BlockCategory='Texto'|'Acciones'|'Formas'|'Medios'|'Diseño'|'Secciones';
+export type BlockCategory='Texto'|'Acciones'|'Formas'|'Medios'|'Diseño'|'Carta'|'Secciones';
 export type CanvasBlock={id:string;category:BlockCategory;name:string;hint:string;html:string};
 
 const ACCENT='var(--accent, var(--brand, #1f2937))';
@@ -48,6 +48,10 @@ export const CANVAS_BLOCKS:CanvasBlock[]=[
   {id:'tres-columnas',category:'Diseño',name:'Tres columnas',hint:'Grid',html:`<div data-wc-name="Tres columnas" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin:16px 0"><div style="${card}"><h3 style="margin:0 0 8px">Uno</h3><p style="margin:0">Descripción breve.</p></div><div style="${card}"><h3 style="margin:0 0 8px">Dos</h3><p style="margin:0">Descripción breve.</p></div><div style="${card}"><h3 style="margin:0 0 8px">Tres</h3><p style="margin:0">Descripción breve.</p></div></div>`},
   {id:'tarjeta',category:'Diseño',name:'Tarjeta',hint:'Card',html:`<article data-wc-name="Tarjeta" style="${card};max-width:380px"><h3 style="margin:0 0 8px">Título de la tarjeta</h3><p style="margin:0 0 16px;line-height:1.6">Texto descriptivo de la tarjeta.</p><a href="#" style="${btn(false)}">Saber más</a></article>`},
   {id:'acordeon',category:'Diseño',name:'Desplegable',hint:'Sin JavaScript',html:`<details data-wc-name="Desplegable" style="padding:16px 0;border-bottom:1px solid rgba(127,127,127,.3)"><summary style="cursor:pointer;font-weight:600">Pregunta o título desplegable</summary><p style="margin:10px 0 0;line-height:1.6">Respuesta o contenido que aparece al desplegar.</p></details>`},
+  // Carta (restaurantes): pestañas solo con CSS, fichas de plato y alérgenos
+  {id:'pestanas-platos',category:'Carta',name:'Pestañas de platos',hint:'Foto + alérgenos',html:tabsHtml()},
+  {id:'ficha-plato',category:'Carta',name:'Ficha de plato',hint:'Foto + descripción',html:`<article data-wc-name="Ficha de plato" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:20px;align-items:center;padding:16px 0">${dishInner('Nombre del plato')}</article>`},
+  {id:'alergenos',category:'Carta',name:'Alérgenos',hint:'Etiquetas',html:allergensHtml()},
   // Secciones completas
   {id:'sec-hero',category:'Secciones',name:'Portada (hero)',hint:'Sección',html:`<section data-wc-section="portada" data-wc-name="Portada" id="portada" style="padding:96px 6%;max-width:1200px;margin:0 auto"><p style="margin:0 0 12px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.75">Antetítulo</p><h1 style="margin:0 0 18px;font-size:clamp(36px,6vw,68px);line-height:1.05">Un titular claro sobre lo que haces</h1><p style="margin:0 0 28px;max-width:600px;font-size:18px;line-height:1.7;opacity:.85">Una frase que explique tu propuesta de valor con datos reales de tu negocio.</p><div style="display:flex;flex-wrap:wrap;gap:12px"><a href="#contacto" style="${btn(true)}">Acción principal</a><a href="#" style="${btn(false)}">Saber más</a></div></section>`},
   {id:'sec-caracteristicas',category:'Secciones',name:'Servicios',hint:'3 tarjetas',html:`<section data-wc-section="servicios-nuevos" data-wc-name="Servicios" id="servicios-nuevos" style="padding:80px 6%;max-width:1200px;margin:0 auto"><h2 style="margin:0 0 12px">Nuestros servicios</h2><p style="margin:0 0 32px;max-width:620px;opacity:.8">Describe brevemente qué ofreces.</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px"><article style="${card}"><h3 style="margin:0 0 8px">Servicio 1</h3><p style="margin:0;line-height:1.6">Descripción real del servicio.</p></article><article style="${card}"><h3 style="margin:0 0 8px">Servicio 2</h3><p style="margin:0;line-height:1.6">Descripción real del servicio.</p></article><article style="${card}"><h3 style="margin:0 0 8px">Servicio 3</h3><p style="margin:0;line-height:1.6">Descripción real del servicio.</p></article></div></section>`},
@@ -57,7 +61,33 @@ export const CANVAS_BLOCKS:CanvasBlock[]=[
   {id:'sec-contacto',category:'Secciones',name:'Contacto',hint:'Formulario',html:`<section data-wc-section="contacto-nuevo" data-wc-name="Contacto" id="contacto-nuevo" style="padding:80px 6%;max-width:900px;margin:0 auto"><h2 style="margin:0 0 12px">Contacto</h2><p style="margin:0 0 24px;opacity:.8">Añade aquí tu dirección, teléfono y horario reales.</p><form data-wc-static-form="true" style="display:grid;gap:12px;max-width:560px"><input name="nombre" placeholder="Nombre" style="padding:12px;border-radius:8px;border:1px solid rgba(127,127,127,.4);font:inherit"><input name="email" type="email" placeholder="Correo electrónico" style="padding:12px;border-radius:8px;border:1px solid rgba(127,127,127,.4);font:inherit"><textarea name="mensaje" rows="4" placeholder="Mensaje" style="padding:12px;border-radius:8px;border:1px solid rgba(127,127,127,.4);font:inherit"></textarea><button type="button" style="${btn(true)};border:0;cursor:pointer;justify-self:start">Enviar</button></form><p style="margin:12px 0 0;font-size:12px;opacity:.6">Formulario de maqueta: conéctalo a un servicio de envío para recibir mensajes.</p></section>`},
   {id:'sec-pie',category:'Secciones',name:'Pie de página',hint:'Footer',html:`<footer data-wc-section="pie-nuevo" data-wc-name="Pie de página" style="padding:48px 6%;border-top:1px solid rgba(127,127,127,.25);display:flex;flex-wrap:wrap;justify-content:space-between;gap:16px;font-size:14px"><p style="margin:0">© Tu negocio</p><nav style="display:flex;gap:16px"><a href="#" style="color:inherit">Aviso legal</a><a href="#" style="color:inherit">Privacidad</a><a href="#contacto" style="color:inherit">Contacto</a></nav></footer>`},
 ];
-export const BLOCK_CATEGORIES:BlockCategory[]=['Texto','Acciones','Formas','Medios','Diseño','Secciones'];
+function allergensHtml(list=['Gluten','Lácteos','Huevo']):string{
+  return `<ul data-wc-name="Alérgenos" aria-label="Alérgenos" style="display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:8px 0 0;padding:0">${list.map(a=>`<li style="padding:3px 10px;border-radius:999px;border:1px solid currentColor;font-size:12px;opacity:.8">${a}</li>`).join('')}</ul>`;
+}
+function dishInner(name:string):string{
+  return `<figure style="margin:0"><div style="${placeholderMedia}">Foto del plato</div></figure><div><h3 style="margin:0 0 8px">${name}</h3><p style="margin:0 0 10px;line-height:1.6;opacity:.85">Descripción del plato: ingredientes, elaboración y origen del producto.</p><p style="margin:0;font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.6">Alérgenos</p>${allergensHtml()}</div>`;
+}
+/** Pestañas sin JavaScript (radio + :checked). {{uid}} se sustituye al insertar para que cada bloque sea independiente. */
+function tabsHtml():string{
+  const tabs=['Plato 1','Plato 2','Plato 3'];
+  const css=`.wc-tabs-{{uid}}>input{position:absolute;opacity:0;pointer-events:none}`+
+    `.wc-tabs-{{uid}} .wc-tab-labels{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 18px;border-bottom:1px solid rgba(127,127,127,.3)}`+
+    `.wc-tabs-{{uid}} .wc-tab-labels label{cursor:pointer;padding:10px 16px;border-bottom:2px solid transparent;opacity:.7}`+
+    `.wc-tabs-{{uid}} .wc-tab-panel{display:none;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:24px;align-items:center}`+
+    tabs.map((_,i)=>`.wc-tabs-{{uid}}>input:nth-of-type(${i+1}):checked~.wc-tab-panels>.wc-tab-panel:nth-child(${i+1}){display:grid}`+
+      `.wc-tabs-{{uid}}>input:nth-of-type(${i+1}):checked~.wc-tab-labels>label:nth-child(${i+1}){opacity:1;border-bottom-color:currentColor;font-weight:600}`).join('')+
+    `@media (max-width:640px){.wc-tabs-{{uid}} .wc-tab-panel{grid-template-columns:1fr}}`;
+  return `<div data-wc-name="Pestañas de platos" data-wc-tabs="true" class="wc-tabs-{{uid}}" style="margin:16px 0"><style>${css}</style>`+
+    tabs.map((_,i)=>`<input type="radio" name="wc-tabs-{{uid}}" id="wc-tab-{{uid}}-${i+1}"${i===0?' checked':''}>`).join('')+
+    `<div class="wc-tab-labels" role="tablist">${tabs.map((t,i)=>`<label for="wc-tab-{{uid}}-${i+1}" data-wc-tab="true">${t}</label>`).join('')}</div>`+
+    `<div class="wc-tab-panels">${tabs.map(t=>`<div class="wc-tab-panel" role="tabpanel">${dishInner(t)}</div>`).join('')}</div></div>`;
+}
+/** Sustituye {{uid}} por un identificador único al insertar. */
+export function instantiateBlock(html:string):string{
+  const uid=Math.random().toString(36).slice(2,8);
+  return html.replace(/\{\{uid\}\}/g,uid);
+}
+export const BLOCK_CATEGORIES:BlockCategory[]=['Texto','Acciones','Formas','Medios','Diseño','Carta','Secciones'];
 export function blockById(id:string):CanvasBlock|undefined{return CANVAS_BLOCKS.find(b=>b.id===id);}
 /** Las secciones completas deben ir a nivel de sección (antes/después de otra sección), no dentro de un texto. */
 export function isSectionBlock(b:CanvasBlock):boolean{return b.category==='Secciones';}

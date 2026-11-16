@@ -1,10 +1,10 @@
 'use client';
 /** Panel «Insertar»: biblioteca de bloques que se arrastran al lienzo o se insertan con un clic. */
 import React, { useMemo, useState } from 'react';
-import { Circle, Columns2, Image as ImageIcon, LayoutTemplate, MousePointerClick, Search, Type, X } from 'lucide-react';
+import { Circle, Columns2, Image as ImageIcon, LayoutTemplate, MousePointerClick, Search, Type, UtensilsCrossed, X } from 'lucide-react';
 import { BLOCK_CATEGORIES, CANVAS_BLOCKS, type BlockCategory } from '@/lib/canvas-blocks';
 
-const ICONS: Record<BlockCategory, typeof Type> = { Texto: Type, Acciones: MousePointerClick, Formas: Circle, Medios: ImageIcon, 'Diseño': Columns2, Secciones: LayoutTemplate };
+const ICONS: Record<BlockCategory, typeof Type> = { Texto: Type, Acciones: MousePointerClick, Formas: Circle, Medios: ImageIcon, 'Diseño': Columns2, Carta: UtensilsCrossed, Secciones: LayoutTemplate };
 export const BLOCK_MIME = 'application/x-wayup-block';
 export const SECTION_MIME = 'application/x-wayup-section';
 

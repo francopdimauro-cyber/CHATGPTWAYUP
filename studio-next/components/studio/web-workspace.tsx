@@ -16,7 +16,7 @@ import { AgentLibrary } from './agent-library';
 import { CreatorWizard, type Direction, type ClientPhoto } from './creator-wizard';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
-import { blockById, isSectionBlock } from '@/lib/canvas-blocks';
+import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
 import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, insertSnippet, moveElementTo, canContain, writeSeo, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
@@ -35,6 +35,15 @@ const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').rep
 const BASE='rounded-lg border border-stroke bg-panel px-3 py-2.5 text-[12.5px] text-ink outline-none transition placeholder:text-faint focus:border-brand focus:ring-2 focus:ring-brand/15';
 const btn='inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg border border-stroke bg-panel px-2.5 text-[11.5px] font-medium text-ink transition hover:border-brand/45 hover:bg-elevated disabled:opacity-40 disabled:hover:border-stroke';
 const primary='inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-[11.5px] font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-50';
+/** Añade el CSS propio del cliente al final del <head>, sin código activo ni recursos externos. */
+function appendCustomCss(html:string,css:string):string{
+  const clean=css.slice(0,20000).replace(/<\/?\s*style[^>]*>/gi,'').replace(/@import[^;]*;?/gi,'')
+    .replace(/url\(\s*(['"]?)(?:https?:|\/\/|javascript:)[^)]*\)/gi,'none').replace(/expression\s*\(/gi,'').replace(/javascript:/gi,'');
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const style=doc.createElement('style');style.setAttribute('data-wc-custom-css','true');style.textContent=clean;
+  doc.head.append(style);
+  return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
+}
 function escapeText(text:string):string{
   return text.replace(/[<>&]/g,ch=>ch==='<'?'&lt;':ch==='>'?'&gt;':'&amp;').replace(/\n/g,'<br>');
 }
@@ -292,7 +301,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar el motor IA de Studio.');}
   },[]);
   useEffect(()=>{if(stage==='create')void refreshWebAI()},[stage,refreshWebAI]);
-  async function createWeb(direction:Direction|null=null,photos:ClientPhoto[]=[]){
+  async function createWeb(direction:Direction|null=null,photos:ClientPhoto[]=[],style:{notes:string;css:string}={notes:'',css:''}){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
     }
@@ -308,7 +317,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       });
       const photoBrief=assets.length?'\n\nFOTOS REALES DEL CLIENTE (OBLIGATORIO usarlas TODAS en secciones adecuadas, con estas rutas exactas en <img src="...">, alt descriptivo y object-fit:cover):\n'+
         assets.map(a=>'- '+a.path+' — '+a.alt).join('\n'):'';
-      let html=await streamGeneratedWeb(briefFrom(form)+photoBrief,setNotice,direction);
+      const styleBrief=style.notes.trim()?'\n\nINDICACIONES DE ESTILO DEL CLIENTE (prioritarias sobre la dirección general):\n'+style.notes.trim().slice(0,3000):'';
+      const cssBrief=style.css.trim()?'\n\nEl cliente aportará su propio CSS, que se añadirá al final: no lo contradigas ni lo dupliques.':'';
+      let html=await streamGeneratedWeb(briefFrom(form)+photoBrief+styleBrief+cssBrief,setNotice,direction);
+      if(style.css.trim())html=appendCustomCss(html,style.css);
       // Si la IA se ha dejado alguna foto, se añade en una galería para no perder ninguna.
       const missing=assets.filter(a=>!html.includes(a.path));
       if(missing.length)html=insertSnippet(html,null,'<section data-wc-section="galeria-fotos" data-wc-name="Galería" id="galeria-fotos" style="padding:72px 6%;max-width:1200px;margin:0 auto"><h2 style="margin:0 0 24px">Galería</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">'+
@@ -415,7 +427,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(el&&!isSectionBlock(block)&&canContain(el)&&el.children.length===0)position='inside';
       if(el&&isSectionBlock(block)){const s=el.closest<HTMLElement>('section,header,footer,[data-wc-section]');if(s?.dataset.wayupEdit)index=Number(s.dataset.wayupEdit);position='after';}
     }
-    tryEdit(()=>insertSnippet(current.html,index,block.html,position),block.name+' añadido. Edítalo en Propiedades o con doble clic.');
+    tryEdit(()=>insertSnippet(current.html,index,instantiateBlock(block.html),position),block.name+' añadido. Edítalo en Propiedades o con doble clic.');
   }
   /** Aplica una operación sobre el HTML real y conserva la selección resultante tras recargar la vista. */
   function applyEdit(result:EditResult,message:string){
@@ -519,7 +531,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(doc.body){doc.body.style.cursor=moveModeRef.current?'grab':'';doc.body.style.userSelect=moveModeRef.current?'none':'';}
     doc.addEventListener('click',event=>{
       if(editingRef.current&&editingRef.current.el.contains(event.target as Node))return;
-      event.preventDefault();event.stopPropagation();
+      // Las pestañas (solo CSS) se pueden cambiar en el editor para editar el contenido de cada una.
+      const tabLabel=(event.target as Element).closest('label[data-wc-tab]');
+      if(!tabLabel)event.preventDefault();
+      event.stopPropagation();
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
       if(!element)return;
       const index=Number(element.dataset.wayupEdit);
@@ -815,7 +830,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         </div>
         <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
       </>:<CreatorWizard form={form} setForm={setForm} brief={briefFrom(form)} busy={busy} aiReady={webAIReady} aiReason={webAIReason}
-        onCheckAI={()=>void refreshWebAI()} onGenerate={(direction,photos)=>void createWeb(direction,photos)} onLocal={createLocalWeb} error={fileError}/>}
+        onCheckAI={()=>void refreshWebAI()} onGenerate={(direction,photos,style)=>void createWeb(direction,photos,style)} onLocal={createLocalWeb} error={fileError}/>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-3 py-2 sm:px-4">
