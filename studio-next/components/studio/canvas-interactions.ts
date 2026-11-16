@@ -79,20 +79,26 @@ export function drawHandles(doc: Document, el: HTMLElement | null, onEnd: (size:
     h.style.cssText = 'position:absolute;width:10px;height:10px;background:#fff;border:2px solid #3d5cff;border-radius:3px;pointer-events:auto;touch-action:none;' +
       (dir === 'e' ? 'right:-6px;top:50%;margin-top:-5px;cursor:ew-resize' : dir === 's' ? 'bottom:-6px;left:50%;margin-left:-5px;cursor:ns-resize' : 'right:-6px;bottom:-6px;cursor:nwse-resize');
     h.addEventListener('pointerdown', ev => {
+      if (ev.button !== 0) return;
       ev.preventDefault(); ev.stopPropagation();
-      const start = el.getBoundingClientRect(), x0 = ev.clientX, y0 = ev.clientY;
+      const start = el.getBoundingClientRect(), x0 = ev.clientX, y0 = ev.clientY, id = ev.pointerId;
       let w = start.width, hgt = start.height;
-      try { h.setPointerCapture(ev.pointerId); } catch {}
+      try { h.setPointerCapture(id); } catch {}
+      // Se escucha en todo el documento: funciona aunque el navegador no respete la captura del puntero.
       const move = (m: PointerEvent) => {
+        if (m.pointerId !== id) return;
+        m.preventDefault();
         if (dir !== 's') { w = Math.max(16, Math.round(start.width + m.clientX - x0)); el.style.setProperty('width', w + 'px', 'important'); }
         if (dir !== 'e') { hgt = Math.max(8, Math.round(start.height + m.clientY - y0)); el.style.setProperty('height', hgt + 'px', 'important'); }
         place(); sizeText();
       };
-      const up = () => {
-        h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+      const up = (u: PointerEvent) => {
+        if (u.pointerId !== id) return;
+        doc.removeEventListener('pointermove', move, true); doc.removeEventListener('pointerup', up, true); doc.removeEventListener('pointercancel', up, true);
+        try { h.releasePointerCapture(id); } catch {}
         onEnd({ ...(dir !== 's' ? { width: w + 'px' } : {}), ...(dir !== 'e' ? { height: hgt + 'px' } : {}) });
       };
-      h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+      doc.addEventListener('pointermove', move, true); doc.addEventListener('pointerup', up, true); doc.addEventListener('pointercancel', up, true);
     });
     box.append(h);
   }

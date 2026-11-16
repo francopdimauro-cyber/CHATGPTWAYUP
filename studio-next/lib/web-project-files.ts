@@ -171,6 +171,8 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   const doc=new DOMParser().parseFromString(site.html,'text/html');
   const eligible=editableHtmlNodes(doc);
   eligible.forEach((node,i)=>node.dataset.wayupEdit=String(i));
+  // En el editor nada se arrastra con el «arrastre nativo» del navegador (Firefox lo inicia en enlaces e imágenes).
+  for(const node of Array.from(doc.querySelectorAll('img,a,svg,picture,video')))node.setAttribute('draggable','false');
   // Elementos ocultos por el usuario: siguen ocultos al exportar, pero en el editor se ven atenuados.
   for(const node of Array.from(doc.querySelectorAll<HTMLElement>('[data-wc-hidden]'))){node.removeAttribute('hidden');node.dataset.wayupHidden='true';}
   for(const node of Array.from(doc.querySelectorAll('script,iframe,object,embed,base,meta[http-equiv],template'))){

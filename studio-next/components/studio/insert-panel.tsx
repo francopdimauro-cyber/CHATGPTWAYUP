@@ -1,6 +1,6 @@
 'use client';
 /** Panel «Insertar»: biblioteca de bloques que se arrastran al lienzo o se insertan con un clic. */
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Circle, Columns2, Image as ImageIcon, LayoutTemplate, MousePointerClick, Search, Type, X } from 'lucide-react';
 import { BLOCK_CATEGORIES, CANVAS_BLOCKS, type BlockCategory } from '@/lib/canvas-blocks';
 
@@ -8,7 +8,9 @@ const ICONS: Record<BlockCategory, typeof Type> = { Texto: Type, Acciones: Mouse
 export const BLOCK_MIME = 'application/x-wayup-block';
 export const SECTION_MIME = 'application/x-wayup-section';
 
-export function InsertPanel({ onInsert, onClose, target }: { onInsert(id: string): void; onClose(): void; target: string }) {
+/** Arrastre propio con eventos de puntero (igual en Firefox, Chrome, Edge y Safari): el navegador no interviene. */
+export function InsertPanel({ onInsert, onClose, target, onDragBlock }: { onInsert(id: string): void; onClose(): void; target: string;
+  onDragBlock(id: string, e: React.PointerEvent<HTMLButtonElement>): void }) {
   const [cat, setCat] = useState<BlockCategory | 'Todo'>('Todo');
   const [q, setQ] = useState('');
   const list = useMemo(() => CANVAS_BLOCKS.filter(b => (cat === 'Todo' || b.category === cat) &&
@@ -27,9 +29,9 @@ export function InsertPanel({ onInsert, onClose, target }: { onInsert(id: string
       </div>
     </div>
     <div className="scroll-subtle grid min-h-0 flex-1 grid-cols-2 gap-1.5 overflow-y-auto p-2.5">
-      {list.map(b => { const Icon = ICONS[b.category]; return <button key={b.id} type="button" draggable
-        onDragStart={e => { e.dataTransfer.setData(BLOCK_MIME, b.id); if (b.category === 'Secciones') e.dataTransfer.setData(SECTION_MIME, '1'); e.dataTransfer.setData('text/plain', b.name); e.dataTransfer.effectAllowed = 'copy'; }}
-        onClick={() => onInsert(b.id)} title={'Insertar ' + b.name}
+      {list.map(b => { const Icon = ICONS[b.category]; return <button key={b.id} type="button" draggable={false}
+        onPointerDown={e => { if (e.button === 0) onDragBlock(b.id, e); }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert(b.id); } }} title={'Insertar ' + b.name}
         className="group flex cursor-grab flex-col items-start gap-1.5 rounded-lg border border-stroke bg-elevated p-2.5 text-left transition hover:border-brand/50 active:cursor-grabbing">
         <span className="flex h-8 w-full items-center justify-center rounded-md bg-panel text-mist group-hover:text-brand"><Icon size={16} /></span>
         <span className="w-full truncate text-[11px] font-medium text-ink">{b.name}</span>

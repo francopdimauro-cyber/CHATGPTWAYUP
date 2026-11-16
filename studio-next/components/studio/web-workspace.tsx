@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2, Tablet,
   Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search, MousePointer2, SquarePlus } from 'lucide-react';
@@ -115,6 +115,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   // Herramientas del lienzo: seleccionar (V), mover/reordenar (M) e insertar (I).
   const [tool,setTool]=useState<'select'|'move'|'insert'>('select');
   const toolRef=useRef<'select'|'move'|'insert'>('select');
+  // Al mover: «ordenar» lo encaja en la maquetación (responsive); «libre» lo deja exactamente donde se suelta.
+  const [moveStyle,setMoveStyle]=useState<'ordenar'|'libre'>('ordenar');
+  const moveStyleRef=useRef<'ordenar'|'libre'>('ordenar');moveStyleRef.current=moveStyle;
   const moveMode=tool==='move';
   const moveModeRef={get current(){return toolRef.current==='move';}};
   const setMoveMode=(v:boolean|((p:boolean)=>boolean))=>{const next=typeof v==='function'?v(toolRef.current==='move'):v;setTool(next?'move':'select');};
@@ -147,7 +150,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const selectedRef=useRef<HTMLElement|null>(null);
   siteRef.current=site;
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
-  useEffect(()=>{toolRef.current=tool;const doc=previewFrame.current?.contentDocument;if(doc?.body)doc.body.style.cursor=tool==='move'?'grab':'';
+  useEffect(()=>{toolRef.current=tool;const doc=previewFrame.current?.contentDocument;if(doc?.body){doc.body.style.cursor=tool==='move'?'grab':'';doc.body.style.userSelect=tool==='move'?'none':'';}
     if(tool!=='select')clearHandles(doc);else if(selectedRef.current)drawResize(selectedRef.current);},[tool]);
   const layers=useMemo(()=>site?htmlLayerOutline(site.html):[],[site]);
   const sections=useMemo(()=>{try{return site?listSections(site.html):[];}catch{return [];}},[site]);
@@ -306,6 +309,44 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       tryEdit(()=>setStyles(siteRef.current!.html,index,size),'Tamaño actualizado: '+Object.values(size).join(' × ')+'.');
     });
   }
+  /** Arrastrar un bloque del panel a la web con eventos de puntero (captura en el botón de origen):
+   *  funciona igual en todos los navegadores, también cuando el cursor pasa por encima del iframe. */
+  function dragBlockStart(id:string,e:React.PointerEvent<HTMLButtonElement>){
+    const block=blockById(id);if(!block)return;
+    const source=e.currentTarget,start={x:e.clientX,y:e.clientY};
+    e.preventDefault();
+    try{source.setPointerCapture(e.pointerId);}catch{}
+    let moved=false,ghost:HTMLDivElement|null=null,last:{index:number;position:'before'|'after'|'inside'}|null=null;
+    const frame=previewFrame.current,doc=frame?.contentDocument||null;
+    const move=(ev:PointerEvent)=>{
+      if(!moved&&Math.hypot(ev.clientX-start.x,ev.clientY-start.y)<5)return;
+      if(!moved){
+        moved=true;
+        ghost=document.createElement('div');
+        ghost.textContent=block.name;
+        ghost.setAttribute('aria-hidden','true');
+        ghost.style.cssText='position:fixed;z-index:200;pointer-events:none;padding:6px 12px;border-radius:8px;background:var(--wu-brand);color:#fff;font:600 12px/1.2 system-ui;box-shadow:0 10px 30px rgba(0,0,0,.35);transform:translate(12px,12px)';
+        document.body.append(ghost);document.body.style.cursor='grabbing';
+      }
+      ghost!.style.left=ev.clientX+'px';ghost!.style.top=ev.clientY+'px';
+      if(!frame||!doc)return;
+      const r=frame.getBoundingClientRect();
+      const inside=ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+      if(!inside){last=null;hideIndicator(doc);return;}
+      const drop=computeDrop(doc,ev.clientX-r.left,ev.clientY-r.top,{sectionLevel:isSectionBlock(block)});
+      last=drop?{index:drop.index,position:drop.position}:null;
+      showIndicator(doc,drop,drop?(drop.position==='inside'?'Insertar dentro':drop.position==='before'?'Insertar antes':'Insertar después'):'');
+    };
+    const up=()=>{
+      source.removeEventListener('pointermove',move);source.removeEventListener('pointerup',up);source.removeEventListener('pointercancel',cancel);
+      ghost?.remove();document.body.style.cursor='';if(doc)hideIndicator(doc);
+      if(!moved){insertBlock(id);return;}
+      if(last)insertBlock(id,last);else setNotice('Suelta el bloque encima de la web para colocarlo.');
+    };
+    const cancel=()=>{moved=false;last=null;ghost?.remove();document.body.style.cursor='';if(doc)hideIndicator(doc);
+      source.removeEventListener('pointermove',move);source.removeEventListener('pointerup',up);source.removeEventListener('pointercancel',cancel);};
+    source.addEventListener('pointermove',move);source.addEventListener('pointerup',up);source.addEventListener('pointercancel',cancel);
+  }
   /** Inserta un bloque de la biblioteca en la posición indicada o junto a la selección. */
   function insertBlock(id:string,drop?:{index:number;position:'before'|'after'|'inside'}){
     const block=blockById(id);const current=siteRef.current;
@@ -411,14 +452,14 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   function previewLoaded(){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
-    if(doc.body)doc.body.style.cursor=moveModeRef.current?'grab':'';
+    if(doc.body){doc.body.style.cursor=moveModeRef.current?'grab':'';doc.body.style.userSelect=moveModeRef.current?'none':'';}
     doc.addEventListener('click',event=>{
       if(editingRef.current&&editingRef.current.el.contains(event.target as Node))return;
       event.preventDefault();event.stopPropagation();
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
       if(!element)return;
       const index=Number(element.dataset.wayupEdit);
-      if(Number.isSafeInteger(index))selectLayer(index);
+      if(Number.isSafeInteger(index))selectLayer(index,false); // sin desplazar: el elemento sigue bajo el cursor
     },true);
     doc.addEventListener('submit',event=>event.preventDefault(),true);
     const pending=pendingSectionRef.current;pendingSectionRef.current=null;
@@ -448,9 +489,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const rect=previewFrame.current!.getBoundingClientRect();
       setCanvasMenu({x:rect.left+event.clientX,y:rect.top+event.clientY});
     },true);
-    type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean;free:boolean};
+    type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean;free:boolean;
+      prev:{translate:string;opacity:string;pointerEvents:string;boxShadow:string;zIndex:string;position:string;transition:string}};
     let moving:Moving|null=null;
     const clamp=(n:number)=>Math.max(-1200,Math.min(1200,Math.round(n)));
+    // El navegador (sobre todo Firefox) inicia su propio «arrastre nativo» de enlaces e imágenes: lo bloqueamos dentro de la vista.
+    doc.addEventListener('dragstart',event=>event.preventDefault(),true);
+    doc.addEventListener('mousedown',event=>{if(toolRef.current==='move')event.preventDefault();},true);
     doc.addEventListener('pointerdown',event=>{
       if(toolRef.current!=='move'||event.button!==0)return;
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
@@ -458,35 +503,51 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const index=Number(element.dataset.wayupEdit);
       if(!Number.isSafeInteger(index))return;
       const position=element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/);
+      const st=element.style;
       moving={element,index,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,
-        x:Number(position?.[1]||0),y:Number(position?.[2]||0),moved:false,free:event.altKey};
+        x:Number(position?.[1]||0),y:Number(position?.[2]||0),moved:false,free:event.altKey||moveStyleRef.current==='libre',
+        prev:{translate:st.translate,opacity:st.opacity,pointerEvents:st.pointerEvents,boxShadow:st.boxShadow,zIndex:st.zIndex,position:st.position,transition:st.transition}};
       event.preventDefault();
+      try{doc.documentElement.setPointerCapture(event.pointerId);}catch{}
       selectLayer(index,false);
+      clearHandles(doc);
     },true);
     doc.addEventListener('pointermove',event=>{
       if(!moving||event.pointerId!==moving.pointerId)return;
       const dx=event.clientX-moving.clientX,dy=event.clientY-moving.clientY;
       if(!moving.moved&&Math.hypot(dx,dy)<4)return;
-      if(!moving.moved){moving.moved=true;moving.element.style.opacity='0.45';moving.element.style.pointerEvents='none';doc.body.style.cursor='grabbing';}
-      if(moving.free){moving.element.style.translate=clamp(moving.x+dx)+'px '+clamp(moving.y+dy)+'px';return;}
+      const st=moving.element.style;
+      if(!moving.moved){
+        moving.moved=true;
+        // El elemento sigue al cursor (como en un editor de diseño) mientras se decide dónde cae.
+        st.setProperty('transition','none','important');st.setProperty('pointer-events','none','important');
+        st.setProperty('opacity','0.82','important');st.setProperty('box-shadow','0 18px 40px rgba(0,0,0,.35)','important');
+        if(!st.position||st.position==='static')st.setProperty('position','relative','important');
+        st.setProperty('z-index','2147483000','important');
+        doc.body.style.cursor='grabbing';
+      }
+      st.setProperty('translate',clamp(moving.x+dx)+'px '+clamp(moving.y+dy)+'px','important');
+      if(moving.free){hideIndicator(doc);return;}
       const drop=computeDrop(doc,event.clientX,event.clientY,{exclude:moving.element});
-      showIndicator(doc,drop,drop?(drop.position==='inside'?'Dentro':drop.position==='before'?'Antes':'Después'):'');
+      showIndicator(doc,drop,drop?(drop.position==='inside'?'Soltar dentro':drop.position==='before'?'Soltar antes':'Soltar después'):'');
     },true);
     const finishMove=(event:PointerEvent|null)=>{
       if(!moving)return;
       const state=moving;moving=null;
-      state.element.style.opacity='';state.element.style.pointerEvents='';doc.body.style.cursor=toolRef.current==='move'?'grab':'';
+      try{doc.documentElement.releasePointerCapture(state.pointerId);}catch{}
+      const st=state.element.style;
+      for(const [k,v] of Object.entries(state.prev)){const prop=k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase());if(v)st.setProperty(prop,v);else st.removeProperty(prop);}
+      doc.body.style.cursor=toolRef.current==='move'?'grab':'';
       hideIndicator(doc);
       if(!state.moved||!event||!siteRef.current)return;
       const current=siteRef.current;
       if(state.free){
         const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
-        try{changeHtml(patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}));setNotice('Elemento desplazado libremente (Alt). Deshacer restaura su posición.');}
-        catch(error){setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
+        tryEdit(()=>({html:patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}),index:state.index}),'Elemento colocado libremente ('+x+', '+y+' px). Deshacer lo devuelve a su sitio.');
         return;
       }
       const drop=computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
-      if(!drop){setNotice('Suelta sobre otro elemento de la web para colocarlo.');return;}
+      if(!drop){setNotice('Suelta encima de otro elemento de la web para colocarlo.');return;}
       tryEdit(()=>moveElementTo(current.html,state.index,drop.index,drop.position),'Elemento movido '+(drop.position==='inside'?'dentro del contenedor':drop.position==='before'?'antes':'después')+'.');
     };
     doc.addEventListener('pointerup',event=>finishMove(event),true);
@@ -693,6 +754,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             <button onClick={()=>{setView('preview');setTool('insert');}} aria-pressed={view==='preview'&&tool==='insert'} title="Insertar textos, botones, formas, imágenes y secciones (I)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='insert'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><SquarePlus size={13}/> Insertar</button>
             <button onClick={()=>{setView('code');setTool('select');}} aria-pressed={view==='code'} title="Código HTML" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='code'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><CodeXml size={13}/> Código</button>
           </div>
+          {tool==='move'&&view==='preview'&&<div role="group" aria-label="Modo de mover" className="flex items-center gap-0.5 rounded-lg border border-brand/40 bg-brandsoft p-[3px]">
+            <button onClick={()=>setMoveStyle('ordenar')} aria-pressed={moveStyle==='ordenar'} title="Encaja el elemento entre otros (mantiene la web responsive)"
+              className={'inline-flex h-[26px] items-center rounded-md px-2.5 text-[11px] font-medium '+(moveStyle==='ordenar'?'bg-panel text-ink shadow-sm':'text-brand')}>Ordenar</button>
+            <button onClick={()=>setMoveStyle('libre')} aria-pressed={moveStyle==='libre'} title="Lo deja exactamente donde lo sueltas"
+              className={'inline-flex h-[26px] items-center rounded-md px-2.5 text-[11px] font-medium '+(moveStyle==='libre'?'bg-panel text-ink shadow-sm':'text-brand')}>Libre</button>
+          </div>}
           <span className="hidden items-center gap-2 pl-1 text-[10.5px] text-faint xl:flex">
             <span className="rounded bg-brandsoft px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-wider text-brand">{site.source==='generated'?'Generada':'Importada'}</span>
             <span className="font-mono">{site.entry}</span><span>· {Object.keys(site.assets).length} recursos</span>
@@ -724,7 +791,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               <span className="hidden font-mono text-[10px] text-faint sm:block">{device==='mobile'?'390':device==='tablet'?'820':'1280'} px</span>
             </div>
             <div className="relative min-h-0 flex-1">
-            {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onClose={()=>setTool('select')}
+            {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onDragBlock={dragBlockStart} onClose={()=>setTool('select')}
               target={selected!==null?'después del elemento seleccionado (o dentro, si es un contenedor vacío)':'al final de la página'}/>}
             <div className="scroll-subtle absolute inset-0 overflow-auto p-3 sm:p-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
               <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel transition-[max-width] duration-300"
