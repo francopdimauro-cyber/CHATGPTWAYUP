@@ -127,6 +127,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const pendingSectionRef=useRef<string|null>(null);
   const pendingIndexRef=useRef<number|null>(null);
   const siteRef=useRef<SiteBundle|null>(null);
+  // Posición de scroll de la vista: se conserva cuando el HTML cambia y la vista se vuelve a pintar.
+  const scrollRef=useRef({x:0,y:0});
   const [elementInfo,setElementInfo]=useState<ElementInfo|null>(null);
   const [canvasMenu,setCanvasMenu]=useState<{x:number;y:number}|null>(null);
   const [seoOpen,setSeoOpen]=useState(false);
@@ -167,6 +169,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);setCanvasMenu(null);
   },[site]);
   const changeSite=(loaded:SiteBundle)=>{
+    scrollRef.current={x:0,y:0};
     // Claves estables de sección (data-wc-section) para que el Explorador opere sobre el HTML real.
     let value=loaded;
     try{const html=ensureSectionKeys(loaded.html);if(html!==loaded.html)value={...loaded,html};}catch{}
@@ -452,6 +455,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   function previewLoaded(){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
+    const win=doc.defaultView;
+    if(win){
+      const {x,y}=scrollRef.current;
+      const restore=()=>win.scrollTo({left:x,top:y,behavior:'instant' as ScrollBehavior});
+      restore();win.requestAnimationFrame(restore);win.setTimeout(restore,120);
+      win.addEventListener('scroll',()=>{scrollRef.current={x:win.scrollX,y:win.scrollY};},{passive:true});
+    }
     if(doc.body){doc.body.style.cursor=moveModeRef.current?'grab':'';doc.body.style.userSelect=moveModeRef.current?'none':'';}
     doc.addEventListener('click',event=>{
       if(editingRef.current&&editingRef.current.el.contains(event.target as Node))return;
