@@ -43,8 +43,8 @@ export function TopBar({ project, dirty, saving, canUndo, canRedo, canCopy, them
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        <button type="button" onClick={onCreateWeb} className="ui-ghost hidden min-[1080px]:inline-flex" title="Abrir WebCreator original para generar una web"><Sparkles size={14}/> WebCreator</button>
-        <button type="button" onClick={onCreateAgent} className="ui-ghost hidden min-[1280px]:inline-flex" title="Crear o asociar agente IA"><Bot size={14}/> Agente IA</button>
+        <button type="button" onClick={onCreateWeb} className="ui-ghost hidden min-[1080px]:inline-flex" title="Crear, importar o generar una web con IA"><Sparkles size={14}/> Web</button>
+        <button type="button" onClick={onCreateAgent} className="ui-ghost inline-flex" title="Gestionar agentes IA" aria-label="Agentes IA"><Bot size={14}/><span className="hidden min-[1280px]:inline"> Agentes IA</span></button>
         <button type="button" className="ui-icon" onClick={onTheme} title={theme==='dark'?'Activar modo claro':'Activar modo oscuro'} aria-label={theme==='dark'?'Activar modo claro':'Activar modo oscuro'}>
           {theme==='dark'?<Sun size={16}/>:<Moon size={16}/>}
         </button>

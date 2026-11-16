@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSS
 import { Circle, Command } from 'lucide-react';
 import { Canvas } from './canvas';
 import { WebWorkspace } from './web-workspace';
+import { AgentLibrary } from './agent-library';
 import { EditorContextMenu, type ContextSpot, type EditorCommand } from './context-menu';
 import { serializeStudioLayer, parseStudioLayer, cloneStudioLayer } from '@/lib/studio-clipboard';
 import { Inspector } from './inspector';
@@ -29,6 +30,7 @@ export function StudioApp() {
   const [notice, setNotice] = useState('');
   const [theme, setTheme] = useState<'light'|'dark'>('dark');
   const [webWorkspaceOpen, setWebWorkspaceOpen] = useState(true);
+  const [agentLibraryOpen, setAgentLibraryOpen] = useState(false);
   const [contextSpot, setContextSpot] = useState<ContextSpot | null>(null);
   const internalClipboard = useRef('');
   const doc = history.present;
@@ -221,11 +223,7 @@ export function StudioApp() {
       canCopy={Boolean(selectedId && doc.elements[selectedId])}
       theme={theme} onTheme={()=>setTheme(v=>v==='dark'?'light':'dark')}
       onCreateWeb={()=>setWebWorkspaceOpen(true)}
-      onCreateAgent={()=>{
-        const trigger=document.getElementById('wayup-own-agent-open');
-        if(trigger instanceof HTMLButtonElement)trigger.click();
-        else setNotice('El panel de agentes no está disponible. Recarga la página e inténtalo de nuevo.');
-      }}
+      onCreateAgent={()=>setAgentLibraryOpen(true)}
       onCopy={()=>void runCommand('copy')} onCut={()=>void runCommand('cut')}
       onPaste={()=>void runCommand('paste')} onDuplicate={()=>void runCommand('duplicate')} onToggleLibrary={()=>{setNavCollapsed(false);setMobileNav(v=>!v)}} onToggleInspector={()=>setMobileInspector(v=>!v)}/>
     <Navigator doc={doc} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu}
@@ -234,6 +232,7 @@ export function StudioApp() {
       collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
     <Canvas doc={doc} mode={mode} device={device} zoom={zoom} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} onMode={setMode} onDevice={setDevice} onZoom={setZoom} onMove={onMove}/>
     {webWorkspaceOpen && <WebWorkspace onClose={()=>setWebWorkspaceOpen(false)}/>}
+    {agentLibraryOpen && <AgentLibrary onClose={()=>setAgentLibraryOpen(false)} onCreateForWeb={()=>{setAgentLibraryOpen(false);setWebWorkspaceOpen(true);}}/>}
     <EditorContextMenu spot={contextSpot} canUndo={history.past.length>0} canRedo={history.future.length>0}
       canEdit={mode==='diseno'} onClose={closeContextMenu} onAction={runCommand}/>
     <Inspector doc={doc} selectedId={selectedId} tab={inspectorTab} onTab={setInspectorTab} onStyle={onStyle} onElement={onElement} mobileOpen={mobileInspector} onCloseMobile={()=>setMobileInspector(false)}/>

@@ -3,3 +3,6 @@ dist/
 .env
 .dev.vars
 .wrangler/
+studio-next/.next/
+studio-next/out/
+studio-next/tsconfig.tsbuildinfo

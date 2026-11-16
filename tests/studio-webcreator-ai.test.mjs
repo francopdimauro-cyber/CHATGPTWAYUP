@@ -1,0 +1,85 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {wayupStudioWebCreatorBridge} from '../src/studio-next-webcreator-bridge.js';
+
+const AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
+const EMAIL='owner@example.com';
+const ORIGIN='https://studio.test';
+const ctx={access:{aud:AUD,getIdentity:async()=>({email:EMAIL})}};
+const BRIEFING='Centro ficticio de entrenamiento personal. Servicios: entrenamiento individual, grupos y online. Contacto: formulario.';
+const STYLE='<style>'+'.b{color:#123}'.repeat(40)+'</style>';
+const FULL='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Prueba</title>'+STYLE+'</head><body><section id="inicio" data-wc-section="inicio"><h1>Hola</h1></section><form action="https://externo.test/x" method="post"><input name="n"></form></body></html>';
+
+function sse(chunks){
+  const enc=new TextEncoder();
+  return new ReadableStream({start(c){for(const x of chunks)c.enqueue(enc.encode('data: '+JSON.stringify({response:x})+'\n\n'));c.enqueue(enc.encode('data: [DONE]\n\n'));c.close();}});
+}
+function fakeDb(){
+  const calls=[];let used=0;
+  return {calls,get used(){return used},prepare(sql){return {bind(...args){return {run:async()=>{
+    calls.push(sql);
+    if(sql.startsWith('UPDATE')&&sql.includes('used+1')){used++;return {meta:{changes:1}};}
+    if(sql.startsWith('UPDATE')&&sql.includes('used-1')){used--;return {meta:{changes:1}};}
+    return {meta:{changes:0}};
+  }};}};}};
+}
+async function generate(ai){
+  const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:ai};
+  const res=await wayupStudioWebCreatorBridge(new Request(ORIGIN+'/studio-api/webcreator/generate-stream',{
+    method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify({briefing:BRIEFING})}),env,ctx);
+  const text=await res.text();
+  const events=text.split('\n\n').filter(Boolean).map(b=>({event:/event: (\w+)/.exec(b)?.[1],data:JSON.parse(/data: (.*)/.exec(b)?.[1]||'{}')}));
+  return {res,events,env,final:events.at(-1)};
+}
+
+test('Sin identidad de Access no se genera',async()=>{
+  const res=await wayupStudioWebCreatorBridge(new Request(ORIGIN+'/studio-api/webcreator/generate-stream',{
+    method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify({briefing:BRIEFING})}),
+    {STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:{run:async()=>{throw Error('no debe llamarse')}}},{});
+  assert.equal(res.status,401);
+});
+test('Generación en streaming entrega HTML completo y formularios neutralizados',async()=>{
+  const {final}=await generate({run:async()=>sse([FULL.slice(0,200),FULL.slice(200)])});
+  assert.equal(final.event,'complete');
+  assert.match(final.data.html,/<\/html>$/);
+  assert.doesNotMatch(final.data.html,/externo\.test|method=/);
+  assert.match(final.data.html,/data-wc-static-form="true"/);
+});
+test('Salida cortada se completa con una continuación acotada',async()=>{
+  let n=0;const seen=[];
+  const {final}=await generate({run:async(model,input)=>{seen.push(input.messages.length);return sse(n++===0?[FULL.slice(0,400)]:[FULL.slice(400)]);}});
+  assert.equal(final.event,'complete');
+  assert.equal(final.data.html.length>400,true);
+  assert.deepEqual(seen,[2,4]);
+});
+test('Salida truncada sin recuperación no se guarda, informa y devuelve la cuota',async()=>{
+  const {final,env}=await generate({run:async()=>sse([FULL.slice(0,300)])});
+  assert.equal(final.event,'error');
+  assert.equal(final.data.code,'truncated');
+  assert.equal(env.STUDIO_DB.used,0);
+});
+test('Si el modelo principal falla se usa el alternativo',async()=>{
+  const models=[];
+  const {final}=await generate({run:async model=>{models.push(model);if(models.length===1)throw Error('5xx upstream');return sse([FULL]);}});
+  assert.equal(final.event,'complete');
+  assert.equal(models.length,2);
+  assert.notEqual(models[0],models[1]);
+  assert.equal(final.data.model,models[1]);
+});
+test('Límite del proveedor produce un error específico',async()=>{
+  const {final}=await generate({run:async()=>{throw Error('429 Too Many Requests')}});
+  assert.equal(final.event,'error');
+  assert.equal(final.data.code,'provider_limit');
+});
+test('HTML con scripts se rechaza sin probar otro modelo',async()=>{
+  let calls=0;
+  const {final}=await generate({run:async()=>{calls++;return sse([FULL.replace('</body>','<script>alert(1)</script></body>')]);}});
+  assert.equal(final.event,'error');
+  assert.equal(final.data.code,'active');
+  assert.equal(calls,1);
+});
+test('Razonamiento <think> previo se descarta',async()=>{
+  const {final}=await generate({run:async()=>sse(['<think>plan interno</think>\n'+FULL])});
+  assert.equal(final.event,'complete');
+  assert.doesNotMatch(final.data.html,/plan interno/);
+});

@@ -1,0 +1,33 @@
+// Despliegue reproducible de la preview autorizada de WAY UP Studio.
+// Uso: npm run deploy:motor-preview  (compila studio-next y despliega SOLO este Worker).
+// No apunta a producción ni a los Workers originales de WebCreator / Agent Builder.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wayup-studio-motor-preview",
+  "main": "src/studio-motor-preview-worker.js",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "studio-next/out",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/studio-api/*"]
+  },
+  "ai": { "binding": "AI" },
+  "d1_databases": [
+    {
+      "binding": "STUDIO_DB",
+      "database_name": "wayup-studio-preview-projects",
+      "database_id": "e9008ba7-8572-4506-b4e4-f7f6a21fb5d2",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "STUDIO_FILES", "bucket_name": "wayup-studio-preview-private" }
+  ],
+  "vars": {
+    "STUDIO_OWNER_EMAIL": "francopdimauro@gmail.com"
+  },
+  "observability": { "enabled": true }
+}

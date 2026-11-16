@@ -55,15 +55,15 @@ test('Agent Studio prevents cross-origin mutations and creates isolated agents',
  const config={name:'Asistente negocio',role:'Atención',objective:'Ayudar a clientes',
  instructions:'Informa sobre servicios reales; no inventes información.',
  knowledge:'Vendemos servicios de diseño.',tools:['text_generation','knowledge_lookup','lead_capture']};
- const wrong=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents',{method:'POST',data:{config},siteOrigin:'https://other.example'}),env,context);
+ const wrong=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/agents',{method:'POST',data:{config},siteOrigin:'https://other.example'}),env,context);
  assert.equal(wrong.status,403);
- const valid=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents',{method:'POST',data:{config}}),env,context);
+ const valid=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/agents',{method:'POST',data:{config}}),env,context);
  assert.equal(valid.status,201);assert.ok((await valid.json()).id);
  assert.ok(db.statements.some(x=>x.op==='run'&&x.sql.includes('INSERT INTO studio_agents')&&x.params.some(p=>String(p).includes('lead_capture'))));
 });
 test('Private agent test uses actual model binding and knowledge',async()=>{
  const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:'owner@example.com',AI:fakeAI('Ofrecemos diseño web.')};
- const response=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/'+agentId+'/test',{method:'POST',data:{message:'¿Qué servicios tenéis?'}}),env,context);
+ const response=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/agents/'+agentId+'/test',{method:'POST',data:{message:'¿Qué servicios tenéis?'}}),env,context);
  assert.equal(response.status,200);assert.equal((await response.json()).reply,'Ofrecemos diseño web.');
 });
 test('Public widget serves script and health without cookies',async()=>{
