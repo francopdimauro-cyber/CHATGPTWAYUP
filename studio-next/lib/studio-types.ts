@@ -52,6 +52,11 @@ export type EditorAction =
   | { type: 'insertar'; element: StudioElement; afterId?: string }
   | { type: 'eliminar'; elementId: string }
   | { type: 'ordenar'; elementId: string; direction: -1 | 1 }
+  | { type: 'crear-seccion'; section: {id:string;label:string;children:string[]}; elements:StudioElement[] }
+  | { type: 'borrar-seccion'; sectionId:string }
+  | { type: 'duplicar-seccion'; sectionId:string; newId:string; elements:StudioElement[] }
+  | { type: 'mover-seccion'; sectionId:string; direction:-1|1 }
+  | { type: 'renombrar-seccion'; sectionId:string; label:string }
   | { type: 'deshacer' }
   | { type: 'rehacer' };
 
