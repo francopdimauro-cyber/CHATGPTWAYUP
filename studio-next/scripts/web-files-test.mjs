@@ -65,6 +65,7 @@ const out=unzipSync(files.siteZip(withAgent));
 const doc=strFromU8(out['index.html']);
 assert.equal((doc.match(/data-chat=/g)||[]).length,1,'El widget aparece una vez');
 assert.ok(doc.includes(agent.chatId));
+assert.match(doc,/wayup-studio-agent-preview\.francopdimauro\.workers\.dev\/widget\.js/,'El widget apunta al runtime propio de Studio');
 assert.match(strFromU8(out['WAYUP_AGENT_SETUP.txt']),/dominio HTTPS autorizado/i);
 const restored=files.siteFromZip(files.siteZip(withAgent));
 assert.equal(restored.agent?.agentId,agent.agentId,'Agente restaurado tras guardar ZIP');
