@@ -138,6 +138,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const siteRef=useRef<SiteBundle|null>(null);
   // Posición de scroll de la vista: se conserva cuando el HTML cambia y la vista se vuelve a pintar.
   const scrollRef=useRef({x:0,y:0});
+  // Webs con tema claro/oscuro (data-theme en <html>, que normalmente elige un script): la vista imita lo que
+  // vería un visitante (preferencia del sistema) y se puede cambiar. No modifica el HTML guardado.
+  const siteThemes=useMemo(()=>/<html\b[^>]*\bdata-theme\s*=\s*["'](?:light|dark)["']/i.test(site?.html||''),[site?.html]);
+  const [webTheme,setWebTheme]=useState<'light'|'dark'>(()=>typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+  const webThemeRef=useRef(webTheme);webThemeRef.current=webTheme;
+  useEffect(()=>{const d=previewFrame.current?.contentDocument;if(d&&siteThemes)d.documentElement.setAttribute('data-theme',webTheme);},[webTheme,siteThemes]);
   const [elementInfo,setElementInfo]=useState<ElementInfo|null>(null);
   const [canvasMenu,setCanvasMenu]=useState<{x:number;y:number}|null>(null);
   const [seoOpen,setSeoOpen]=useState(false);
@@ -521,6 +527,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   function previewLoaded(){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
+    if(/^(light|dark)$/.test(doc.documentElement.getAttribute('data-theme')||''))doc.documentElement.setAttribute('data-theme',webThemeRef.current);
     const win=doc.defaultView;
     if(win){
       const {x,y}=scrollRef.current;
@@ -876,6 +883,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
           {view==='preview'?<>
             <div className="flex items-center justify-between gap-2 border-b border-stroke bg-panel/60 px-3 py-1.5">
               <span className="hidden truncate text-[11px] text-faint sm:block">{activeSection?<>Sección: <span className="text-mist">{activeSection.name}</span></>:'Haz clic en la web para seleccionar un elemento'}</span>
+              {siteThemes&&<div role="group" aria-label="Tema de la web" title="Tu web tiene modo claro y oscuro: elige cuál ver en el editor" className="flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px]">
+                {(['light','dark'] as const).map(t=><button key={t} onClick={()=>setWebTheme(t)} aria-pressed={webTheme===t}
+                  className={'inline-flex h-[28px] items-center rounded-md px-2.5 text-[11px] font-medium '+(webTheme===t?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}>{t==='light'?'Web clara':'Web oscura'}</button>)}
+              </div>}
               <div role="group" aria-label="Dispositivo de vista previa" className="mx-auto flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px] sm:mx-0">
                 {([['desktop','Escritorio',Monitor],['tablet','Tableta',Tablet],['mobile','Móvil',Smartphone]] as const).map(([id,label,Icon])=>
                   <button key={id} onClick={()=>setDevice(id)} aria-pressed={device===id} title={label}
