@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2, Tablet,
-  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
 import { SectionExplorer, type SectionAction } from './section-explorer';
 import { BrandLockup } from './brand-lockup';
+import { PropertyPanel, type ElementInfo } from './property-panel';
+import { CanvasMenu, type CanvasCommand } from './canvas-menu';
+import { SeoPanel } from './seo-panel';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setInlineContent, setStyles, toggleHidden, writeSeo, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
@@ -28,6 +32,9 @@ const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').rep
 const BASE='rounded-lg border border-stroke bg-panel px-3 py-2.5 text-[12.5px] text-ink outline-none transition placeholder:text-faint focus:border-brand focus:ring-2 focus:ring-brand/15';
 const btn='inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg border border-stroke bg-panel px-2.5 text-[11.5px] font-medium text-ink transition hover:border-brand/45 hover:bg-elevated disabled:opacity-40 disabled:hover:border-stroke';
 const primary='inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-[11.5px] font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-50';
+function escapeText(text:string):string{
+  return text.replace(/[<>&]/g,ch=>ch==='<'?'&lt;':ch==='>'?'&gt;':'&amp;').replace(/\n/g,'<br>');
+}
 const steps=[['01','Crear'],['02','Editar'],['03','Agente IA'],['04','Exportar']] as const;
 function fileByte(bytes:Uint8Array):string{
   if(bytes.length>2_000_000)throw Error('El archivo HTML supera 2 MB.');
@@ -107,6 +114,14 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [explorerOpen,setExplorerOpen]=useState(false);
   const [inspectorOpen,setInspectorOpen]=useState(false);
   const pendingSectionRef=useRef<string|null>(null);
+  const pendingIndexRef=useRef<number|null>(null);
+  const [elementInfo,setElementInfo]=useState<ElementInfo|null>(null);
+  const [canvasMenu,setCanvasMenu]=useState<{x:number;y:number}|null>(null);
+  const [seoOpen,setSeoOpen]=useState(false);
+  const clipboardRef=useRef('');
+  const [hasClip,setHasClip]=useState(false);
+  const editingRef=useRef<{el:HTMLElement;index:number;original:string}|null>(null);
+  const keyRef=useRef<(e:KeyboardEvent)=>void>(()=>{});
   const [draftHtml,setDraftHtml]=useState('');
   const [past,setPast]=useState<string[]>([]);
   const [future,setFuture]=useState<string[]>([]);
@@ -135,7 +150,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     if(!site||html===site.html)return;
     setPast(old=>[...old.slice(-49),site.html]);setFuture([]);
     setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
-    setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;
+    setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);setCanvasMenu(null);
   },[site]);
   const changeSite=(loaded:SiteBundle)=>{
     // Claves estables de sección (data-wc-section) para que el Explorador opere sobre el HTML real.
@@ -258,13 +273,110 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       posX:element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/)?.[1]||'0',
       posY:element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/)?.[2]||'0'
     });
+    try{
+      const cs=element.ownerDocument.defaultView!.getComputedStyle(element);
+      const inline:Record<string,string>={},computed:Record<string,string>={};
+      for(const prop of [...EDITABLE_STYLE_PROPS,'border-top-width','border-top-color','border-top-left-radius']){
+        inline[prop]=element.style.getPropertyValue(prop);computed[prop]=cs.getPropertyValue(prop);
+      }
+      setElementInfo({index,tag:element.tagName,textEditable:isTextEditable(element),text:element.textContent||'',inline,computed,
+        attrs:{href:element.getAttribute('href')||'',target:element.getAttribute('target')||'',alt:element.getAttribute('alt')||'',
+          id:element.id||'',title:element.getAttribute('title')||'',ariaLabel:element.getAttribute('aria-label')||''}});
+    }catch{setElementInfo(null);}
     if(scroll)element.scrollIntoView({block:'center',behavior:'smooth'});
   }
+  /** Aplica una operación sobre el HTML real y conserva la selección resultante tras recargar la vista. */
+  function applyEdit(result:EditResult,message:string){
+    pendingIndexRef.current=result.index;
+    changeHtml(result.html);
+    if(message)setNotice(message);
+  }
+  function tryEdit(fn:()=>EditResult,message:string){
+    try{applyEdit(fn(),message);}catch(error){setNotice(error instanceof Error?error.message:'No se pudo aplicar el cambio.');}
+  }
+  function startTextEdit(index:number){
+    const doc=previewFrame.current?.contentDocument;
+    const el=doc?.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');
+    if(!doc||!el||!site)return;
+    if(!isTextEditable(el)){setNotice('Este bloque contiene otros elementos: haz doble clic sobre un texto concreto.');return;}
+    finishTextEdit(false);
+    editingRef.current={el,index,original:el.innerHTML};
+    el.dataset.wayupEditing='true';el.contentEditable='true';el.spellcheck=true;el.focus();
+    const range=doc.createRange();range.selectNodeContents(el);const sel=doc.getSelection();sel?.removeAllRanges();sel?.addRange(range);
+    setNotice('Editando texto · Intro guarda · Mayús+Intro salto de línea · Esc cancela · Ctrl+B / Ctrl+I / Ctrl+U dan formato');
+  }
+  function finishTextEdit(commit:boolean){
+    const editing=editingRef.current;if(!editing)return;
+    editingRef.current=null;
+    const {el,index,original}=editing;
+    el.removeAttribute('contenteditable');delete el.dataset.wayupEditing;
+    const content=el.innerHTML;
+    if(!commit||content===original){el.innerHTML=original;setNotice('');return;}
+    if(!site)return;
+    tryEdit(()=>setInlineContent(site.html,index,content),'Texto actualizado en el HTML.');
+  }
+  function runCanvasCommand(command:CanvasCommand){
+    if(!site)return;
+    const index=selected;
+    if(command==='paste'||command==='paste-inside'){
+      if(!clipboardRef.current){setNotice('Primero copia o corta un elemento.');return;}
+      tryEdit(()=>pasteElement(site.html,index,clipboardRef.current,command==='paste-inside'?'inside':'after'),'Elemento pegado.');return;
+    }
+    if(index===null){setNotice('Selecciona primero un elemento de la web.');return;}
+    if(command==='edit-text'){startTextEdit(index);return;}
+    if(command==='copy'||command==='cut'){
+      try{clipboardRef.current=copyElement(site.html,index);setHasClip(true);}catch(error){setNotice(error instanceof Error?error.message:'No se pudo copiar.');return;}
+      if(command==='copy'){setNotice('Elemento copiado. Pégalo con Ctrl+V o desde el menú.');return;}
+      tryEdit(()=>removeElement(site.html,index),'Elemento cortado. Pégalo donde quieras.');return;
+    }
+    if(command==='parent'){const parent=parentIndex(site.html,index);if(parent!==null)selectLayer(parent);return;}
+    if(command==='hide'){
+      try{const r=toggleHidden(site.html,index);applyEdit(r,r.hidden?'Elemento oculto: no aparecerá en la web publicada.':'Elemento visible de nuevo.');}
+      catch(error){setNotice(error instanceof Error?error.message:'No se pudo ocultar.');}
+      return;
+    }
+    if(command==='duplicate')tryEdit(()=>duplicateElement(site.html,index),'Elemento duplicado.');
+    if(command==='delete')tryEdit(()=>removeElement(site.html,index),'Elemento eliminado. Ctrl+Z para deshacer.');
+    if(command==='up'||command==='down')tryEdit(()=>moveElement(site.html,index,command),'Orden actualizado.');
+  }
+  // Atajos de teclado del editor (no se activan mientras escribes en un campo o editas un texto).
+  keyRef.current=(e:KeyboardEvent)=>{
+    if(stage!=='editor'||view!=='preview'||seoOpen)return;
+    const t=e.target as HTMLElement|null;
+    if(editingRef.current){
+      if(e.key==='Escape'){e.preventDefault();finishTextEdit(false);}
+      else if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();finishTextEdit(true);}
+      return;
+    }
+    if(t&&(t.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(t.tagName)))return;
+    const mod=e.ctrlKey||e.metaKey,k=e.key.toLowerCase();
+    const go=(fn:()=>void)=>{e.preventDefault();fn();};
+    if(mod&&k==='z'&&!e.shiftKey)return go(undo);
+    if(mod&&(k==='y'||(k==='z'&&e.shiftKey)))return go(redo);
+    if(mod&&k==='s')return go(()=>void onSave());
+    if(mod&&k==='c')return go(()=>runCanvasCommand('copy'));
+    if(mod&&k==='x')return go(()=>runCanvasCommand('cut'));
+    if(mod&&k==='v')return go(()=>runCanvasCommand('paste'));
+    if(mod&&k==='d')return go(()=>runCanvasCommand('duplicate'));
+    if(mod&&k==='h')return go(()=>runCanvasCommand('hide'));
+    if(selected===null)return;
+    if(k==='delete'||k==='backspace')return go(()=>runCanvasCommand('delete'));
+    if(k==='enter')return go(()=>runCanvasCommand('edit-text'));
+    if(k==='escape')return go(()=>runCanvasCommand('parent'));
+    if(e.altKey&&k==='arrowup')return go(()=>runCanvasCommand('up'));
+    if(e.altKey&&k==='arrowdown')return go(()=>runCanvasCommand('down'));
+  };
+  useEffect(()=>{
+    const onKey=(e:KeyboardEvent)=>keyRef.current(e);
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  },[]);
   function previewLoaded(){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
     if(doc.body)doc.body.style.cursor=moveModeRef.current?'grab':'';
     doc.addEventListener('click',event=>{
+      if(editingRef.current&&editingRef.current.el.contains(event.target as Node))return;
       event.preventDefault();event.stopPropagation();
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
       if(!element)return;
@@ -274,6 +386,31 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     doc.addEventListener('submit',event=>event.preventDefault(),true);
     const pending=pendingSectionRef.current;pendingSectionRef.current=null;
     if(pending){const target=sectionsRef.current.find(s=>s.key===pending);if(target)setTimeout(()=>selectLayer(target.index),0);}
+    const pendingIndex=pendingIndexRef.current;pendingIndexRef.current=null;
+    if(pendingIndex!==null&&!pending)setTimeout(()=>selectLayer(pendingIndex,false),0);
+    doc.addEventListener('keydown',event=>keyRef.current(event),true);
+    doc.addEventListener('dblclick',event=>{
+      if(moveModeRef.current)return;
+      const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
+      if(!element)return;
+      event.preventDefault();
+      const index=Number(element.dataset.wayupEdit);
+      if(Number.isSafeInteger(index)){selectLayer(index,false);startTextEdit(index);}
+    },true);
+    doc.addEventListener('focusout',event=>{
+      if(editingRef.current&&event.target===editingRef.current.el)finishTextEdit(true);
+    },true);
+    doc.addEventListener('contextmenu',event=>{
+      if(editingRef.current)return; // menú nativo para corregir o copiar mientras se edita texto
+      const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
+      if(!element)return;
+      event.preventDefault();
+      const index=Number(element.dataset.wayupEdit);
+      if(!Number.isSafeInteger(index))return;
+      selectLayer(index,false);
+      const rect=previewFrame.current!.getBoundingClientRect();
+      setCanvasMenu({x:rect.left+event.clientX,y:rect.top+event.clientY});
+    },true);
     type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean};
     let moving:Moving|null=null;
     const clamp=(n:number)=>Math.max(-1200,Math.min(1200,Math.round(n)));
@@ -318,8 +455,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   function modifyStructure(action:'duplicate'|'remove'|'up'|'down'){
     if(!site||selected===null)return;
     try{
-      changeHtml(editHtmlStructure(site.html,selected,action));
-      setNotice(action==='duplicate'?'Elemento duplicado en el HTML.':action==='remove'?'Elemento eliminado; puedes deshacerlo.':'Orden cambiado; puedes deshacerlo.');
+      if(action==='duplicate'){applyEdit(duplicateElement(site.html,selected),'Elemento duplicado.');return;}
+      if(action==='up'||action==='down'){applyEdit(moveElement(site.html,selected,action),'Orden cambiado; puedes deshacerlo.');return;}
+      applyEdit(removeElement(site.html,selected),'Elemento eliminado; puedes deshacerlo.');
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo modificar el bloque.');}
   }
   function onSectionAction(action:SectionAction){
@@ -529,7 +667,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <button onClick={()=>void onSave()} disabled={busy} className={btn} title="Guardar en este dispositivo"><Save size={14}/> Guardar</button>
+          <button onClick={()=>setSeoOpen(true)} className={btn} title="Título, descripción y metadatos para buscadores"><Search size={14}/> SEO</button>
+          <button onClick={()=>void onSave()} disabled={busy} className={btn} title="Guardar en este dispositivo (Ctrl+S)"><Save size={14}/> Guardar</button>
           <button onClick={()=>void onCloudSave()} disabled={busy} className={btn} title="Guardar una versión privada en la nube"><Globe size={14}/> Guardar en la nube</button>
           <button onClick={()=>setStage('agent')} className={primary}><Bot size={14}/> Siguiente: agente IA</button>
         </div>
@@ -582,72 +721,17 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
               <button className={btn+' justify-center px-0'} onClick={()=>modifyStructure('down')} title="Bajar elemento" aria-label="Bajar elemento"><ArrowDown size={13}/></button>
               <button className={btn+' justify-center px-0 text-red-400'} onClick={()=>modifyStructure('remove')} title="Eliminar elemento" aria-label="Eliminar elemento"><Trash2 size={13}/></button>
             </div>}
-            {activeLayer?.tag==='A'&&<label className="mb-3 block text-[11px] text-mist"><span className="flex items-center gap-1.5"><Link2 size={13}/> Destino del enlace</span>
-              <input className={BASE+' mt-1 w-full'} value={selectedValues.href} onChange={e=>setSelectedValues({...selectedValues,href:e.target.value})} placeholder="https://… o #seccion"/>
-              <button className={btn+' mt-2'} onClick={()=>patch({href:selectedValues.href})}>Guardar enlace</button>
-            </label>}
-            {['IMG','A','HEADER','DIV','SECTION','FIGURE'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
+            {elementInfo&&elementInfo.index===selected&&<PropertyPanel info={elementInfo}
+              onStyles={styles=>tryEdit(()=>setStyles(site.html,elementInfo.index,styles),'Estilo aplicado al elemento.')}
+              onAttrs={attrs=>tryEdit(()=>setAttributes(site.html,elementInfo.index,attrs),'Atributos actualizados.')}
+              onText={text=>tryEdit(()=>setInlineContent(site.html,elementInfo.index,escapeText(text)),'Texto actualizado.')}
+              onEditText={()=>startTextEdit(elementInfo.index)}
+              extra={['IMG','A','HEADER','DIV','SECTION','FIGURE'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold"><ImagePlus size={15} className="text-brand"/> {activeLayer?.tag==='IMG'?'Sustituir imagen o logo':'Adjuntar logo o imagen'}</div>
               <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Adjuntar imagen para reemplazar la seleccionada"
                 className="block w-full text-[10px] text-mist" onChange={e=>{const file=e.target.files?.[0];if(file)void changeImage(file);e.currentTarget.value='';}}/>
               <p className="my-2 text-[10px] leading-4 text-faint">PNG, JPG, GIF o WebP. Máximo 5 MB. La imagen queda dentro del ZIP.</p>
-              <label className="block text-[11px] text-mist">Texto alternativo
-                <input className={BASE+' mt-1 w-full'} value={selectedValues.alt} onChange={e=>setSelectedValues({...selectedValues,alt:e.target.value})}/>
-              </label>
-              <button className={btn+' mt-2'} onClick={()=>patch({alt:selectedValues.alt})}>Guardar descripción</button>
-            </div>}
-            <label className="mb-3 block text-[11px] text-mist">Contenido de texto
-              <textarea className={BASE+' mt-1 min-h-[90px] w-full resize-y'} value={selectedValues.text} placeholder="Selecciona un elemento sin hijos" onChange={e=>setSelectedValues({...selectedValues,text:e.target.value})}/>
-              <button className={btn+' mt-2'} onClick={()=>patch({text:selectedValues.text})}>Aplicar texto</button>
-            </label>
-            {(['color','background','fontSize'] as const).map(field=><label key={field} className="mb-3 block text-[11px] text-mist">
-              {field==='color'?'Color · RGB / HEX':field==='background'?'Fondo · RGB / HEX':'Tamaño · CSS'}
-              <input className={BASE+' mt-1 w-full font-mono'} value={selectedValues[field]} onChange={e=>setSelectedValues({...selectedValues,[field]:e.target.value})}
-                onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}}/>
-            </label>)}
-            <button className={primary+' w-full'} onClick={()=>{
-              const color=parseColorCode(selectedValues.color);
-              const background=parseColorCode(selectedValues.background);
-              const fontSize=/^\d{1,3}(?:\.\d+)?px$/.test(selectedValues.fontSize)?selectedValues.fontSize:undefined;
-              if(!color||!background||!fontSize){setNotice('Revisa los códigos HEX/RGB o tamaño CSS.');return;}
-              patch({color,background,fontSize});
-            }}>Aplicar estilos</button>
-            <div className="mt-5 border-t border-stroke pt-4">
-              <h3 className="mb-3 text-[11px] font-semibold">Dimensiones y composición</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {([
-                  ['width','Ancho'],['height','Alto'],['padding','Relleno'],
-                  ['margin','Margen'],['radius','Redondeo'],['fontWeight','Grosor de fuente'],
-                  ['fontFamily','Tipografía']
-                ] as const).map(([field,label])=><label key={field} className="text-[10px] text-mist">
-                  {label}<input className={BASE+' mt-1 w-full'} placeholder={field==='fontFamily'?'Arial, sans-serif':field==='fontWeight'?'700':'24px'}
-                    value={selectedValues[field]} onChange={e=>setSelectedValues({...selectedValues,[field]:e.target.value})}/>
-                </label>)}
-                <label className="text-[10px] text-mist">Alineación
-                  <select className={BASE+' mt-1 w-full'} value={selectedValues.textAlign}
-                    onChange={e=>setSelectedValues({...selectedValues,textAlign:e.target.value})}>
-                    <option value="">Heredada</option>
-                    <option value="left">Izquierda</option>
-                    <option value="center">Centro</option>
-                    <option value="right">Derecha</option>
-                    <option value="justify">Justificada</option>
-                  </select>
-                </label>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {([['posX','Posición X'],['posY','Posición Y']] as const).map(([key,label])=><label key={key} className="text-[10px] text-mist">{label}
-                  <input type="number" min={-1200} max={1200} step={1} className={BASE+' mt-1 w-full'}
-                    value={selectedValues[key]} onChange={e=>setSelectedValues({...selectedValues,[key]:e.target.value})}/>
-                </label>)}
-              </div>
-              <button className={btn+' mt-2 w-full'} onClick={()=>patch({moveX:Number(selectedValues.posX),moveY:Number(selectedValues.posY)})}>Aplicar posición</button>
-              <p className="mt-2 text-[10px] leading-4 text-faint">Medidas en px, o porcentaje para ancho y alto. Vacío restablece el valor heredado.</p>
-              <button className={primary+' mt-3 w-full'} onClick={()=>patch({
-                width:selectedValues.width,height:selectedValues.height,padding:selectedValues.padding,
-                margin:selectedValues.margin,radius:selectedValues.radius,fontWeight:selectedValues.fontWeight,
-                fontFamily:selectedValues.fontFamily,textAlign:selectedValues.textAlign
-              })}>Aplicar medidas y tipografía</button>
-            </div>
+            </div>}/>}
           </>}
           <div className="mt-7 border-t border-stroke pt-4 text-[10px] leading-5 text-faint">Vista de edición protegida: el JavaScript importado no se ejecuta dentro del editor. Los archivos originales se conservan para exportación.</div>
         </aside>
@@ -669,6 +753,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       </div>
       <div className="mt-6 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">Los agentes necesitan un backend activo y deben publicarse en el dominio HTTPS autorizado. Si la web importada incluye scripts, revisa su procedencia antes de publicarlos.</div>
     </main>}
+    {canvasMenu&&elementInfo&&<CanvasMenu x={canvasMenu.x} y={canvasMenu.y} tag={elementInfo.tag} canEditText={elementInfo.textEditable}
+      canPaste={hasClip} hidden={false} hasParent={selected!==null&&!!site&&parentIndex(site.html,selected)!==null}
+      onCommand={runCanvasCommand} onClose={()=>setCanvasMenu(null)}/>}
+    {seoOpen&&site&&<SeoPanel html={site.html} onClose={()=>setSeoOpen(false)} onSave={seo=>{
+      try{changeHtml(writeSeo(site.html,seo));setSeoOpen(false);setNotice('SEO actualizado en el documento.');}
+      catch(error){setNotice(error instanceof Error?error.message:'No se pudo guardar el SEO.');}
+    }}/>}
     {postSavePrompt&&stage==='editor'&&<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPostSavePrompt(false)}}>
       <div role="dialog" aria-modal="true" aria-labelledby="wayup-link-agent-question" className="w-full max-w-[470px] rounded-2xl border border-stroke bg-panel p-7 shadow-panel">
         <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brandsoft text-brand"><Bot size={25}/></div>

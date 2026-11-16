@@ -171,6 +171,8 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   const doc=new DOMParser().parseFromString(site.html,'text/html');
   const eligible=editableHtmlNodes(doc);
   eligible.forEach((node,i)=>node.dataset.wayupEdit=String(i));
+  // Elementos ocultos por el usuario: siguen ocultos al exportar, pero en el editor se ven atenuados.
+  for(const node of Array.from(doc.querySelectorAll<HTMLElement>('[data-wc-hidden]'))){node.removeAttribute('hidden');node.dataset.wayupHidden='true';}
   for(const node of Array.from(doc.querySelectorAll('script,iframe,object,embed,base,meta[http-equiv],template'))){
     node.remove();
   }
@@ -206,7 +208,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   csp.content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline' blob:; font-src blob: data:; connect-src 'none'; form-action 'none'; object-src 'none'; script-src 'none'; frame-src 'none'; base-uri 'none'";
   doc.head.prepend(csp);
   const previewStyles=doc.createElement('style');
-  previewStyles.textContent='[data-wayup-edit]:hover{outline:1px dashed #668dff!important;outline-offset:2px;cursor:crosshair}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #4e79ff!important;outline-offset:2px}';
+  previewStyles.textContent='[data-wayup-edit]:hover{outline:1px dashed #668dff!important;outline-offset:2px;cursor:default}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #3d5cff!important;outline-offset:2px}[data-wayup-hidden]{opacity:.32!important;outline:1px dashed #9aa3b5!important}[data-wayup-editing]{outline:2px solid #f5b400!important;outline-offset:3px;cursor:text!important}[data-wayup-editing]:focus{outline-style:solid!important}';
   doc.head.append(previewStyles);
   return {html:'<!DOCTYPE html>\n'+doc.documentElement.outerHTML,revoke:()=>urls.forEach(url=>URL.revokeObjectURL(url))};
 }
