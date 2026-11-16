@@ -13,7 +13,7 @@ export type SiteBundle = {
   cloud?: {id:string;version:number};
   versions: { number:number; html:string; savedAt:number }[];
   /** Mesa de trabajo: elementos aparcados fuera de la página (no se publican ni exportan). */
-  parked?: { id:string; name:string; html:string }[];
+  parked?: { id:string; name:string; html:string; x?:number; y?:number; w?:number }[];
 };
 export const MAX_IMPORT_BYTES=25_000_000;
 const MAX_FILE_BYTES=9_000_000;
@@ -175,6 +175,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   eligible.forEach((node,i)=>node.dataset.wayupEdit=String(i));
   // En el editor nada se arrastra con el «arrastre nativo» del navegador (Firefox lo inicia en enlaces e imágenes).
   for(const node of Array.from(doc.querySelectorAll('img,a,svg,picture,video')))node.setAttribute('draggable','false');
+  for(const img of Array.from(doc.querySelectorAll('img[loading]')))img.setAttribute('loading','eager');
   // Elementos ocultos por el usuario: siguen ocultos al exportar, pero en el editor se ven atenuados.
   for(const node of Array.from(doc.querySelectorAll<HTMLElement>('[data-wc-hidden]'))){node.removeAttribute('hidden');node.dataset.wayupHidden='true';}
   for(const node of Array.from(doc.querySelectorAll('script,iframe,object,embed,base,meta[http-equiv],template'))){
@@ -214,7 +215,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   csp.content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline' blob: https://fonts.googleapis.com; font-src blob: data: https://fonts.gstatic.com; connect-src 'none'; form-action 'none'; object-src 'none'; script-src 'none'; frame-src 'none'; base-uri 'none'";
   doc.head.prepend(csp);
   const previewStyles=doc.createElement('style');
-  previewStyles.textContent='[data-wayup-edit]{cursor:default}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #3d5cff!important;outline-offset:2px}[data-wayup-hidden]{opacity:.32!important;outline:1px dashed #9aa3b5!important}[data-wayup-editing]{outline:2px solid #f5b400!important;outline-offset:3px;cursor:text!important}[data-wayup-editing]:focus{outline-style:solid!important}';
+  previewStyles.textContent='*,*::before,*::after{animation-delay:-1ms!important;animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:0s!important;transition-delay:0s!important;scroll-behavior:auto!important}[data-wayup-edit]{cursor:default}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #3d5cff!important;outline-offset:2px}[data-wayup-hidden]{opacity:.32!important;outline:1px dashed #9aa3b5!important}[data-wayup-editing]{outline:2px solid #f5b400!important;outline-offset:3px;cursor:text!important}[data-wayup-editing]:focus{outline-style:solid!important}';
   doc.head.append(previewStyles);
   return {html:'<!DOCTYPE html>\n'+doc.documentElement.outerHTML,revoke:()=>urls.forEach(url=>URL.revokeObjectURL(url))};
 }

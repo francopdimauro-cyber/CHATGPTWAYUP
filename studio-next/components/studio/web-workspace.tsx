@@ -14,6 +14,7 @@ import { CanvasMenu, type CanvasCommand } from './canvas-menu';
 import { SeoPanel } from './seo-panel';
 import { AgentLibrary } from './agent-library';
 import { CreatorWizard, type Direction, type ClientPhoto } from './creator-wizard';
+import { ParkedItem, type Parked } from './parked-item';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
@@ -128,6 +129,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState('');
   const [fileError,setFileError]=useState('');
+  useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),6000);return()=>clearTimeout(t);},[notice]);
   const [view,setView]=useState<View>('preview');
   const [device,setDevice]=useState<'desktop'|'tablet'|'mobile'>('desktop');
   const [selected,setSelected]=useState<number|null>(null);
@@ -148,9 +150,26 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const siteRef=useRef<SiteBundle|null>(null);
   // Posición de scroll de la vista: se conserva cuando el HTML cambia y la vista se vuelve a pintar.
   const scrollRef=useRef({x:0,y:0});
+  // Mesa de trabajo (como en Illustrator/InDesign): zona alrededor de la página donde aparcar elementos.
+  const BOARD_SIDE=360;
+  const boardRef=useRef<HTMLDivElement>(null);
+  const canvasScrollRef=useRef<HTMLDivElement>(null);
+  // Zoom solo del lienzo (página + mesa de trabajo), independiente del zoom del navegador.
+  const [zoom,setZoom]=useState(1);
+  const zoomRef=useRef(1);zoomRef.current=zoom;
+  const clampZoom=(z:number)=>Math.min(2,Math.max(0.2,Math.round(z*100)/100));
+  const zoomBy=(f:number)=>setZoom(z=>clampZoom(z*f));
+  const fitZoom=()=>{const c=canvasScrollRef.current;if(!c)return;const pageW=(device==='mobile'?390:device==='tablet'?820:1280);setZoom(clampZoom((c.clientWidth-48)/pageW));};
   // Webs con tema claro/oscuro (data-theme en <html>, que normalmente elige un script): la vista imita lo que
   // vería un visitante (preferencia del sistema) y se puede cambiar. No modifica el HTML guardado.
   const siteThemes=useMemo(()=>/<html\b[^>]*\bdata-theme\s*=\s*["'](?:light|dark)["']/i.test(site?.html||''),[site?.html]);
+  useEffect(()=>{const c=canvasScrollRef.current;if(c)c.scrollLeft=Math.max(0,(c.scrollWidth-c.clientWidth)/2);},[device,stage,view,site?.id]);
+  useEffect(()=>{
+    const c=canvasScrollRef.current;if(!c)return;
+    const onWheel=(e:WheelEvent)=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();zoomBy(e.deltaY<0?1.1:1/1.1);};
+    c.addEventListener('wheel',onWheel,{passive:false});
+    return()=>c.removeEventListener('wheel',onWheel);
+  },[stage,view,site?.id]);
   const [webTheme,setWebTheme]=useState<'light'|'dark'>(()=>typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
   const webThemeRef=useRef(webTheme);webThemeRef.current=webTheme;
   useEffect(()=>{const d=previewFrame.current?.contentDocument;if(d&&siteThemes)d.documentElement.setAttribute('data-theme',webTheme);},[webTheme,siteThemes]);
@@ -163,7 +182,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const keyRef=useRef<(e:KeyboardEvent)=>void>(()=>{});
   const [draftHtml,setDraftHtml]=useState('');
   // Historial: cada paso recuerda el HTML y los archivos (CSS, imágenes) para poder deshacer cualquier cambio.
-  type Snap={html:string;assets:Record<string,Uint8Array>};
+  type Snap={html:string;assets:Record<string,Uint8Array>;parked?:SiteBundle['parked']};
   const [past,setPast]=useState<Snap[]>([]);
   const [future,setFuture]=useState<Snap[]>([]);
   const [codeFile,setCodeFile]=useState<string>('__html__');
@@ -181,6 +200,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const selectedRef=useRef<HTMLElement|null>(null);
   siteRef.current=site;
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
+  const previewHead=useMemo(()=>(preview?.html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1]||''),[preview?.html]);
   useEffect(()=>{toolRef.current=tool;const doc=previewFrame.current?.contentDocument;if(doc?.body){doc.body.style.cursor=tool==='move'?'grab':'';doc.body.style.userSelect=tool==='move'?'none':'';}
     if(tool!=='select')clearHandles(doc);else if(selectedRef.current)drawResize(selectedRef.current);},[tool]);
   const layers=useMemo(()=>site?htmlLayerOutline(site.html):[],[site]);
@@ -218,7 +238,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(!el)return;
     const doc=el.contentDocument,win=el.contentWindow;
     // Antes de mostrarla: tipografías listas (máx. 0,8 s) y scroll restaurado en el marco oculto.
-    const fontsReady=doc?.fonts?.ready?Promise.race([doc.fonts.ready,new Promise(r=>setTimeout(r,800))]):Promise.resolve();
+    const imagesReady=doc?Promise.all(Array.from(doc.images).slice(0,40).map(img=>img.decode().catch(()=>undefined))):Promise.resolve();
+    const fontsReady=Promise.race([Promise.all([doc?.fonts?.ready,imagesReady]),new Promise(r=>setTimeout(r,800))]);
     void fontsReady.then(()=>{
       if(pendingFrameRef.current!==i)return; // llegó otra versión mientras tanto
       pendingFrameRef.current=null;
@@ -231,7 +252,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
   const changeHtml=useCallback((html:string)=>{
     if(!site||html===site.html)return;
-    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets}]);setFuture([]);
+    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets,parked:site.parked}]);setFuture([]);
     setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
     setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);setCanvasMenu(null);
   },[site]);
@@ -245,19 +266,19 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   };
   const undo=()=>{
     if(!site||!past.length)return;
-    const previous=past[past.length-1];setPast(past.slice(0,-1));setFuture(v=>[{html:site.html,assets:site.assets},...v]);
-    setSite({...site,html:previous.html,assets:previous.assets});setDraftHtml(previous.html);setDirty(true);setSelected(null);
+    const previous=past[past.length-1];setPast(past.slice(0,-1));setFuture(v=>[{html:site.html,assets:site.assets,parked:site.parked},...v]);
+    setSite({...site,html:previous.html,assets:previous.assets,parked:previous.parked});setDraftHtml(previous.html);setDirty(true);setSelected(null);
   };
   const redo=()=>{
     if(!site||!future.length)return;
-    const [next,...rest]=future;setFuture(rest);setPast(v=>[...v,{html:site.html,assets:site.assets}].slice(-50));
-    setSite({...site,html:next.html,assets:next.assets});setDraftHtml(next.html);setDirty(true);setSelected(null);
+    const [next,...rest]=future;setFuture(rest);setPast(v=>[...v,{html:site.html,assets:site.assets,parked:site.parked}].slice(-50));
+    setSite({...site,html:next.html,assets:next.assets,parked:next.parked});setDraftHtml(next.html);setDirty(true);setSelected(null);
   };
   /** Cambia un archivo de texto del proyecto (p. ej. css/styles.css) con historial. */
   const changeAsset=(path:string,text:string)=>{
     if(!site)return;
     const bytes=strToU8(text.slice(0,2_000_000));
-    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets}]);setFuture([]);
+    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets,parked:site.parked}]);setFuture([]);
     setSite(old=>old?{...old,assets:{...old.assets,[path]:bytes},updatedAt:Date.now()}:old);
     setDirty(true);
   };
@@ -451,7 +472,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const r=frame.getBoundingClientRect();
       const inside=ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
       if(!inside){last=null;hideIndicator(doc);return;}
-      const drop=computeDrop(doc,ev.clientX-r.left,ev.clientY-r.top,{sectionLevel:item.section});
+      const drop=computeDrop(doc,(ev.clientX-r.left)/zoomRef.current,(ev.clientY-r.top)/zoomRef.current,{sectionLevel:item.section});
       last=drop?{index:drop.index,position:drop.position}:null;
       showIndicator(doc,drop,drop?(drop.position==='inside'?'Insertar dentro':drop.position==='before'?'Insertar antes':'Insertar después'):'');
     };
@@ -484,8 +505,40 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(item.parkedId)setSite(old=>old?{...old,parked:(old.parked||[]).filter(x=>x.id!==item.parkedId)}:old);
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo insertar.');}
   }
+  function dragParked(item:Parked,e:React.PointerEvent<HTMLDivElement>){
+    if(e.button!==0)return;
+    const el=e.currentTarget,start={x:e.clientX,y:e.clientY};
+    e.preventDefault();
+    try{el.setPointerCapture(e.pointerId);}catch{}
+    const frame=previewFrame.current,doc=frame?.contentDocument||null;
+    let moved=false,drop:{index:number;position:'before'|'after'|'inside'}|null=null,overPage=false;
+    const move=(ev:PointerEvent)=>{
+      const dx=ev.clientX-start.x,dy=ev.clientY-start.y;
+      if(!moved&&Math.hypot(dx,dy)<4)return;
+      moved=true;el.style.translate=(dx/zoomRef.current)+'px '+(dy/zoomRef.current)+'px';el.style.zIndex='30';
+      if(!frame||!doc)return;
+      const r=frame.getBoundingClientRect();
+      overPage=ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+      if(!overPage){drop=null;hideIndicator(doc);return;}
+      const d=computeDrop(doc,(ev.clientX-r.left)/zoomRef.current,(ev.clientY-r.top)/zoomRef.current,{sectionLevel:/^<(section|header|footer|nav)\b/i.test(item.html)});
+      drop=d?{index:d.index,position:d.position}:null;
+      showIndicator(doc,d,d?(d.position==='inside'?'Devolver dentro':d.position==='before'?'Devolver antes':'Devolver después'):'');
+    };
+    const up=(ev:PointerEvent)=>{
+      window.removeEventListener('pointermove',move,true);window.removeEventListener('pointerup',up,true);window.removeEventListener('pointercancel',up,true);
+      try{el.releasePointerCapture(e.pointerId);}catch{}
+      if(doc)hideIndicator(doc);
+      const dx=ev.clientX-start.x,dy=ev.clientY-start.y;
+      el.style.translate='';el.style.zIndex='';
+      if(!moved)return;
+      if(overPage){insertItem({name:item.name,html:()=>item.html,section:/^<(section|header|footer|nav)\b/i.test(item.html),parkedId:item.id},drop||undefined);return;}
+      setSite(old=>old?{...old,parked:(old.parked||[]).map(x=>x.id===item.id?{...x,x:Math.round((x.x??24)+dx/zoomRef.current),y:Math.round((x.y??24)+dy/zoomRef.current)}:x)}:old);setDirty(true);
+    };
+    // Se escucha en toda la ventana: el soltar llega siempre, también sobre la página o fuera del lienzo.
+    window.addEventListener('pointermove',move,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',up,true);
+  }
   /** Mesa de trabajo: un elemento soltado fuera de la página se aparca (no se publica) y se puede devolver. */
-  function parkElement(index:number){
+  function parkElement(index:number,pos?:{x:number;y:number;w:number}){
     const current=siteRef.current;if(!current)return false;
     try{
       const html=copyElement(current.html,index);
@@ -494,8 +547,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const removed=removeElement(current.html,index);
       pendingIndexRef.current=null;
       changeHtml(removed.html);
-      setSite(old=>old?{...old,parked:[...(old.parked||[]),{id:crypto.randomUUID(),name,html}].slice(-40)}:old);
-      setNotice('«'+name+'» aparcado en la mesa de trabajo. Arrástralo de vuelta a la página cuando quieras.');
+      setSite(old=>old?{...old,parked:[...(old.parked||[]),{id:crypto.randomUUID(),name,html,...(pos||{})}].slice(-40)}:old);
+      setNotice('«'+name+'» en la mesa de trabajo. Muévelo por la mesa o arrástralo a la página para devolverlo.');
       return true;
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo aparcar.');return false;}
   }
@@ -592,6 +645,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     const doc=previewFrame.current?.contentDocument;
     if(!doc)return;
     if(/^(light|dark)$/.test(doc.documentElement.getAttribute('data-theme')||''))doc.documentElement.setAttribute('data-theme',webThemeRef.current);
+    doc.addEventListener('wheel',e=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();setZoom(z=>clampZoom(z*(e.deltaY<0?1.1:1/1.1)));},{passive:false});
     const win=doc.defaultView;
     if(win){
       const {x,y}=scrollRef.current;
@@ -637,7 +691,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(!Number.isSafeInteger(index))return;
       selectLayer(index,false);
       const rect=previewFrame.current!.getBoundingClientRect();
-      setCanvasMenu({x:rect.left+event.clientX,y:rect.top+event.clientY});
+      setCanvasMenu({x:rect.left+event.clientX*zoomRef.current,y:rect.top+event.clientY*zoomRef.current});
     },true);
     type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean;free:boolean;
       prev:{translate:string;opacity:string;pointerEvents:string;boxShadow:string;zIndex:string;position:string;transition:string}};
@@ -700,7 +754,14 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const current=siteRef.current;
       // Fuera de la página (en los laterales del lienzo): se aparca en la mesa de trabajo.
       const vw=doc.defaultView?.innerWidth||0,vh=doc.defaultView?.innerHeight||0;
-      if(event.clientX<0||event.clientY<0||event.clientX>vw||event.clientY>vh){restore(false);parkElement(state.index);return;}
+      if(event.clientX<0||event.clientY<0||event.clientX>vw||event.clientY>vh){
+        restore(false);
+        const fr=previewFrame.current?.getBoundingClientRect(),board=boardRef.current?.getBoundingClientRect();
+        const w=Math.round(state.element.getBoundingClientRect().width);
+        const z=zoomRef.current;
+        const pos=fr&&board?{x:Math.round((fr.left+event.clientX*z-board.left)/z-Math.min(w,320)/2),y:Math.round((fr.top+event.clientY*z-board.top)/z-12),w}:undefined;
+        parkElement(state.index,pos);return;
+      }
       // Libertad total: si en «Ordenar» se suelta en una zona sin elementos, se coloca libremente ahí mismo.
       const drop=state.free?null:computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
       if(state.free||!drop){
@@ -767,7 +828,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(!site||selected===null)return;
     try{
       const image=attachLocalImage(site,selected,new Uint8Array(await file.arrayBuffer()));
-      setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets}]);setFuture([]);
+      setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets,parked:site.parked}]);setFuture([]);
       setSite(image);setDraftHtml(image.html);setDirty(true);
       setSelected(null);selectedRef.current=null;
       setNotice('Imagen incorporada al proyecto y al ZIP. Guarda la versión para conservarla.');
@@ -850,7 +911,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         {onClose&&<button onClick={onClose} className={btn} aria-label="Cerrar"><X size={15}/></button>}
       </div>
     </header>
-    {(notice||fileError)&&<div role="status" className={'shrink-0 border-b px-4 py-2 text-[11px] '+(fileError?'border-red-500/30 bg-red-500/10 text-red-400':'border-stroke bg-elevated text-mist')}>{fileError||notice}</div>}
+    {(notice||fileError)&&<div role="status" className={'pointer-events-none fixed bottom-5 left-1/2 z-[85] max-w-[min(680px,calc(100vw-32px))] -translate-x-1/2 rounded-lg border px-4 py-2.5 text-[12px] shadow-pop '+(fileError?'border-red-500/40 bg-red-950/90 text-red-200':'border-stroke bg-panel text-ink')}>{fileError||notice}</div>}
     {(stage==='home'||stage==='create')&&<main className="scroll-subtle mx-auto w-full max-w-[1090px] flex-1 overflow-y-auto px-5 py-8 sm:px-9">
       <div className="mb-8 flex items-end justify-between gap-3">
         <div><div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-[.22em] text-brand">{stage==='create'?'Crear web':'Mis webs'}</div>
@@ -959,39 +1020,31 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
                   <button key={id} onClick={()=>setDevice(id)} aria-pressed={device===id} title={label}
                     className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(device===id?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><Icon size={13}/><span className="hidden md:inline">{label}</span></button>)}
               </div>
-              <span className="hidden font-mono text-[10px] text-faint sm:block">{device==='mobile'?'390':device==='tablet'?'820':'1280'} px</span>
+              <div role="group" aria-label="Zoom del lienzo" className="flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px]">
+                <button type="button" onClick={()=>zoomBy(1/1.2)} aria-label="Alejar" title="Alejar (Ctrl + rueda)" className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md text-mist hover:bg-panel hover:text-ink">−</button>
+                <button type="button" onClick={()=>setZoom(1)} title="Volver al 100 %" className="min-w-[46px] rounded-md px-1 font-mono text-[11px] text-ink hover:bg-panel">{Math.round(zoom*100)} %</button>
+                <button type="button" onClick={()=>zoomBy(1.2)} aria-label="Acercar" title="Acercar (Ctrl + rueda)" className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md text-mist hover:bg-panel hover:text-ink">+</button>
+                <button type="button" onClick={fitZoom} title="Ajustar la página a la ventana" className="rounded-md px-2 text-[11px] text-mist hover:bg-panel hover:text-ink">Ajustar</button>
+              </div>
             </div>
             <div className="relative min-h-0 flex-1">
             {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onDragBlock={dragBlockStart} onClose={()=>setTool('select')}
               target={selected!==null?'después del elemento seleccionado (o dentro, si es un contenedor vacío)':'al final de la página'}/>}
-            {(tool==='move'||(site.parked?.length||0)>0)&&<aside aria-label="Mesa de trabajo" className="absolute right-3 top-3 z-20 flex max-h-[calc(100%-24px)] w-[200px] flex-col overflow-hidden rounded-xl border border-dashed border-stroke bg-panel/95 shadow-pop backdrop-blur">
-              <div className="border-b border-stroke p-2.5">
-                <h2 className="text-[12px] font-semibold">Mesa de trabajo</h2>
-                <p className="mt-0.5 text-[10px] leading-4 text-faint">Con «Mover», arrastra un elemento fuera de la página para aparcarlo aquí. No se publica.</p>
-              </div>
-              <ul className="scroll-subtle min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
-                {(site.parked||[]).map(item=><li key={item.id} className="group flex items-center gap-1.5 rounded-lg border border-stroke bg-elevated p-2">
-                  <button type="button" title="Arrástralo a la página para devolverlo" className="min-w-0 flex-1 cursor-grab text-left active:cursor-grabbing"
-                    onPointerDown={e=>{if(e.button===0)dragItemStart({name:item.name,html:()=>item.html,section:/^<(section|header|footer|nav)\b/i.test(item.html),parkedId:item.id},e);}}>
-                    <span className="block truncate text-[11px] font-medium text-ink">{item.name}</span>
-                    <span className="block truncate font-mono text-[9.5px] text-faint">{(item.html.match(/^<([a-z0-9]+)/i)?.[1]||'').toLowerCase()}</span>
-                  </button>
-                  <button type="button" aria-label={'Eliminar '+item.name+' de la mesa de trabajo'} title="Eliminar de la mesa de trabajo"
-                    onClick={()=>{setSite(old=>old?{...old,parked:(old.parked||[]).filter(x=>x.id!==item.id)}:old);setDirty(true);}}
-                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint hover:bg-raised hover:text-red-500"><Trash2 size={12}/></button>
-                </li>)}
-                {!(site.parked?.length)&&<li className="rounded-lg border border-dashed border-stroke p-3 text-center text-[10.5px] text-faint">Vacía. Suelta aquí lo que quieras apartar.</li>}
-              </ul>
-            </aside>}
-            <div className={'scroll-subtle absolute inset-0 overflow-auto p-3 sm:p-6 '+((tool==='move'||(site.parked?.length||0)>0)?'lg:pr-[230px]':'')} style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
-              <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel transition-[max-width] duration-300"
-                style={{maxWidth:device==='mobile'?390:device==='tablet'?820:1280}}>
+            <div ref={canvasScrollRef} className="scroll-subtle absolute inset-0 overflow-auto py-3 sm:py-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
+              <div ref={boardRef} className="relative mx-auto h-full min-h-[480px]" aria-label="Mesa de trabajo"
+                style={{width:(device==='mobile'?390:device==='tablet'?820:1280)+BOARD_SIDE*2,paddingLeft:BOARD_SIDE,paddingRight:BOARD_SIDE,zoom}}>
+              {(site.parked||[]).map(item=><ParkedItem key={item.id} item={item} head={previewHead} theme={webTheme}
+                onPointerDown={e=>dragParked(item,e)}
+                onDelete={()=>{setSite(old=>old?{...old,parked:(old.parked||[]).filter(x=>x.id!==item.id)}:old);setDirty(true);}}/>)}
+              {tool==='move'&&!(site.parked?.length)&&<p className="pointer-events-none absolute left-4 top-4 w-[300px] rounded-lg border border-dashed border-stroke p-3 text-[11px] leading-5 text-faint">Mesa de trabajo: arrastra elementos fuera de la página y suéltalos aquí. Lo que dejes en la mesa no se publica.</p>}
+              <div className="h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel">
                 <div className="relative h-full min-h-[620px] w-full">
                   {([0,1] as const).map(i=><iframe key={i} title={i===activeFrame?'Previsualización segura de la web importada':'Preparando vista'}
                     ref={i===0?frameA:frameB} onLoad={()=>frameLoaded(i)} aria-hidden={i!==activeFrame}
                     sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={frameHtml[i]} tabIndex={i===activeFrame?0:-1}
                     className={'absolute inset-0 h-full min-h-[620px] w-full border-0 bg-white '+(i===activeFrame?'z-[1] opacity-100':'pointer-events-none z-0 opacity-0')}/>)}
                 </div>
+              </div>
               </div>
             </div>
             </div>
