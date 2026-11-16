@@ -27,7 +27,8 @@
     { "binding": "STUDIO_FILES", "bucket_name": "wayup-studio-preview-private" }
   ],
   "vars": {
-    "STUDIO_OWNER_EMAIL": "francopdimauro@gmail.com"
+    "STUDIO_OWNER_EMAIL": "francopdimauro@gmail.com",
+    "STUDIO_ACCESS_TEAM_DOMAIN": "https://proud-shape-7dee.cloudflareaccess.com"
   },
   "observability": { "enabled": true }
 }

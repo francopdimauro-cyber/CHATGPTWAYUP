@@ -5,6 +5,7 @@
 import {wayupStudioProjectsBridge} from './studio-next-projects-bridge.js';
 import {wayupStudioOwnAgentBridge} from './studio-next-own-agents-bridge.js';
 import {wayupStudioWebCreatorBridge} from './studio-next-webcreator-bridge.js';
+import {studioAccessContext} from './studio-access.js';
 
 const BUILD_ID=typeof __STUDIO_BUILD__==='string'?__STUDIO_BUILD__:'dev';
 
@@ -22,8 +23,9 @@ export default {
       // Identificador del build servido: permite comprobar qué commit está desplegado (sin datos privados).
       if(url.pathname==='/studio-api/build'&&request.method==='GET')return json({build:BUILD_ID});
       try{
+        const accessCtx=await studioAccessContext(request,env,ctx);
         for(const bridge of [wayupStudioProjectsBridge,wayupStudioOwnAgentBridge,wayupStudioWebCreatorBridge]){
-          const response=await bridge(request,env,ctx);
+          const response=await bridge(request,env,accessCtx);
           if(response)return response;
         }
       }catch(error){

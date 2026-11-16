@@ -35,6 +35,7 @@ export function AgentLibrary({onClose,onCreateForWeb}:{onClose():void;onCreateFo
  const closeRef=useRef<HTMLButtonElement>(null);
 
  const refresh=useCallback(async()=>{
+  setState(s=>s?'Comprobando tu sesión por correo…':s);
   try{
    const me=await api('GET','/auth/me');
    const [a,c]=await Promise.all([api('GET','/agents'),api('GET','/public-chats')]);
@@ -84,7 +85,8 @@ export function AgentLibrary({onClose,onCreateForWeb}:{onClose():void;onCreateFo
    </header>
 
    {state?<div className="mt-5 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist" role="status">
-    {state}<div className="mt-3"><button className={btn} onClick={()=>void refresh()}><RefreshCw size={14}/> Reintentar</button></div>
+    {state}<div className="mt-3 flex flex-wrap gap-2"><button className={btn} onClick={()=>void refresh()}><RefreshCw size={14}/> Reintentar</button>
+     <button className={btn} onClick={()=>window.location.reload()}>Recargar sesión</button></div>
    </div>:<>
     <p className="mt-4 flex items-center gap-2 text-[11px] text-mist"><CheckCircle2 size={14} className="text-green-500"/>{email} · {agents.length} {agents.length===1?'agente':'agentes'}</p>
     <div className="mt-4 flex flex-wrap gap-2">

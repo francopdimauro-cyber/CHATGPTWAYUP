@@ -24,7 +24,7 @@ jobs:
         run: npm test
       - name: Pruebas del backend SaaS aislado (sin desplegar)
         working-directory: .
-        run: node --check src/studio-next-projects-bridge.js && node --check src/studio-next-own-agents-bridge.js && node --check src/studio-public-agent-worker.js && node --check src/studio-next-webcreator-bridge.js && node --check src/studio-motor-preview-worker.js && node --check scripts/patch-studio-next-agent-preview.mjs && node --test tests/studio-next-projects-bridge.test.mjs tests/studio-agents-sso-integration.test.mjs tests/studio-webcreator-ai.test.mjs
+        run: node --check src/studio-next-projects-bridge.js && node --check src/studio-next-own-agents-bridge.js && node --check src/studio-public-agent-worker.js && node --check src/studio-next-webcreator-bridge.js && node --check src/studio-motor-preview-worker.js && node --check src/studio-access.js && node --check scripts/patch-studio-next-agent-preview.mjs && node --test tests/studio-next-projects-bridge.test.mjs tests/studio-agents-sso-integration.test.mjs tests/studio-webcreator-ai.test.mjs tests/studio-access.test.mjs
       - name: Typecheck
         run: npm run typecheck
       - name: Compilar editor (sin publicar)
