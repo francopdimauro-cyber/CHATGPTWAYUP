@@ -163,6 +163,51 @@ export function StudioApp() {
     return ()=>window.clearTimeout(id);
   },[notice]);
 
+  const onAddSection=(label:string)=>{
+    const name=label.trim().slice(0,65);
+    if(!name||doc.sections.length>=35){setNotice('Máximo 35 secciones por página.');return;}
+    const sectionId='seccion-'+crypto.randomUUID();
+    const titleId='titulo-'+crypto.randomUUID(),textId='texto-'+crypto.randomUUID();
+    const style:ElementStyle={x:0,y:0,fontSize:32,fontWeight:700,
+      fontFamily:'Arial, sans-serif',shadow:'ninguna',color:'#ffffff',
+      background:'transparent',radius:0,paddingX:0,paddingY:0,width:'auto'};
+    const elements:StudioElement[]=[
+      {id:titleId,label:'Título de '+name,kind:'subtitulo',sectionId,text:name,
+        style:{...style}},
+      {id:textId,label:'Descripción de '+name,kind:'parrafo',sectionId,
+        text:'Edita este contenido desde el Inspector del editor.',
+        style:{...style,fontSize:15,fontWeight:400,color:'#bbc7bb'}}
+    ];
+    dispatch({type:'crear-seccion',section:{id:sectionId,label:name,children:[titleId,textId]},elements});
+    setSelectedId(titleId);setContextSpot(null);setNotice('Sección «'+name+'» añadida al lienzo. Usa el Inspector para editarla.');
+  };
+  const onRemoveSection=(id:string)=>{
+    if(doc.sections.length<=1){setNotice('Debes conservar al menos una sección.');return;}
+    if(!doc.sections.some(item=>item.id===id))return;
+    dispatch({type:'borrar-seccion',sectionId:id});
+    if(selectedId&&doc.elements[selectedId]?.sectionId===id)setSelectedId(null);
+    setContextSpot(null);setNotice('Sección eliminada. Puedes recuperarla con Deshacer.');
+  };
+  const onDuplicateSection=(id:string)=>{
+    const section=doc.sections.find(x=>x.id===id);
+    if(!section||doc.sections.length>=35)return;
+    const newId='seccion-'+crypto.randomUUID();
+    const elements=section.children.map(key=>doc.elements[key]).filter((x):x is StudioElement=>Boolean(x))
+      .map(node=>cloneStudioLayer(node,newId,crypto.randomUUID(),0));
+    if(elements.length!==section.children.length){setNotice('No se pudo duplicar una sección incompleta.');return;}
+    dispatch({type:'duplicar-seccion',sectionId:id,newId,elements});
+    if(elements[0])setSelectedId(elements[0].id);
+    setContextSpot(null);setNotice('Sección duplicada. Puedes deshacer el cambio.');
+  };
+  const onMoveSection=(id:string,direction:-1|1)=>{
+    dispatch({type:'mover-seccion',sectionId:id,direction});
+    setContextSpot(null);setNotice('Orden de las secciones actualizado.');
+  };
+  const onRenameSection=(id:string,label:string)=>{
+    dispatch({type:'renombrar-seccion',sectionId:id,label});
+    setNotice('Nombre de sección actualizado.');
+  };
+
   const onStyle = (id: string, patch: Partial<ElementStyle>) => dispatch({type:'estilo',elementId:id,patch});
   const onElement = (id: string, patch: Partial<StudioElement>) => dispatch({type:'modificar',elementId:id,patch});
   const onMove = (id: string, x: number, y: number) => dispatch({type:'estilo',elementId:id,patch:{x,y}});
@@ -177,13 +222,16 @@ export function StudioApp() {
       theme={theme} onTheme={()=>setTheme(v=>v==='dark'?'light':'dark')}
       onCreateWeb={()=>setWebWorkspaceOpen(true)}
       onCreateAgent={()=>{
-        const trigger=document.getElementById('wayup-agent-open');
+        const trigger=document.getElementById('wayup-own-agent-open');
         if(trigger instanceof HTMLButtonElement)trigger.click();
         else setNotice('El panel de agentes no está disponible. Recarga la página e inténtalo de nuevo.');
       }}
       onCopy={()=>void runCommand('copy')} onCut={()=>void runCommand('cut')}
       onPaste={()=>void runCommand('paste')} onDuplicate={()=>void runCommand('duplicate')} onToggleLibrary={()=>{setNavCollapsed(false);setMobileNav(v=>!v)}} onToggleInspector={()=>setMobileInspector(v=>!v)}/>
-    <Navigator doc={doc} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
+    <Navigator doc={doc} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu}
+      onAddSection={onAddSection} onRemoveSection={onRemoveSection} onDuplicateSection={onDuplicateSection}
+      onMoveSection={onMoveSection} onRenameSection={onRenameSection}
+      collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
     <Canvas doc={doc} mode={mode} device={device} zoom={zoom} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} onMode={setMode} onDevice={setDevice} onZoom={setZoom} onMove={onMove}/>
     {webWorkspaceOpen && <WebWorkspace onClose={()=>setWebWorkspaceOpen(false)}/>}
     <EditorContextMenu spot={contextSpot} canUndo={history.past.length>0} canRedo={history.future.length>0}
