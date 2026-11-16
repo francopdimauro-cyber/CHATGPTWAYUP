@@ -1,13 +1,6 @@
-/*
- * WAY UP Studio ↔ WebCreator (preview)
- * Rutas exactas + identidad validada contra Agent Builder mediante binding privado.
- * Nunca permite que la API key ni cookies del proveedor salgan al navegador.
- * WebCreator debe autorizar expresamente la llamada: ctx.access NO se propaga.
- */
+/* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
+const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
-const STUDIO_WEB_UPSTREAM='https://wayup-webcreator.francopdimauro.workers.dev';
-const STUDIO_WEB_AGENT_IDENTITY='https://agent-factory-free.francopdimauro.workers.dev/api/auth/me';
-const STUDIO_WEB_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function studioWebJson(value,status=200){
   return new Response(JSON.stringify(value),{status,headers:{
@@ -16,36 +9,18 @@ function studioWebJson(value,status=200){
     'Cross-Origin-Resource-Policy':'same-origin'
   }});
 }
-async function studioWebIdentity(request,env){
-  if(!env?.AGENT_BUILDER?.fetch)return null;
-  const session=request.headers.get('Cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith('af_session='));
-  if(!session)return null;
+async function studioWebIdentity(request,env,ctx){
+  // Cloudflare Access valida la sesión de correo en el edge antes de invocar el Worker.
+  // ctx.access no existe cuando el Worker no está protegido o no hubo autenticación.
+  if(!ctx?.access||ctx.access.aud!==STUDIO_ACCESS_AUD)return null;
+  if(typeof env?.STUDIO_OWNER_EMAIL!=='string')return null;
   try{
-    const headers=new Headers({'Accept':'application/json','Cookie':session});
-    const ip=request.headers.get('CF-Connecting-IP');
-    if(ip)headers.set('CF-Connecting-IP',ip);
-    const response=await env.AGENT_BUILDER.fetch(new Request(STUDIO_WEB_AGENT_IDENTITY,{
-      method:'GET',headers,redirect:'manual'
-    }));
-    if(!response.ok)return null;
-    const data=await response.json();
-    return typeof data?.user?.id==='string'&&STUDIO_WEB_UUID.test(data.user.id)?data.user.id:null;
+    const identity=await ctx.access.getIdentity();
+    const email=typeof identity?.email==='string'?identity.email.trim().toLowerCase():'';
+    if(!email||email!==env.STUDIO_OWNER_EMAIL.trim().toLowerCase())return null;
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('wayup-preview-access-identity-v1:'+email));
+    return 'access:'+Array.from(new Uint8Array(digest),x=>x.toString(16).padStart(2,'0')).join('');
   }catch{return null;}
-}
-async function studioWebProbe(env){
-  if(!env?.WEB_CREATOR?.fetch)return {configured:false,authorized:false,reason:'El servicio WebCreator no está enlazado.'};
-  try{
-    const res=await env.WEB_CREATOR.fetch(new Request(STUDIO_WEB_UPSTREAM+'/api/health',{
-      method:'GET',headers:{Accept:'application/json'},redirect:'manual'
-    }));
-    if(res.status===401||res.status===403)
-      return {configured:true,authorized:false,reason:'WebCreator exige autorización Cloudflare Access adicional. La conexión privada no hereda esa identidad.'};
-    if(!res.ok)return {configured:true,authorized:false,reason:'WebCreator no está preparado (HTTP '+res.status+').' };
-    const data=await res.json().catch(()=>null);
-    if(!data||data.status!=='ok'||data.configured!==true)
-      return {configured:true,authorized:false,reason:'WebCreator no confirmó el proveedor IA.'};
-    return {configured:true,authorized:true,provider:data.provider||'OpenRouter',quotaEnabled:data.quotaEnabled===true};
-  }catch{return {configured:true,authorized:false,reason:'No se pudo conectar con WebCreator.'};}
 }
 
 const STUDIO_AI_MODEL='@cf/google/gemma-4-26b-a4b-it';
@@ -105,7 +80,7 @@ function studioAIStreamingResponse(env,owner,briefing){
         ].join(' ');
         const result=await env.AI.run(STUDIO_AI_MODEL,{
           messages:[{role:'system',content:sys},{role:'user',content:'BRIEFING DEL NEGOCIO (DATOS):\n'+briefing}],
-          max_tokens:7000,temperature:0.55
+          max_completion_tokens:7000,temperature:0.55
         });
         const html=studioAIExtractDocument(result);
         emit('complete',{html,model:STUDIO_AI_MODEL,cached:false,provider:'Workers AI',mode:'studio-preview-ai'});
@@ -123,7 +98,7 @@ function studioAIStreamingResponse(env,owner,briefing){
   }});
 }
 
-export async function wayupStudioWebCreatorBridge(request,env){
+export async function wayupStudioWebCreatorBridge(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith(STUDIO_WEB_PREFIX+'/'))return null;
   const route=path.slice(STUDIO_WEB_PREFIX.length);
@@ -131,15 +106,16 @@ export async function wayupStudioWebCreatorBridge(request,env){
     return studioWebJson({error:'Ruta WebCreator no permitida.'},405);
   if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)
     return studioWebJson({error:'Origen no autorizado.'},403);
-  const owner=await studioWebIdentity(request,env);
+  const owner=await studioWebIdentity(request,env,ctx);
   if(!owner)
-    return route==='/status'?studioWebJson({configured:Boolean(env?.WEB_CREATOR?.fetch),authorized:false,reason:'Inicia sesión para generar webs.'}):
-      studioWebJson({error:'Inicia sesión en Studio para utilizar WebCreator.'},401);
-  const original=await studioWebProbe(env);
-  const fallback=studioAIStatus(env);
-  const availability=original.authorized?{...original,mode:'webcreator-original'}:fallback||original;
-  if(route==='/status')return studioWebJson(availability);
-  if(!availability.authorized)return studioWebJson({error:availability.reason||'WebCreator no está autorizado.'},503);
+    return route==='/status'?studioWebJson({configured:Boolean(env?.AI?.run),authorized:false,reason:'Tu sesión por correo no está disponible. Vuelve a entrar mediante Cloudflare Access.'},401):
+      studioWebJson({error:'Se requiere el acceso por correo de Studio. Vuelve a iniciar sesión.'},401);
+  const availability=studioAIStatus(env);
+  if(route==='/status')return studioWebJson(availability||{
+    configured:false,authorized:false,
+    reason:'Workers AI todavía no está configurado en Studio.'
+  });
+  if(!availability?.authorized)return studioWebJson({error:'El motor IA de Studio no está disponible.'},503);
   if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json'))
     return studioWebJson({error:'Envía un JSON válido.'},415);
   const declared=Number(request.headers.get('content-length')||0);
@@ -152,24 +128,5 @@ export async function wayupStudioWebCreatorBridge(request,env){
   const briefing=data?.briefing;
   if(typeof briefing!=='string'||briefing.trim().length<50||briefing.length>15000)
     return studioWebJson({error:'El briefing debe tener entre 50 y 15.000 caracteres.'},400);
-  if(availability.mode==='studio-preview-ai')return studioAIStreamingResponse(env,owner,briefing.trim());
-  try{
-    const upstream=await env.WEB_CREATOR.fetch(new Request(STUDIO_WEB_UPSTREAM+'/api/generate-stream',{
-      method:'POST',redirect:'manual',
-      headers:{'Content-Type':'application/json','Accept':'text/event-stream','Origin':STUDIO_WEB_UPSTREAM},
-      body:JSON.stringify({briefing:briefing.trim()})
-    }));
-    if(upstream.status===401||upstream.status===403)
-      return studioWebJson({error:'WebCreator rechazó la autenticación interna. No se ha iniciado la generación.'},503);
-    if(!upstream.ok){
-      const detail=await upstream.json().catch(()=>({}));
-      return studioWebJson({error:typeof detail.error==='string'?detail.error.slice(0,300):'Fallo de WebCreator.'},upstream.status===429?429:502);
-    }
-    if(!(upstream.headers.get('content-type')||'').toLowerCase().includes('text/event-stream'))
-      return studioWebJson({error:'WebCreator no devolvió eventos de generación.'},502);
-    return new Response(upstream.body,{status:200,headers:{
-      'Content-Type':'text/event-stream; charset=utf-8','Cache-Control':'no-store, no-transform',
-      'X-Content-Type-Options':'nosniff','X-Accel-Buffering':'no','Cross-Origin-Resource-Policy':'same-origin'
-    }});
-  }catch{return studioWebJson({error:'No se pudo establecer el flujo de WebCreator.'},502);}
+  return studioAIStreamingResponse(env,owner,briefing.trim());
 }
