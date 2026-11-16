@@ -1,7 +1,7 @@
 {
   "format": "wayapp-next-static-v1",
-  "bytes": 2254933,
-  "sha256": "5bb96615fcb0ae8385476a7fa310134055a4b1d06796261ec3e70d9a113eca9c",
+  "bytes": 2254921,
+  "sha256": "47612348c810f660fda169845ff8dc2739baae06437179ebdc9df5ecb05347b2",
   "count": 49,
   "chunks": [
     "assets-000.txt",
