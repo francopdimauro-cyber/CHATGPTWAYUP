@@ -600,19 +600,33 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const state=moving;moving=null;
       try{doc.documentElement.releasePointerCapture(state.pointerId);}catch{}
       const st=state.element.style;
-      for(const [k,v] of Object.entries(state.prev)){const prop=k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase());if(v)st.setProperty(prop,v);else st.removeProperty(prop);}
+      // Restaura el aspecto del arrastre; la posición solo vuelve atrás si el movimiento no se aplica
+      // (así el elemento no «salta» a su sitio original mientras se prepara la nueva versión de la vista).
+      const restore=(keepPosition:boolean)=>{
+        for(const [k,v] of Object.entries(state.prev)){
+          if(keepPosition&&k==='translate')continue;
+          const prop=k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase());if(v)st.setProperty(prop,v);else st.removeProperty(prop);
+        }
+      };
       doc.body.style.cursor=toolRef.current==='move'?'grab':'';
       hideIndicator(doc);
-      if(!state.moved||!event||!siteRef.current)return;
+      if(!state.moved||!event||!siteRef.current){restore(false);return;}
       const current=siteRef.current;
-      if(state.free){
+      // Libertad total: si en «Ordenar» se suelta en una zona sin elementos, se coloca libremente ahí mismo.
+      const drop=state.free?null:computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
+      if(state.free||!drop){
         const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
-        tryEdit(()=>({html:patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}),index:state.index}),'Elemento colocado libremente ('+x+', '+y+' px). Deshacer lo devuelve a su sitio.');
+        restore(true);st.setProperty('translate',x+'px '+y+'px','important');
+        try{applyEdit({html:patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}),index:state.index},'Elemento colocado libremente ('+x+', '+y+' px). Deshacer lo devuelve a su sitio.');}
+        catch(error){restore(false);setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
         return;
       }
-      const drop=computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
-      if(!drop){setNotice('Suelta encima de otro elemento de la web para colocarlo.');return;}
-      tryEdit(()=>moveElementTo(current.html,state.index,drop.index,drop.position),'Elemento movido '+(drop.position==='inside'?'dentro del contenedor':drop.position==='before'?'antes':'después')+'.');
+      // En «Ordenar» se oculta hasta que aparece ya en su nuevo sitio (sin volver al original).
+      try{
+        const result=moveElementTo(current.html,state.index,drop.index,drop.position);
+        restore(true);st.setProperty('opacity','0','important');
+        applyEdit(result,'Elemento movido '+(drop.position==='inside'?'dentro del contenedor':drop.position==='before'?'antes':'después')+'.');
+      }catch(error){restore(false);setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
     };
     doc.addEventListener('pointerup',event=>finishMove(event),true);
     doc.addEventListener('pointercancel',()=>finishMove(null),true);
