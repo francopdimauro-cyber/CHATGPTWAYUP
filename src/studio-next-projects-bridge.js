@@ -22,23 +22,19 @@ function studioNextZipResponse(blob,name){
     'Cross-Origin-Resource-Policy':'same-origin'
   }});
 }
-async function studioNextIdentity(request,env){
-  if(!env?.AGENT_BUILDER?.fetch)return {error:'Conexión privada con cuentas no disponible.',status:503};
-  const cookie=request.headers.get('Cookie')?.split(';').map(s=>s.trim()).find(s=>s.startsWith('af_session='));
-  if(!cookie)return {error:'Inicia sesión antes de acceder a los proyectos en la nube.',status:401};
+async function studioNextIdentity(request,env,ctx){
+  // Todas las operaciones de proyectos dependen de la identidad comprobada por Access
+  // en el Worker de Studio. Nunca aceptamos cookies antiguas ni userId del cliente.
+  if(!ctx?.access||ctx.access.aud!=='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6')
+    return {error:'Debes acceder con el código enviado a tu correo.',status:401};
   try{
-    const headers=new Headers({'Accept':'application/json','Cookie':cookie});
-    const ip=request.headers.get('CF-Connecting-IP');if(ip)headers.set('CF-Connecting-IP',ip);
-    const response=await env.AGENT_BUILDER.fetch(new Request(NEXT_PROJECT_SERVICE_URL,{
-      method:'GET',headers,redirect:'manual'
-    }));
-    if(!response.ok)return {error:'Sesión caducada o no autorizada.',status:401};
-    const data=await response.json();
-    const user=data?.user;
-    if(typeof user?.id!=='string'||!NEXT_PROJECT_UUID.test(user.id))
-      return {error:'Identidad no válida para proyectos.',status:401};
-    return {ownerId:user.id};
-  }catch{return {error:'No se pudo verificar la sesión.',status:503};}
+    const data=await ctx.access.getIdentity();
+    const email=typeof data?.email==='string'?data.email.trim().toLowerCase():'';
+    if(!email||!env.STUDIO_OWNER_EMAIL||email!==env.STUDIO_OWNER_EMAIL.trim().toLowerCase())
+      return {error:'Cuenta no autorizada.',status:403};
+    const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('wayup-preview-access-identity-v1:'+email));
+    return {ownerId:'access:'+Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('')};
+  }catch{return {error:'No fue posible comprobar tu identidad.',status:401};}
 }
 
 /** Inspecciona el directorio ZIP sin descomprimir ni ejecutar contenidos. */
@@ -124,7 +120,7 @@ function studioNextChanges(result){
   return Number(result?.meta?.changes??0);
 }
 /** Para incluir en el Worker estático compilado mediante el patcher de preview. */
-export async function wayupStudioProjectsBridge(request,env){
+export async function wayupStudioProjectsBridge(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   if(path!==NEXT_PROJECT_PREFIX&&!path.startsWith(NEXT_PROJECT_PREFIX+'/'))return null;
   if(!['GET','POST','PUT','DELETE'].includes(request.method))
@@ -133,7 +129,7 @@ export async function wayupStudioProjectsBridge(request,env){
     return studioNextJson({error:'Origen no autorizado.'},403);
   if(!env?.STUDIO_DB||!env?.STUDIO_FILES)
     return studioNextJson({error:'Almacenamiento privado de Studio no configurado.'},503);
-  const identity=await studioNextIdentity(request,env);
+  const identity=await studioNextIdentity(request,env,ctx);
   if(!identity.ownerId)return studioNextJson({error:identity.error},identity.status);
   const owner=identity.ownerId,db=env.STUDIO_DB,bucket=env.STUDIO_FILES;
   const detail=path.slice(NEXT_PROJECT_PREFIX.length);
