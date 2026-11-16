@@ -104,3 +104,13 @@ test('Búsqueda real: límite gratuito y clave inválida con mensajes claros',as
   await assert.rejects(C.researchReferences({TAVILY_API_KEY:'k'},{industry:'x'},{fetcher:async()=>new Response('',{status:432})}),/límite gratuito/);
   await assert.rejects(C.researchReferences({TAVILY_API_KEY:'k'},{industry:'x'},{fetcher:async()=>new Response('',{status:401})}),/no es válida/);
 });
+
+test('Dirección: JSON cortado se recupera y si no, se usa el segundo modelo',async()=>{
+  const cut='{"resumen":"Editorial","paleta":{"fondo":"#101010","acento":"#c8a45a"},"secciones":[{"titulo":"Carta","objetivo":"Mostrar pla';
+  assert.equal(C.repairJson(cut).resumen,'Editorial');
+  const models=[];
+  const env={AI:{run:async model=>{models.push(model);return {response:models.length===1?'Lo siento, no puedo':'{"resumen":"Plan B"}'};}}};
+  const d=await C.proposeDirection(env,{brief:'Negocio ficticio'});
+  assert.equal(d.resumen,'Plan B');
+  assert.deepEqual(models,[C.DIRECTION_MODEL,C.DIRECTION_FALLBACK_MODEL]);
+});
