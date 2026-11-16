@@ -13,6 +13,7 @@ import { PropertyPanel, type ElementInfo } from './property-panel';
 import { CanvasMenu, type CanvasCommand } from './canvas-menu';
 import { SeoPanel } from './seo-panel';
 import { AgentLibrary } from './agent-library';
+import { CreatorWizard, type Direction } from './creator-wizard';
 import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setInlineContent, setStyles, toggleHidden, writeSeo, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
@@ -56,10 +57,10 @@ function briefFrom(form:Record<string,string>):string{
     'Entrega HTML5 completo y responsivo, sin scripts ni imágenes externas inventadas.'
   ].join('\n');
 }
-async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void):Promise<string>{
+async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void,direction:Direction|null=null):Promise<string>{
   const res=await fetch('/studio-api/webcreator/generate-stream',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    credentials:'same-origin',cache:'no-store',body:JSON.stringify({briefing})
+    credentials:'same-origin',cache:'no-store',body:JSON.stringify(direction?{briefing,direction}:{briefing})
   });
   if(!res.ok){
     const data=await res.json().catch(()=>({}));
@@ -237,13 +238,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar el motor IA de Studio.');}
   },[]);
   useEffect(()=>{if(stage==='create')void refreshWebAI()},[stage,refreshWebAI]);
-  async function createWeb(){
+  async function createWeb(direction:Direction|null=null){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
     }
     setFileError('');setBusy(true);setNotice('Generando la web con el motor IA conectado…');
     try{
-      const html=await streamGeneratedWeb(briefFrom(form),setNotice);
+      const html=await streamGeneratedWeb(briefFrom(form),setNotice,direction);
       const generated=siteFromHtml(html,form.name.trim());
       changeSite({...generated,source:'generated'});
     }catch(error){
@@ -615,38 +616,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
           </div>
         </div>
         <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
-      </>:<div className="rounded-2xl border border-stroke bg-panel p-5 sm:p-7">
-        <div className="mb-5 flex items-center justify-between"><h2 className="font-display text-[24px] font-semibold">Briefing del proyecto</h2><span className="rounded-full bg-brandsoft px-3 py-1 text-[10px] text-brand">Formulario completo</span></div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {editInputs('name','Nombre del negocio','Ej. Estudio Norte Demo',true)}
-          {editInputs('industry','Sector o actividad','Gimnasio, restaurante, clínica…',true)}
-          {editInputs('audience','Público objetivo','Personas que buscan entrenamiento personal')}
-          {editInputs('goal','Objetivo de la web','Conseguir reservas, contactos, ventas…')}
-          {editInputs('style','Estilo visual','Minimalista, premium, editorial…')}
-          {editInputs('palette','Colores e identidad de marca','Cobalto, marfil, logotipo existente…')}
-        </div>
-        <label className="mt-4 flex flex-col gap-1.5 text-[11px] text-mist">Servicios y propuesta de valor
-          <textarea className={BASE+' min-h-[96px] resize-y'} value={form.services} placeholder="Describe de verdad qué hace tu negocio y por qué es diferente…" onChange={e=>setForm({...form,services:e.target.value})}/>
-        </label>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {editInputs('contact','Ubicación, contacto y horarios','Solo información real')}
-          {editInputs('features','Funciones necesarias','WhatsApp, formulario, mapa, reservas…')}
-        </div>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button disabled={busy} onClick={createLocalWeb} className={primary}><FilePlus2 size={15}/> Crear web editable desde el briefing</button>
-          <button disabled={!webAIReady||busy} onClick={()=>void createWeb()} className={btn} title={webAIReady?'Motor de IA autorizado':'Verifica tu acceso por correo y la conexión de Workers AI'}>
-            {busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generación IA {webAIReady?'':'(sin conexión)'}
-          </button>
-        </div>
-        <div className="mt-4 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">
-          <div className="flex items-center justify-between gap-2">
-            <strong>Conexión del generador IA</strong>
-            <button className={btn} onClick={()=>void refreshWebAI()}>Comprobar conexión</button>
-          </div>
-          <p className="mt-2">{webAIReady?(webAIReason||'Generador IA conectado.'):(webAIReason||'Comprueba tu sesión por correo y la conexión de Workers AI.')}</p>
-        </div>
-        <p className="mt-3 text-[11px] leading-5 text-faint">La generación utiliza Workers AI y tu sesión de correo. No necesitas la contraseña antigua de WebCreator. El editor local funciona incluso cuando no hay IA.</p>
-      </div>}
+      </>:<CreatorWizard form={form} setForm={setForm} brief={briefFrom(form)} busy={busy} aiReady={webAIReady} aiReason={webAIReason}
+        onCheckAI={()=>void refreshWebAI()} onGenerate={direction=>void createWeb(direction)} onLocal={createLocalWeb} error={fileError}/>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-3 py-2 sm:px-4">

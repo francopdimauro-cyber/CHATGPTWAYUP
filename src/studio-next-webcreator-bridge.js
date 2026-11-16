@@ -1,4 +1,5 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
+import {analyzeWebsite,analyzeReferenceImage,proposeDirection,directionBrief,sanitizeDirection,CreatorError} from './studio-creator-research.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
 
@@ -37,11 +38,12 @@ function studioAIStatus(env){
     dailyLimit:STUDIO_AI_DAILY_LIMIT
   }:null;
 }
-async function studioAIReserveQuota(db,owner){
+const STUDIO_CREATOR_DAILY_LIMIT=80;
+async function studioAIReserveQuota(db,owner,limit=STUDIO_AI_DAILY_LIMIT){
   const day=new Date().toISOString().slice(0,10);
   await db.prepare('INSERT OR IGNORE INTO studio_preview_ai_daily (owner_id,day,used) VALUES (?,?,0)').bind(owner,day).run();
   const result=await db.prepare('UPDATE studio_preview_ai_daily SET used=used+1 WHERE owner_id=? AND day=? AND used<?')
-    .bind(owner,day,STUDIO_AI_DAILY_LIMIT).run();
+    .bind(owner,day,limit).run();
   return result?.meta?.changes===1;
 }
 async function studioAIReleaseQuota(db,owner){
@@ -202,7 +204,8 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith(STUDIO_WEB_PREFIX+'/'))return null;
   const route=path.slice(STUDIO_WEB_PREFIX.length);
-  if(!((route==='/status'&&request.method==='GET')||(route==='/generate-stream'&&request.method==='POST')))
+  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction'];
+  if(!((route==='/status'&&request.method==='GET')||(POST_ROUTES.includes(route)&&request.method==='POST')))
     return studioWebJson({error:'Ruta WebCreator no permitida.'},405);
   if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)
     return studioWebJson({error:'Origen no autorizado.'},403);
@@ -218,15 +221,34 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   if(!availability?.authorized)return studioWebJson({error:'El motor IA de Studio no está disponible.'},503);
   if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json'))
     return studioWebJson({error:'Envía un JSON válido.'},415);
+  const limit=route==='/analyze-image'?2_300_000:route==='/direction'?40000:24000;
   const declared=Number(request.headers.get('content-length')||0);
-  if(declared>16000)return studioWebJson({error:'Solicitud demasiado grande.'},413);
+  if(declared>limit)return studioWebJson({error:'Solicitud demasiado grande.'},413);
   let raw;
   try{raw=await request.text();}catch{return studioWebJson({error:'No se pudo leer el mensaje.'},400)}
-  if(raw.length>16000)return studioWebJson({error:'Solicitud demasiado grande.'},413);
+  if(raw.length>limit)return studioWebJson({error:'Solicitud demasiado grande.'},413);
   let data;
   try{data=JSON.parse(raw)}catch{return studioWebJson({error:'JSON no válido.'},400)}
+  if(route!=='/generate-stream'){
+    // Análisis y dirección creativa: cupo diario propio, sin consumir generaciones de webs.
+    if(!(await studioAIReserveQuota(env.STUDIO_DB,owner+':creator',STUDIO_CREATOR_DAILY_LIMIT)))
+      return studioWebJson({error:'Has alcanzado el límite diario de análisis ('+STUDIO_CREATOR_DAILY_LIMIT+').'},429);
+    try{
+      if(route==='/analyze-url')return studioWebJson({analysis:await analyzeWebsite(data?.url)});
+      if(route==='/analyze-image')return studioWebJson({reference:await analyzeReferenceImage(env,{image:data?.image,role:data?.role,note:data?.note})});
+      return studioWebJson({direction:await proposeDirection(env,{brief:String(data?.brief||'').slice(0,8000),analysis:data?.analysis,
+        images:Array.isArray(data?.images)?data.images.slice(0,4):[],freedom:data?.freedom,preserve:data?.preserve,mode:data?.mode})});
+    }catch(error){
+      await studioAIReleaseQuota(env.STUDIO_DB,owner+':creator').catch(()=>{});
+      if(error instanceof CreatorError)return studioWebJson({error:error.message,code:error.code},error.code==='url'||error.code==='image'?400:502);
+      console.warn('studio-creator error',route,String(error?.message||error).slice(0,160));
+      return studioWebJson({error:'No se pudo completar el análisis. Vuelve a intentarlo.'},500);
+    }
+  }
   const briefing=data?.briefing;
   if(typeof briefing!=='string'||briefing.trim().length<50||briefing.length>15000)
     return studioWebJson({error:'El briefing debe tener entre 50 y 15.000 caracteres.'},400);
-  return studioAIStreamingResponse(env,owner,briefing.trim());
+  let direction='';
+  if(data?.direction&&typeof data.direction==='object'){try{direction=directionBrief(sanitizeDirection(data.direction));}catch{}}
+  return studioAIStreamingResponse(env,owner,briefing.trim()+(direction?'\n\n'+direction:''));
 }
