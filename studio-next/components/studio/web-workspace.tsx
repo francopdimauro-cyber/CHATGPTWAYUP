@@ -185,12 +185,19 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       return;
     }
     if(pendingFrameRef.current!==i)return;
-    pendingFrameRef.current=null;
     const el=(i===0?frameA:frameB).current;
     if(!el)return;
-    (previewFrame as {current:HTMLIFrameElement|null}).current=el;
-    previewLoaded();
-    setActiveFrame(i);
+    const doc=el.contentDocument,win=el.contentWindow;
+    // Antes de mostrarla: tipografías listas (máx. 0,8 s) y scroll restaurado en el marco oculto.
+    const fontsReady=doc?.fonts?.ready?Promise.race([doc.fonts.ready,new Promise(r=>setTimeout(r,800))]):Promise.resolve();
+    void fontsReady.then(()=>{
+      if(pendingFrameRef.current!==i)return; // llegó otra versión mientras tanto
+      pendingFrameRef.current=null;
+      (previewFrame as {current:HTMLIFrameElement|null}).current=el;
+      previewLoaded();
+      if(win)win.scrollTo({left:scrollRef.current.x,top:scrollRef.current.y,behavior:'instant' as ScrollBehavior});
+      win?.requestAnimationFrame(()=>setActiveFrame(i));
+    });
   }
   useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
   const changeHtml=useCallback((html:string)=>{
@@ -857,7 +864,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
                   {([0,1] as const).map(i=><iframe key={i} title={i===activeFrame?'Previsualización segura de la web importada':'Preparando vista'}
                     ref={i===0?frameA:frameB} onLoad={()=>frameLoaded(i)} aria-hidden={i!==activeFrame}
                     sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={frameHtml[i]} tabIndex={i===activeFrame?0:-1}
-                    className={'absolute inset-0 h-full min-h-[620px] w-full border-0 bg-white '+(i===activeFrame?'':'pointer-events-none invisible')}/>)}
+                    className={'absolute inset-0 h-full min-h-[620px] w-full border-0 bg-white '+(i===activeFrame?'z-[1] opacity-100':'pointer-events-none z-0 opacity-0')}/>)}
                 </div>
               </div>
             </div>
