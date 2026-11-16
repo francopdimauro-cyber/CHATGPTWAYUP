@@ -16,10 +16,11 @@ type Analysis = {
   images: { src: string; alt: string }[]; logo: string; forms: number;
 };
 type WebRef = { url: string; host: string; title: string; snippet: string; selected: boolean; colors?: string[]; fonts?: string[]; status?: string };
-type RefImage = { id: string; name: string; dataUrl: string; role: string; note: string; analysis?: Record<string, unknown>; status: string };
+type RefImage = { id: string; name: string; dataUrl: string; role: string; note: string; analysis?: Record<string, unknown>; status: string; useInWeb: boolean };
+export type ClientPhoto = { name: string; dataUrl: string; note: string; description: string };
 type Props = {
   form: Record<string, string>; setForm(f: Record<string, string>): void; brief: string; busy: boolean;
-  aiReady: boolean; aiReason: string; onCheckAI(): void; onGenerate(direction: Direction | null): void; onLocal(): void; error: string;
+  aiReady: boolean; aiReason: string; onCheckAI(): void; onGenerate(direction: Direction | null, photos: ClientPhoto[]): void; onLocal(): void; error: string;
 };
 const FONT_OPTIONS = ['Serif editorial', 'Serif clásica', 'Sans humanista', 'Sans geométrica', 'Sans neutra', 'Display condensada', 'Monoespaciada'];
 const FONT_PREVIEW: Record<string, string> = {
@@ -84,7 +85,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
       if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { setMessage('«' + file.name + '»: solo PNG, JPEG o WebP.'); continue; }
       if (file.size > 1_500_000) { setMessage('«' + file.name + '» supera 1,5 MB.'); continue; }
       const dataUrl = await new Promise<string>((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = ko; r.readAsDataURL(file); });
-      setImages(list => [...list, { id: crypto.randomUUID(), name: file.name, dataUrl, role: 'inspiracion', note: '', status: 'Sin analizar' }]);
+      setImages(list => [...list, { id: crypto.randomUUID(), name: file.name, dataUrl, role: 'inspiracion', note: '', status: 'Sin analizar', useInWeb: true }]);
     }
   };
   const analyzeImage = (img: RefImage) => run('Analizando imagen…', async () => {
@@ -168,7 +169,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
         <div className="flex flex-wrap gap-2">{PRESERVE.map(([id, l]) => <label key={id} className={'flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[12px] ' + (preserve.includes(id) ? 'border-brand bg-brandsoft text-brand' : 'border-stroke text-mist')}>
           <input type="checkbox" className="sr-only" checked={preserve.includes(id)} onChange={e => setPreserve(p => e.target.checked ? [...p, id] : p.filter(x => x !== id))} />{l}</label>)}</div>
       </Card>
-      <Card title="Referencias visuales" subtitle="Sube hasta 4 capturas o imágenes y dinos qué te gusta de cada una. Se usan como inspiración, nunca se copian." icon={<ImagePlus size={16} className="text-brand" />}>
+      <Card title="Referencias visuales" subtitle="Sube hasta 4 imágenes. Las marcadas con «Usar esta foto en mi web» se incluyen en la web (y en el ZIP); el resto solo sirven de inspiración." icon={<ImagePlus size={16} className="text-brand" />}>
         <div className="grid gap-3 sm:grid-cols-2">
           {images.map(img => <div key={img.id} className="rounded-lg border border-stroke p-3">
             <div className="flex gap-3"><img src={img.dataUrl} alt={'Referencia ' + img.name} className="h-16 w-24 shrink-0 rounded object-cover" />
@@ -176,6 +177,8 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
                 <button type="button" onClick={() => setImages(l => l.filter(x => x.id !== img.id))} className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-red-500 hover:underline"><Trash2 size={11} /> Quitar</button></div></div>
             <select className={input + ' mt-2 py-1.5'} value={img.role} onChange={e => setImages(l => l.map(x => x.id === img.id ? { ...x, role: e.target.value, analysis: undefined, status: 'Sin analizar' } : x))} aria-label="Uso de la referencia">
               {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+            <label className="mt-2 flex items-center gap-2 text-[11.5px] font-medium text-ink"><input type="checkbox" className="accent-[var(--wu-brand)]" checked={img.useInWeb}
+              onChange={e => setImages(l => l.map(x => x.id === img.id ? { ...x, useInWeb: e.target.checked } : x))} /> Usar esta foto en mi web</label>
             <input className={input + ' mt-2 py-1.5'} placeholder="¿Qué te gusta? Ej. el hero y la tipografía" value={img.note} onChange={e => setImages(l => l.map(x => x.id === img.id ? { ...x, note: e.target.value } : x))} aria-label="Nota sobre la referencia" />
             <button type="button" className={btn + ' mt-2 w-full'} disabled={!!working} onClick={() => void analyzeImage(img)}><Sparkles size={13} /> {img.analysis ? 'Volver a analizar' : 'Analizar con IA'}</button>
             {img.analysis && <p className="mt-2 text-[11px] leading-5 text-mist">{String(img.analysis.composicion || img.analysis.estilo || '')}</p>}
@@ -251,11 +254,12 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
       <ul className="space-y-1 text-[12px] text-mist">
         <li>· Negocio: <span className="text-ink">{form.name || '—'}</span></li>
         <li>· Web analizada: <span className="text-ink">{analysis ? analysis.url + ' (' + MODES.find(m => m[0] === mode)?.[1] + ')' : 'ninguna'}</span></li>
+        <li>· Fotos que se incluirán en la web: <span className="text-ink">{images.filter(i => i.useInWeb).length}</span></li>
         <li>· Webs de referencia: <span className="text-ink">{webRefs.filter(r => r.selected).length}</span> · Referencias visuales: <span className="text-ink">{images.length}</span> · Conservar: <span className="text-ink">{preserve.join(', ') || 'nada en concreto'}</span></li>
         <li>· Dirección: <span className="text-ink">{direction ? direction.resumen.slice(0, 120) : 'automática'}</span></li>
       </ul>
       <div className="mt-5 flex flex-wrap gap-2">
-        <button type="button" className={primary} disabled={!aiReady || busy} onClick={() => onGenerate(direction)}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />} Generar mi web con IA</button>
+        <button type="button" className={primary} disabled={!aiReady || busy} onClick={() => onGenerate(direction, images.filter(i => i.useInWeb).map(i => ({ name: i.name, dataUrl: i.dataUrl, note: i.note, description: String(i.analysis?.composicion || i.analysis?.estilo || '') })))}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />} Generar mi web con IA</button>
         <button type="button" className={btn} disabled={busy} onClick={onLocal}><FilePlus2 size={14} /> Crear sin IA (plantilla editable)</button>
       </div>
       {!aiReady && <p className="mt-2 text-[11px] text-amber-600">{aiReason || 'Motor IA no disponible.'} <button type="button" className="underline" onClick={onCheckAI}>Comprobar</button></p>}

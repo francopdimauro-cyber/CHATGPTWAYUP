@@ -13,7 +13,7 @@ import { PropertyPanel, type ElementInfo } from './property-panel';
 import { CanvasMenu, type CanvasCommand } from './canvas-menu';
 import { SeoPanel } from './seo-panel';
 import { AgentLibrary } from './agent-library';
-import { CreatorWizard, type Direction } from './creator-wizard';
+import { CreatorWizard, type Direction, type ClientPhoto } from './creator-wizard';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock } from '@/lib/canvas-blocks';
@@ -161,6 +161,37 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const activeLayer=layers.find(layer=>layer.index===selected)||
     (activeSection&&activeSection.index===selected?{index:selected,tag:activeSection.tag,label:activeSection.name,depth:0,id:''}:undefined);
   useEffect(()=>()=>preview?.revoke(),[preview]);
+  // Doble marco: la nueva versión se pinta en un marco oculto y solo se muestra cuando ya está lista (sin parpadeo).
+  const frameA=useRef<HTMLIFrameElement>(null),frameB=useRef<HTMLIFrameElement>(null);
+  const [frameHtml,setFrameHtml]=useState<[string,string]>(['','']);
+  const [activeFrame,setActiveFrame]=useState(0);
+  const pendingFrameRef=useRef<number|null>(null);
+  const frameVersion=useRef(0);
+  useEffect(()=>{
+    const html=preview?.html||'';
+    if(!html)return;
+    const target=frameHtml[activeFrame]===''?activeFrame:1-activeFrame;
+    pendingFrameRef.current=target;
+    frameVersion.current+=1;
+    const versioned=html+'<!--wayup-v'+frameVersion.current+'-->';
+    setFrameHtml(old=>{const next=[...old] as [string,string];next[target]=versioned;return next;});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[preview?.html]);
+  function frameLoaded(i:number){
+    // El marco visible vuelve a montarse (al volver del modo Código o de otro paso): se reconecta.
+    if(pendingFrameRef.current===null&&i===activeFrame){
+      const el=(i===0?frameA:frameB).current;
+      if(el){(previewFrame as {current:HTMLIFrameElement|null}).current=el;previewLoaded();}
+      return;
+    }
+    if(pendingFrameRef.current!==i)return;
+    pendingFrameRef.current=null;
+    const el=(i===0?frameA:frameB).current;
+    if(!el)return;
+    (previewFrame as {current:HTMLIFrameElement|null}).current=el;
+    previewLoaded();
+    setActiveFrame(i);
+  }
   useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
   const changeHtml=useCallback((html:string)=>{
     if(!site||html===site.html)return;
@@ -254,15 +285,31 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar el motor IA de Studio.');}
   },[]);
   useEffect(()=>{if(stage==='create')void refreshWebAI()},[stage,refreshWebAI]);
-  async function createWeb(direction:Direction|null=null){
+  async function createWeb(direction:Direction|null=null,photos:ClientPhoto[]=[]){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
     }
     setFileError('');setBusy(true);setNotice('Generando la web con el motor IA conectado…');
     try{
-      const html=await streamGeneratedWeb(briefFrom(form),setNotice,direction);
+      // Fotos del cliente: rutas del proyecto que la IA debe usar; los archivos se añaden al proyecto (y al ZIP).
+      const assets=photos.slice(0,8).map((photo,i)=>{
+        const mime=photo.dataUrl.slice(5,photo.dataUrl.indexOf(';'));
+        const ext=mime==='image/png'?'png':mime==='image/webp'?'webp':'jpg';
+        const bytes=Uint8Array.from(atob(photo.dataUrl.split(',')[1]||''),c=>c.charCodeAt(0));
+        const alt=(photo.note||photo.description||photo.name.replace(/\.[a-z0-9]+$/i,'')).replace(/["<>]/g,'').slice(0,120);
+        return {path:'wayup-media/foto-'+(i+1)+'-'+crypto.randomUUID().slice(0,6)+'.'+ext,bytes,alt};
+      });
+      const photoBrief=assets.length?'\n\nFOTOS REALES DEL CLIENTE (OBLIGATORIO usarlas TODAS en secciones adecuadas, con estas rutas exactas en <img src="...">, alt descriptivo y object-fit:cover):\n'+
+        assets.map(a=>'- '+a.path+' — '+a.alt).join('\n'):'';
+      let html=await streamGeneratedWeb(briefFrom(form)+photoBrief,setNotice,direction);
+      // Si la IA se ha dejado alguna foto, se añade en una galería para no perder ninguna.
+      const missing=assets.filter(a=>!html.includes(a.path));
+      if(missing.length)html=insertSnippet(html,null,'<section data-wc-section="galeria-fotos" data-wc-name="Galería" id="galeria-fotos" style="padding:72px 6%;max-width:1200px;margin:0 auto"><h2 style="margin:0 0 24px">Galería</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">'+
+        missing.map(a=>'<img src="'+a.path+'" alt="'+a.alt+'" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px">').join('')+'</div></section>','after').html;
       const generated=siteFromHtml(html,form.name.trim());
-      changeSite({...generated,source:'generated'});
+      const withPhotos={...generated,assets:{...generated.assets,...Object.fromEntries(assets.map(a=>[a.path,a.bytes]))}};
+      changeSite({...withPhotos,source:'generated'});
+      if(assets.length)setNotice(assets.length+' foto(s) tuyas incluidas en la web'+(missing.length?' ('+missing.length+' añadidas en una galería)':'')+'.');
     }catch(error){
       setFileError(error instanceof Error?error.message:'Error al crear la web.');
       setNotice('El editor local sigue disponible. Comprueba el estado del motor IA y reintenta.');
@@ -747,7 +794,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         </div>
         <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
       </>:<CreatorWizard form={form} setForm={setForm} brief={briefFrom(form)} busy={busy} aiReady={webAIReady} aiReason={webAIReason}
-        onCheckAI={()=>void refreshWebAI()} onGenerate={direction=>void createWeb(direction)} onLocal={createLocalWeb} error={fileError}/>}
+        onCheckAI={()=>void refreshWebAI()} onGenerate={(direction,photos)=>void createWeb(direction,photos)} onLocal={createLocalWeb} error={fileError}/>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-3 py-2 sm:px-4">
@@ -806,9 +853,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             <div className="scroll-subtle absolute inset-0 overflow-auto p-3 sm:p-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
               <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel transition-[max-width] duration-300"
                 style={{maxWidth:device==='mobile'?390:device==='tablet'?820:1280}}>
-                <iframe title="Previsualización segura de la web importada" ref={previewFrame} onLoad={previewLoaded}
-                  sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={preview?.html||''}
-                  className="h-full min-h-[620px] w-full border-0 bg-white"/>
+                <div className="relative h-full min-h-[620px] w-full">
+                  {([0,1] as const).map(i=><iframe key={i} title={i===activeFrame?'Previsualización segura de la web importada':'Preparando vista'}
+                    ref={i===0?frameA:frameB} onLoad={()=>frameLoaded(i)} aria-hidden={i!==activeFrame}
+                    sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={frameHtml[i]} tabIndex={i===activeFrame?0:-1}
+                    className={'absolute inset-0 h-full min-h-[620px] w-full border-0 bg-white '+(i===activeFrame?'':'pointer-events-none invisible')}/>)}
+                </div>
               </div>
             </div>
             </div>
