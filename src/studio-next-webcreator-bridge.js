@@ -1,5 +1,5 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
-import {analyzeWebsite,analyzeReferenceImage,proposeDirection,directionBrief,sanitizeDirection,CreatorError} from './studio-creator-research.js';
+import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError} from './studio-creator-research.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
 
@@ -35,6 +35,7 @@ function studioAIStatus(env){
   return env?.AI?.run&&env?.STUDIO_DB?{
     configured:true,authorized:true,provider:'Workers AI',mode:'studio-preview-ai',
     model:STUDIO_AI_MODEL,reason:'Motor IA alternativo integrado en Studio. WebCreator original permanece protegido.',
+    research:Boolean(env?.TAVILY_API_KEY),
     dailyLimit:STUDIO_AI_DAILY_LIMIT
   }:null;
 }
@@ -204,7 +205,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith(STUDIO_WEB_PREFIX+'/'))return null;
   const route=path.slice(STUDIO_WEB_PREFIX.length);
-  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction'];
+  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction','/research'];
   if(!((route==='/status'&&request.method==='GET')||(POST_ROUTES.includes(route)&&request.method==='POST')))
     return studioWebJson({error:'Ruta WebCreator no permitida.'},405);
   if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)
@@ -235,12 +236,14 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
       return studioWebJson({error:'Has alcanzado el límite diario de análisis ('+STUDIO_CREATOR_DAILY_LIMIT+').'},429);
     try{
       if(route==='/analyze-url')return studioWebJson({analysis:await analyzeWebsite(data?.url)});
+      if(route==='/research')return studioWebJson({research:await researchReferences(env,{industry:data?.industry,style:data?.style,goal:data?.goal,location:data?.location})});
       if(route==='/analyze-image')return studioWebJson({reference:await analyzeReferenceImage(env,{image:data?.image,role:data?.role,note:data?.note})});
       return studioWebJson({direction:await proposeDirection(env,{brief:String(data?.brief||'').slice(0,8000),analysis:data?.analysis,
-        images:Array.isArray(data?.images)?data.images.slice(0,4):[],freedom:data?.freedom,preserve:data?.preserve,mode:data?.mode})});
+        images:Array.isArray(data?.images)?data.images.slice(0,4):[],freedom:data?.freedom,preserve:data?.preserve,mode:data?.mode,
+        research:Array.isArray(data?.research)?data.research.slice(0,6):[]})});
     }catch(error){
       await studioAIReleaseQuota(env.STUDIO_DB,owner+':creator').catch(()=>{});
-      if(error instanceof CreatorError)return studioWebJson({error:error.message,code:error.code},error.code==='url'||error.code==='image'?400:502);
+      if(error instanceof CreatorError)return studioWebJson({error:error.message,code:error.code},error.code==='url'||error.code==='image'?400:error.code==='not_configured'?503:502);
       console.warn('studio-creator error',route,String(error?.message||error).slice(0,160));
       return studioWebJson({error:'No se pudo completar el análisis. Vuelve a intentarlo.'},500);
     }

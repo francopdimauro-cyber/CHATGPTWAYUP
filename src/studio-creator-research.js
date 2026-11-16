@@ -144,6 +144,48 @@ export async function analyzeWebsite(rawUrl,{fetcher=fetch}={}){
   return {...data,colors,fonts,source:'verificado',analyzedAt:new Date().toISOString()};
 }
 
+/* ── Investigación web real (Tavily) ──────────────────────────────────────── */
+const SKIP_DOMAINS=/(^|\.)(facebook|instagram|tiktok|twitter|x|linkedin|youtube|pinterest|tripadvisor|yelp|amazon|wikipedia|reddit|google|booking)\.[a-z.]+$/i;
+/** Consultas deterministas a partir del briefing (sin IA): cada una busca webs reales del sector con buen diseño. */
+export function researchQueries({industry,style,goal,location}){
+  const sector=clean(industry,60)||'negocio local';
+  const look=clean(style,60)||'diseño profesional moderno';
+  return [
+    sector+' web '+look+' diseño premium',
+    'mejores webs de '+sector+(location?' '+clean(location,40):'')+' diseño',
+    sector+' website '+look+' '+(clean(goal,40)||'reservas contacto')
+  ].map(q=>q.replace(/\s+/g,' ').trim()).filter((q,i,a)=>a.indexOf(q)===i).slice(0,3);
+}
+/** Busca referencias reales. Devuelve resultados verificables (URL pública, título, extracto); nunca inventa. */
+export async function researchReferences(env,brief,{fetcher=fetch}={}){
+  const key=typeof env?.TAVILY_API_KEY==='string'?env.TAVILY_API_KEY.trim():'';
+  if(!key)throw new CreatorError('La búsqueda en internet no está configurada (falta la clave del proveedor).','not_configured');
+  const queries=researchQueries(brief||{});
+  const seen=new Set(),results=[];
+  for(const query of queries){
+    let res;
+    try{
+      res=await fetcher('https://api.tavily.com/search',{method:'POST',signal:AbortSignal.timeout(TIMEOUT_MS),
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+        body:JSON.stringify({query,search_depth:'basic',max_results:8,include_answer:false,include_images:false})});
+    }catch{throw new CreatorError('El buscador no respondió. Vuelve a intentarlo.','provider');}
+    if(res.status===401||res.status===403)throw new CreatorError('La clave del buscador no es válida o ha caducado.','provider');
+    if(res.status===429||res.status===432||res.status===433)throw new CreatorError('Se ha alcanzado el límite gratuito del buscador este mes.','provider_limit');
+    if(!res.ok)throw new CreatorError('El buscador devolvió un error ('+res.status+').','provider');
+    const data=await res.json().catch(()=>({}));
+    for(const r of Array.isArray(data?.results)?data.results:[]){
+      let url;try{url=safePublicUrl(r?.url);}catch{continue;}
+      const host=url.hostname.replace(/^www\./,'');
+      if(SKIP_DOMAINS.test(host)||seen.has(host))continue;
+      seen.add(host);
+      results.push({url:url.origin+url.pathname,host,title:clean(r?.title,120)||host,snippet:clean(r?.content,240),query});
+      if(results.length>=10)break;
+    }
+    if(results.length>=10)break;
+  }
+  return {queries,results,provider:'Tavily',searchedAt:new Date().toISOString()};
+}
+
 /* ── IA: referencias visuales y dirección creativa ───────────────────────── */
 export const VISION_MODEL='@cf/meta/llama-4-scout-17b-16e-instruct';
 export const DIRECTION_MODEL='@cf/google/gemma-4-26b-a4b-it';
@@ -219,7 +261,7 @@ export function sanitizeDirection(d){
     composicion:clean(d?.composicion,400),secciones:sections.length?sections:[{titulo:'Inicio',objetivo:'Presentar el negocio y su propuesta'},{titulo:'Servicios',objetivo:'Explicar la oferta real'},{titulo:'Contacto',objetivo:'Facilitar el contacto'}],
     cta:clean(d?.cta,80),imagenes:clean(d?.imagenes,240)};
 }
-export async function proposeDirection(env,{brief,analysis,images,freedom,preserve,mode}){
+export async function proposeDirection(env,{brief,analysis,images,freedom,preserve,mode,research}){
   const level={conservador:'conservadora: mejora sin sorprender',equilibrado:'equilibrada: moderna con personalidad',atrevido:'atrevida: rompedora pero profesional'}[freedom]||'equilibrada';
   const keep=Array.isArray(preserve)?preserve.filter(x=>['colores','logo','fotografias','textos','estructura','estilo'].includes(x)):[];
   const facts=[
@@ -228,6 +270,9 @@ export async function proposeDirection(env,{brief,analysis,images,freedom,preser
       titulo:analysis.title,descripcion:analysis.description,colores:(analysis.colors||[]).slice(0,6).map(c=>c.hex),
       fuentes:analysis.fonts,navegacion:analysis.nav,titulares:(analysis.headings||[]).slice(0,12).map(h=>h.text)}).slice(0,4000):'',
     Array.isArray(images)&&images.length?'REFERENCIAS VISUALES ANALIZADAS:\n'+JSON.stringify(images.slice(0,4)).slice(0,4000):'',
+    Array.isArray(research)&&research.length?'WEBS DE REFERENCIA ENCONTRADAS EN INTERNET (aprobadas por el usuario; solo inspiración de patrones, nunca copiar marca, textos ni imágenes):\n'+
+      JSON.stringify(research.slice(0,6).map(r=>({titulo:clean(r?.title,100),web:clean(r?.host,60),extracto:clean(r?.snippet,200),
+        colores:Array.isArray(r?.colors)?r.colors.slice(0,5):undefined,fuentes:Array.isArray(r?.fonts)?r.fonts.slice(0,3):undefined}))).slice(0,4000):'',
     keep.length?'EL USUARIO QUIERE CONSERVAR: '+keep.join(', ')+'. Estas restricciones mandan sobre cualquier referencia.':''
   ].filter(Boolean).join('\n\n');
   const sys='Eres director creativo de una agencia web premium. Define una dirección de arte ORIGINAL y específica para este negocio (nada genérico, no copies referencias). '+

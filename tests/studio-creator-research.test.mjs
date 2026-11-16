@@ -80,3 +80,27 @@ test('Rutas del creador: requieren identidad, mismo origen y validan entradas',a
   const dir=await wayupStudioWebCreatorBridge(req('/direction',{brief:'Negocio ficticio'}),env,ctx);
   assert.equal(dir.status,200);assert.ok((await dir.json()).direction.paleta.acento);
 });
+
+test('Búsqueda real: sin clave no se simula nada',async()=>{
+  await assert.rejects(C.researchReferences({},{industry:'restaurante'}),/no está configurada/);
+});
+test('Búsqueda real: resultados verificables, sin redes sociales, sin duplicados ni URLs privadas',async()=>{
+  const calls=[];
+  const fetcher=async(url,init)=>{calls.push({url,auth:init.headers.Authorization,body:JSON.parse(init.body)});
+    return new Response(JSON.stringify({results:[
+      {url:'https://restaurante-ficticio.test/carta',title:'Restaurante Ficticio',content:'Cocina de montaña'},
+      {url:'https://www.instagram.com/x',title:'IG',content:''},
+      {url:'https://restaurante-ficticio.test/otra',title:'Duplicado',content:''},
+      {url:'http://127.0.0.1/admin',title:'Interna',content:''},
+      {url:'https://otra-web.test/',title:'Otra',content:'Diseño editorial'}]}),{headers:{'content-type':'application/json'}});};
+  const r=await C.researchReferences({TAVILY_API_KEY:'clave-de-prueba'},{industry:'restaurante',style:'editorial'},{fetcher});
+  assert.equal(calls[0].url,'https://api.tavily.com/search');
+  assert.equal(calls[0].auth,'Bearer clave-de-prueba');
+  assert.ok(calls[0].body.query.includes('restaurante'));
+  assert.deepEqual(r.results.map(x=>x.host),['restaurante-ficticio.test','otra-web.test']);
+  assert.equal(r.provider,'Tavily');
+});
+test('Búsqueda real: límite gratuito y clave inválida con mensajes claros',async()=>{
+  await assert.rejects(C.researchReferences({TAVILY_API_KEY:'k'},{industry:'x'},{fetcher:async()=>new Response('',{status:432})}),/límite gratuito/);
+  await assert.rejects(C.researchReferences({TAVILY_API_KEY:'k'},{industry:'x'},{fetcher:async()=>new Response('',{status:401})}),/no es válida/);
+});

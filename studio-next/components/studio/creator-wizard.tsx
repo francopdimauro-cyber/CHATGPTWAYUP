@@ -15,6 +15,7 @@ type Analysis = {
   headings: { tag: string; text: string }[]; contacts: { emails: string[]; phones: string[]; whatsapp: boolean; socials: string[] };
   images: { src: string; alt: string }[]; logo: string; forms: number;
 };
+type WebRef = { url: string; host: string; title: string; snippet: string; selected: boolean; colors?: string[]; fonts?: string[]; status?: string };
 type RefImage = { id: string; name: string; dataUrl: string; role: string; note: string; analysis?: Record<string, unknown>; status: string };
 type Props = {
   form: Record<string, string>; setForm(f: Record<string, string>): void; brief: string; busy: boolean;
@@ -61,6 +62,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
   const [preserve, setPreserve] = useState<string[]>([]);
   const [images, setImages] = useState<RefImage[]>([]);
   const [freedom, setFreedom] = useState('equilibrado');
+  const [webRefs, setWebRefs] = useState<WebRef[]>([]);
   const [direction, setDirection] = useState<Direction | null>(null);
   const [working, setWorking] = useState('');
   const [message, setMessage] = useState('');
@@ -89,11 +91,21 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
     const r = await api('analyze-image', { image: img.dataUrl, role: img.role, note: img.note });
     setImages(list => list.map(x => x.id === img.id ? { ...x, analysis: r.reference, status: 'Analizada' } : x));
   });
+  const search = () => run('Buscando webs de referencia reales…', async () => {
+    const r = await api('research', { industry: form.industry, style: form.style, goal: form.goal, location: form.contact });
+    setWebRefs((r.research.results as WebRef[]).map((x, i) => ({ ...x, selected: i < 4 })));
+    if (!r.research.results.length) setMessage('El buscador no encontró webs adecuadas. Prueba a detallar el sector o el estilo.');
+  });
+  const analyzeRef = (ref: WebRef) => run('Analizando ' + ref.host + '…', async () => {
+    const r = await api('analyze-url', { url: ref.url });
+    setWebRefs(l => l.map(x => x.url === ref.url ? { ...x, colors: r.analysis.colors.slice(0, 6).map((c: { hex: string }) => c.hex), fonts: r.analysis.fonts, status: 'Analizada' } : x));
+  });
   const propose = () => run('Creando la dirección creativa…', async () => {
     const r = await api('direction', {
       brief, mode, freedom, preserve,
       analysis: analysis ? { title: analysis.title, description: analysis.description, colors: analysis.colors, fonts: analysis.fonts, nav: analysis.nav, headings: analysis.headings } : null,
       images: images.filter(i => i.analysis || i.note).map(i => ({ rol: i.role, nota: i.note, analisis: i.analysis || null })),
+      research: webRefs.filter(r => r.selected).map(({ title, host, snippet, colors, fonts }) => ({ title, host, snippet, colors, fonts })),
     });
     setDirection(r.direction);
   });
@@ -174,8 +186,26 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
           </label>}
         </div>
       </Card>
-      <Card title="Buscar inspiración en internet" subtitle="Requiere conectar un proveedor de búsqueda web. Aún no está configurado, así que no se simula: usa tu web y tus referencias." icon={<Search size={16} className="text-faint" />}>
-        <button type="button" className={btn} disabled>Pendiente de configurar</button>
+      <Card title="Buscar inspiración en internet" subtitle="Buscamos webs reales de tu sector con buen diseño. Elige las que te inspiren: se usan como referencia de patrones, nunca se copian." icon={<Search size={16} className="text-brand" />}>
+        <button type="button" className={btn} disabled={!!working} onClick={() => void search()}>
+          {working.startsWith('Buscando') ? <LoaderCircle size={14} className="animate-spin" /> : <Search size={14} />} {webRefs.length ? 'Buscar de nuevo' : 'Buscar inspiración'}</button>
+        {webRefs.length > 0 && <ul className="mt-3 space-y-2">
+          {webRefs.map(r => <li key={r.url} className={'rounded-lg border p-3 ' + (r.selected ? 'border-brand/50 bg-brandsoft/40' : 'border-stroke')}>
+            <div className="flex items-start gap-2.5">
+              <input type="checkbox" className="mt-1 accent-[var(--wu-brand)]" checked={r.selected} aria-label={'Usar ' + r.host + ' como referencia'}
+                onChange={e => setWebRefs(l => l.map(x => x.url === r.url ? { ...x, selected: e.target.checked } : x))} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12.5px] font-semibold">{r.title}</p>
+                <a href={r.url} target="_blank" rel="noopener noreferrer" className="truncate text-[11px] text-brand hover:underline">{r.host}</a>
+                {r.snippet && <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-mist">{r.snippet}</p>}
+                {r.colors && <div className="mt-2 flex items-center gap-1">{r.colors.map(c => <span key={c} title={c} className="h-4 w-4 rounded-full border border-stroke" style={{ background: c }} />)}
+                  {r.fonts?.length ? <span className="ml-2 text-[10.5px] text-faint">{r.fonts.join(', ')}</span> : null}</div>}
+              </div>
+              <button type="button" className={btn + ' shrink-0 px-2 text-[10.5px]'} disabled={!!working} onClick={() => void analyzeRef(r)}>{r.status ? 'Analizada' : 'Analizar'}</button>
+            </div>
+          </li>)}
+        </ul>}
+        <p className="mt-2 text-[10.5px] text-faint">Resultados reales del buscador Tavily. Solo se usan las marcadas.</p>
       </Card>
     </div>}
 
@@ -221,7 +251,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
       <ul className="space-y-1 text-[12px] text-mist">
         <li>· Negocio: <span className="text-ink">{form.name || '—'}</span></li>
         <li>· Web analizada: <span className="text-ink">{analysis ? analysis.url + ' (' + MODES.find(m => m[0] === mode)?.[1] + ')' : 'ninguna'}</span></li>
-        <li>· Referencias visuales: <span className="text-ink">{images.length}</span> · Conservar: <span className="text-ink">{preserve.join(', ') || 'nada en concreto'}</span></li>
+        <li>· Webs de referencia: <span className="text-ink">{webRefs.filter(r => r.selected).length}</span> · Referencias visuales: <span className="text-ink">{images.length}</span> · Conservar: <span className="text-ink">{preserve.join(', ') || 'nada en concreto'}</span></li>
         <li>· Dirección: <span className="text-ink">{direction ? direction.resumen.slice(0, 120) : 'automática'}</span></li>
       </ul>
       <div className="mt-5 flex flex-wrap gap-2">
