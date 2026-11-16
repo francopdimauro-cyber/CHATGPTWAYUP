@@ -194,6 +194,8 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   }
   for(const link of Array.from(doc.querySelectorAll('link[rel="stylesheet"]'))){
     const href=link.getAttribute('href')||'';
+    // Google Fonts (licencia libre, solo CSS + fuentes): se mantiene para ver la tipografía real.
+    if(/^https:\/\/fonts\.googleapis\.com\/css2?\?/.test(href)){link.setAttribute('referrerpolicy','no-referrer');continue;}
     const path=href.split('?')[0].replace(/^\.\//,'');
     const folder=site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'';
     const bytes=site.assets[folder+path]||site.assets[path];
@@ -205,7 +207,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   }
   const csp=doc.createElement('meta');
   csp.httpEquiv='Content-Security-Policy';
-  csp.content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline' blob:; font-src blob: data:; connect-src 'none'; form-action 'none'; object-src 'none'; script-src 'none'; frame-src 'none'; base-uri 'none'";
+  csp.content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline' blob: https://fonts.googleapis.com; font-src blob: data: https://fonts.gstatic.com; connect-src 'none'; form-action 'none'; object-src 'none'; script-src 'none'; frame-src 'none'; base-uri 'none'";
   doc.head.prepend(csp);
   const previewStyles=doc.createElement('style');
   previewStyles.textContent='[data-wayup-edit]:hover{outline:1px dashed #668dff!important;outline-offset:2px;cursor:default}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #3d5cff!important;outline-offset:2px}[data-wayup-hidden]{opacity:.32!important;outline:1px dashed #9aa3b5!important}[data-wayup-editing]{outline:2px solid #f5b400!important;outline-offset:3px;cursor:text!important}[data-wayup-editing]:focus{outline-style:solid!important}';

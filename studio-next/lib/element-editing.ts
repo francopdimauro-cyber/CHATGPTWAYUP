@@ -69,13 +69,53 @@ export function validateStyle(prop:string,raw:string):string{
     throw Error('«'+value+'» no es un valor válido para '+prop+'.');
   return value;
 }
+/** Lee el atributo style como mapa propiedad → valor (sin !important). */
+function readInline(node:HTMLElement):Map<string,string>{
+  const map=new Map<string,string>();
+  for(const decl of (node.getAttribute('style')||'').split(';')){
+    const at=decl.indexOf(':');if(at<0)continue;
+    const prop=decl.slice(0,at).trim().toLowerCase(),value=decl.slice(at+1).replace(/!\s*important\s*$/i,'').trim();
+    if(prop&&value)map.set(prop,value);
+  }
+  return map;
+}
 export function setStyles(html:string,index:number,styles:Record<string,string>):EditResult{
   const doc=parse(html);const node=nodeAt(doc,index);
+  const inline=readInline(node);
   for(const [prop,raw] of Object.entries(styles)){
     const value=validateStyle(prop,raw);
-    if(value)node.style.setProperty(prop,value);else node.style.removeProperty(prop);
+    if(value)inline.set(prop,value);else inline.delete(prop);
+    // Texto con relleno degradado (background-clip:text): el color visible lo marca -webkit-text-fill-color.
+    if(prop==='color'){if(value)inline.set('-webkit-text-fill-color',value);else inline.delete('-webkit-text-fill-color');}
   }
-  if(!node.getAttribute('style'))node.removeAttribute('style');
+  // Prioridad «important»: el cambio del usuario gana a reglas !important o muy específicas del CSS original.
+  // Los valores ya están validados (sin «;», llaves ni comentarios), así que la reconstrucción es segura.
+  const text=[...inline].map(([p,v])=>p+': '+v+' !important').join('; ');
+  if(text)node.setAttribute('style',text);else node.removeAttribute('style');
+  return {html:serialize(doc),index};
+}
+
+/* ── Tipografías ─────────────────────────────────────────────────────────── */
+const SYSTEM_FAMILIES=new Set(['serif','sans-serif','monospace','cursive','fantasy','system-ui','ui-sans-serif','ui-serif','ui-monospace','-apple-system',
+  'arial','helvetica','helvetica neue','georgia','times new roman','times','verdana','tahoma','trebuchet ms','courier new','segoe ui','palatino','palatino linotype',
+  'garamond','century gothic','impact','iowan old style','avenir','avenir next','menlo','consolas','sf mono','gill sans','optima','didot','baskerville']);
+/** Primera familia de un valor CSS font-family, sin comillas. */
+export function primaryFamily(css:string):string{return (css.split(',')[0]||'').trim().replace(/^["']|["']$/g,'');}
+/** Aplica una tipografía y, si es de Google Fonts (licencia libre), enlaza su hoja para que se vea igual en el editor y al exportar. */
+export function setFont(html:string,index:number,familyCss:string):EditResult{
+  const family=primaryFamily(familyCss);
+  if(!family||family.length>60||!/^[\p{L}\p{N} ._-]+$/u.test(family))throw Error('Nombre de tipografía no válido.');
+  const rest=familyCss.split(',').slice(1).map(x=>x.trim()).filter(Boolean).join(', ');
+  const value=(/\s/.test(family)?"'"+family+"'":family)+', '+(rest||'sans-serif');
+  const styled=setStyles(html,index,{'font-family':value});
+  if(SYSTEM_FAMILIES.has(family.toLowerCase())||family.startsWith('WAYUP '))return styled;
+  const doc=parse(styled.html);
+  const href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(family).replace(/%20/g,'+')+':ital,wght@0,400;0,700;1,400&display=swap';
+  const exists=Array.from(doc.head.querySelectorAll('link[rel="stylesheet"]')).some(l=>(l.getAttribute('href')||'').includes('family='+encodeURIComponent(family).replace(/%20/g,'+')));
+  if(!exists){
+    const link=doc.createElement('link');link.setAttribute('rel','stylesheet');link.setAttribute('href',href);link.setAttribute('data-wc-font',family);
+    doc.head.append(link);
+  }
   return {html:serialize(doc),index};
 }
 

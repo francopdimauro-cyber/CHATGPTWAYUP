@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Link2, Strikethrough, Type, Underline } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { ButtonStyles } from './button-styles';
+import { FontPicker } from './font-picker';
 
 export type ElementInfo = {
   index: number; tag: string; textEditable: boolean; text: string;
@@ -14,6 +15,8 @@ export type ElementInfo = {
 type Props = {
   info: ElementInfo;
   onStyles(styles: Record<string, string>): void;
+  /** Cambiar tipografía (enlaza Google Fonts si hace falta). */
+  onFont?(familyCss: string): void;
   /** Vista previa en vivo (sin historial) mientras se arrastra un control. */
   onPreview?(styles: Record<string, string>): void;
   onAttrs(attrs: Record<string, string>): void;
@@ -119,9 +122,10 @@ function Box({ prefix, info, onStyles }: { prefix: 'margin' | 'padding'; info: E
     </div>
   </div>;
 }
+const primary = (css: string) => (css.split(',')[0] || '').trim().replace(/^["']|["']$/g, '') || '—';
 const SHADOWS: [string, string][] = [['', 'Sin sombra'], ['0 1px 3px rgba(0, 0, 0, 0.12)', 'Sutil'], ['0 8px 24px rgba(0, 0, 0, 0.14)', 'Media'], ['0 20px 50px rgba(0, 0, 0, 0.22)', 'Profunda'], ['0 0 0 1px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.12)', 'Flotante']];
 
-export function PropertyPanel({ info, onStyles, onPreview, onAttrs, onText, onEditText, extra }: Props) {
+export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, extra }: Props) {
   const preview = (p: string) => (val: string) => onPreview?.({ [p]: val });
   const v = (p: string) => info.inline[p] || '';
   const c = (p: string) => info.computed[p] || '';
@@ -154,7 +158,8 @@ export function PropertyPanel({ info, onStyles, onPreview, onAttrs, onText, onEd
     </Group>}
 
     <Group title="Tipografía" open>
-      <div><span className={label}>Familia</span><Field ariaLabel="Familia tipográfica" mono={false} value={v('font-family')} placeholder={c('font-family').slice(0, 60)} onCommit={set('font-family')} /></div>
+      <div><span className={label}>Familia · {primary(v('font-family') || c('font-family'))}</span>
+        <FontPicker value={v('font-family') || c('font-family')} onChange={family => onFont ? onFont(family) : onStyles({ 'font-family': family })} /></div>
       <div className="grid grid-cols-2 gap-1.5">
         <div><span className={label}>Tamaño</span><Field ariaLabel="Tamaño de letra" value={v('font-size')} placeholder={c('font-size')} onCommit={set('font-size')} /></div>
         <div><span className={label}>Grosor</span><Select ariaLabel="Grosor" value={v('font-weight')} onChange={set('font-weight')}

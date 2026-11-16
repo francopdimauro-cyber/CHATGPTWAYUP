@@ -30,7 +30,7 @@ const idx=(html,sel)=>{const d=doc(html);return F.editableHtmlNodes(d).indexOf(d
 const p=idx(HTML,'#p1');
 let r=E.setStyles(HTML,p,{'font-size':'22px','color':'rgba(10, 20, 30, 0.5)','letter-spacing':'0.04em','margin-top':'12px'});
 let el=doc(r.html).querySelector('#p1');
-assert.equal(el.style.getPropertyValue('font-size'),'22px');
+assert.match(el.getAttribute('style'),/font-size: 22px/);
 assert.match(el.getAttribute('style'),/letter-spacing/);
 r=E.setStyles(r.html,p,{'font-size':''});
 assert.doesNotMatch(doc(r.html).querySelector('#p1').getAttribute('style')||'',/font-size/,'Vacío elimina la propiedad');
@@ -101,5 +101,21 @@ assert.ok(E.seoChecks('<!DOCTYPE html><html><head></head><body><h1>a</h1><h1>b</
 const hiddenSite=F.siteFromHtml(E.toggleHidden(HTML,p).html,'Prueba');
 assert.match(F.safePreview(hiddenSite).html,/data-wayup-hidden/);
 assert.ok(doc(F.htmlForExport(hiddenSite)).querySelector('#p1').hasAttribute('hidden'),'Sigue oculto al exportar');
+
+// Prioridad sobre !important del CSS original y texto con relleno degradado
+r=E.setStyles(HTML,p,{color:'#123456'});
+el=doc(r.html).querySelector('#p1');
+assert.match(el.getAttribute('style'),/color:\s*#123456\s*!important/i,'El color del usuario gana a !important');
+assert.match(el.getAttribute('style'),/-webkit-text-fill-color:\s*#123456/i,'Cubre textos con relleno degradado');
+// Tipografía: Google Fonts enlazada una sola vez; las del sistema no se enlazan
+r=E.setFont(HTML,p,'Playfair Display');
+assert.match(doc(r.html).querySelector('#p1').getAttribute('style'),/font-family:\s*'Playfair Display', sans-serif/);
+assert.equal(doc(r.html).querySelectorAll('link[data-wc-font]').length,1);
+r=E.setFont(r.html,h1,'Playfair Display, serif');
+assert.equal(doc(r.html).querySelectorAll('link[href*="Playfair+Display"]').length,1,'No duplica la hoja');
+r=E.setFont(HTML,p,'Georgia, serif');
+assert.equal(doc(r.html).querySelectorAll('link[data-wc-font]').length,0);
+assert.throws(()=>E.setFont(HTML,p,'x"><script>'),/no válido/);
+assert.match(F.safePreview(F.siteFromHtml(E.setFont(HTML,p,'Lora').html,'P')).html,/fonts\.googleapis\.com/,'La vista previa conserva Google Fonts');
 
 console.log('Correcto: estilos validados, texto en línea seguro, atributos, copiar/pegar/duplicar, mover, ocultar, eliminar y SEO.');
