@@ -272,11 +272,23 @@ export function attachLocalImage(site:SiteBundle,index:number,data:Uint8Array):S
   let html:string;
   if(selected.tagName==='IMG'){
     html=patchSelectedElement(site.html,index,{src:file});
-  }else if(['A','HEADER','DIV','SECTION','FIGURE'].includes(selected.tagName)){
+  }else if(['A','HEADER','NAV','DIV','SECTION','FIGURE','ARTICLE','ASIDE','MAIN','FOOTER'].includes(selected.tagName)){
     const image=doc.createElement('img');
-    image.src=file;image.alt='Logotipo o imagen del negocio';
-    image.style.cssText='display:inline-block;width:42px;max-width:100%;height:auto;vertical-align:middle;object-fit:contain;margin-right:10px';
-    selected.prepend(image);
+    image.src=file;
+    const logo=['A','HEADER','NAV'].includes(selected.tagName)||!!selected.closest('header,nav');
+    if(logo){
+      // Logotipo: altura de cabecera, ancho automático, junto al texto.
+      image.alt='Logotipo';
+      image.style.cssText='display:inline-block;height:44px;width:auto;max-width:220px;vertical-align:middle;object-fit:contain;margin-right:10px';
+      selected.prepend(image);
+    }else{
+      // Foto de contenido: ancho completo y adaptable. En el bloque «Imagen», sustituye al marcador.
+      image.alt='Imagen';
+      image.style.cssText='display:block;width:100%;max-width:100%;height:auto;object-fit:cover;border-radius:12px';
+      const placeholder=selected.tagName==='FIGURE'?selected.querySelector(':scope > div'):null;
+      if(placeholder&&!placeholder.querySelector('img'))placeholder.replaceWith(image);
+      else selected.prepend(image);
+    }
     html=serializeEditedHtml(doc);
   }else throw Error('Selecciona una imagen existente o su contenedor/cabecera para adjuntar un logo.');
   return {...site,html,

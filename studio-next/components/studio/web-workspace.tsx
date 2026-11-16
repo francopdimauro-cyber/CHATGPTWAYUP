@@ -892,7 +892,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               onAttrs={attrs=>tryEdit(()=>setAttributes(site.html,elementInfo.index,attrs),'Atributos actualizados.')}
               onText={text=>tryEdit(()=>setInlineContent(site.html,elementInfo.index,escapeText(text)),'Texto actualizado.')}
               onEditText={()=>startTextEdit(elementInfo.index)}
-              extra={['IMG','A','HEADER','DIV','SECTION','FIGURE'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
+              extra={['IMG','A','HEADER','NAV','DIV','SECTION','FIGURE','ARTICLE','ASIDE','MAIN','FOOTER'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold"><ImagePlus size={15} className="text-brand"/> {activeLayer?.tag==='IMG'?'Sustituir imagen o logo':'Adjuntar logo o imagen'}</div>
               <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Adjuntar imagen para reemplazar la seleccionada"
                 className="block w-full text-[10px] text-mist" onChange={e=>{const file=e.target.files?.[0];if(file)void changeImage(file);e.currentTarget.value='';}}/>
