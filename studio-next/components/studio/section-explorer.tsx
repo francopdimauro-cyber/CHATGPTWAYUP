@@ -22,7 +22,7 @@ const TAG_ICON_LABEL:Record<string,string>={H1:'H1',H2:'H2',H3:'H3',H4:'H4',P:'�
 /** Explorador de secciones del HTML real: menú ⋯ y clic derecho con las mismas acciones; usable con toque. */
 export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobileOpen,onCloseMobile,onElementMenu}:{
   sections:HtmlSection[];selectedIndex:number|null;
-  onSelect(index:number):void;onAction(action:SectionAction):void;
+  onSelect(index:number,additive?:boolean):void;onAction(action:SectionAction):void;
   mobileOpen:boolean;onCloseMobile():void;
   /** Clic derecho sobre un elemento interno: abre el menú de elemento del lienzo. */
   onElementMenu?(index:number,x:number,y:number):void;
@@ -143,7 +143,7 @@ export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobile
                 onChange={e=>setRenaming({key:s.key,value:e.target.value})} onBlur={()=>setRenaming(null)}
                 onKeyDown={e=>{if(e.key==='Escape')setRenaming(null);}}
                 className="w-full rounded border border-brand bg-elevated px-1.5 py-1 text-[11.5px] text-ink outline-none"/>
-            </form>:<button type="button" onClick={()=>onSelect(s.index)} onDoubleClick={()=>setRenaming({key:s.key,value:s.name})}
+            </form>:<button type="button" onClick={e=>onSelect(s.index,e.shiftKey)} onDoubleClick={()=>setRenaming({key:s.key,value:s.name})}
               className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left text-[12px] font-medium" title={s.name+' · '+s.tag.toLowerCase()}>
               <PanelTop size={13} className={sectionSelected?'text-brand':'text-faint'}/>
               <span className="truncate">{s.name}</span>
@@ -156,7 +156,7 @@ export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobile
           </div>
           {isOpen&&children.length>0&&<ul role="group" className="mb-1">
             {children.map(c=><li key={c.index} role="treeitem" aria-selected={selectedIndex===c.index}>
-              <button type="button" onClick={()=>onSelect(c.index)} style={{paddingLeft:30+c.depth*10}}
+              <button type="button" onClick={e=>onSelect(c.index,e.shiftKey)} style={{paddingLeft:30+c.depth*10}}
                 onContextMenu={e=>{if(!onElementMenu)return;e.preventDefault();onSelect(c.index);onElementMenu(c.index,e.clientX,e.clientY);}}
                 className={'flex min-h-[30px] w-full items-center gap-2 rounded-md pr-2 text-left text-[11px] '+(selectedIndex===c.index?'bg-brandsoft text-brand':'text-mist hover:bg-raised hover:text-ink')}>
                 <span className="w-7 shrink-0 font-mono text-[9px] text-faint">{TAG_ICON_LABEL[c.tag]||c.tag.toLowerCase()}</span>

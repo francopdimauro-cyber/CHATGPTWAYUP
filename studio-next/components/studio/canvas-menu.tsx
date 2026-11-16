@@ -1,13 +1,13 @@
 'use client';
 import { useEffect, useRef } from 'react';
-import { ArrowDown, ArrowUp, ClipboardPaste, Copy, CopyPlus, Eye, EyeOff, Scissors, SquareDashedMousePointer, Trash2, Type } from 'lucide-react';
+import { ArrowDown, ArrowUp, ClipboardPaste, Copy, CopyPlus, Eye, EyeOff, Group, Scissors, SquareDashedMousePointer, Trash2, Type, Ungroup } from 'lucide-react';
 
-export type CanvasCommand = 'edit-text' | 'copy' | 'cut' | 'paste' | 'paste-inside' | 'duplicate' | 'hide' | 'up' | 'down' | 'parent' | 'delete';
+export type CanvasCommand = 'edit-text' | 'copy' | 'cut' | 'paste' | 'paste-inside' | 'duplicate' | 'hide' | 'up' | 'down' | 'parent' | 'delete' | 'group' | 'ungroup';
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
 /** Menú contextual del lienzo: solo muestra acciones aplicables al elemento seleccionado. */
-export function CanvasMenu({ x, y, tag, canEditText, canPaste, hidden, hasParent, onCommand, onClose }: {
-  x: number; y: number; tag: string; canEditText: boolean; canPaste: boolean; hidden: boolean; hasParent: boolean;
+export function CanvasMenu({ x, y, tag, canEditText, canPaste, hidden, hasParent, multiCount = 1, inGroup = false, onCommand, onClose }: {
+  x: number; y: number; tag: string; canEditText: boolean; canPaste: boolean; hidden: boolean; hasParent: boolean; multiCount?: number; inGroup?: boolean;
   onCommand(c: CanvasCommand): void; onClose(): void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -31,6 +31,9 @@ export function CanvasMenu({ x, y, tag, canEditText, canPaste, hidden, hasParent
     <button type="button" role="menuitem" className={item} disabled={!canPaste} onClick={() => run('paste')}><ClipboardPaste size={14} /> Pegar después {key(MOD + 'V')}</button>
     <button type="button" role="menuitem" className={item} disabled={!canPaste || tag === 'IMG'} onClick={() => run('paste-inside')}><ClipboardPaste size={14} /> Pegar dentro</button>
     <button type="button" role="menuitem" className={item} onClick={() => run('duplicate')}><CopyPlus size={14} /> Duplicar {key(MOD + 'D')}</button>
+    <div className="my-1 h-px bg-stroke" />
+    <button type="button" role="menuitem" className={item} disabled={multiCount < 2} onClick={() => run('group')}><Group size={14} /> Agrupar {multiCount > 1 ? '(' + multiCount + ')' : ''} {key(MOD + 'G')}</button>
+    <button type="button" role="menuitem" className={item} disabled={!inGroup} onClick={() => run('ungroup')}><Ungroup size={14} /> Separar grupo {key(MOD + 'Mayús+G')}</button>
     <div className="my-1 h-px bg-stroke" />
     <button type="button" role="menuitem" className={item} onClick={() => run('up')}><ArrowUp size={14} /> Mover arriba {key('Alt+↑')}</button>
     <button type="button" role="menuitem" className={item} onClick={() => run('down')}><ArrowDown size={14} /> Mover abajo {key('Alt+↓')}</button>

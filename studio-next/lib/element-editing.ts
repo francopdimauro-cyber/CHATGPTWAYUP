@@ -328,3 +328,33 @@ export function seoChecks(html:string):string[]{
   if(!doc.documentElement.lang)out.push('Falta el idioma del documento (lang).');
   return out;
 }
+
+/* ── Agrupar y separar ───────────────────────────────────────────────────── */
+/** Agrupa varios elementos en un contenedor «Grupo», en la posición del primero y en su orden de documento. */
+export function groupElements(html:string,indices:number[]):EditResult{
+  const unique=Array.from(new Set(indices)).filter(i=>Number.isSafeInteger(i));
+  if(unique.length<2)throw Error('Selecciona al menos dos elementos para agrupar (Mayús + clic).');
+  const doc=parse(html);
+  let nodes=unique.map(i=>nodeAt(doc,i));
+  // Si se seleccionó un elemento y también algo que contiene, se queda solo el exterior.
+  nodes=nodes.filter(n=>!nodes.some(o=>o!==n&&o.contains(n)));
+  if(nodes.some(n=>n===doc.body))throw Error('No se puede agrupar el documento completo.');
+  if(nodes.length<2)throw Error('Los elementos seleccionados están uno dentro del otro.');
+  nodes.sort((a,b)=>a.compareDocumentPosition(b)&4?-1:1);
+  const group=doc.createElement('div');
+  group.setAttribute('data-wc-group','true');
+  group.setAttribute('data-wc-name','Grupo');
+  nodes[0].before(group);
+  for(const n of nodes)group.append(n);
+  return {html:serialize(doc),index:indexOf(doc,group)};
+}
+/** Separa un grupo: sus elementos vuelven al sitio del grupo y el contenedor desaparece. */
+export function ungroupElement(html:string,index:number):EditResult{
+  const doc=parse(html);const node=nodeAt(doc,index);
+  const group=node.hasAttribute('data-wc-group')?node:node.closest('[data-wc-group]');
+  if(!group)throw Error('El elemento seleccionado no está en un grupo.');
+  const first=group.firstElementChild;
+  while(group.firstChild)group.before(group.firstChild);
+  group.remove();
+  return {html:serialize(doc),index:indexOf(doc,first)};
+}

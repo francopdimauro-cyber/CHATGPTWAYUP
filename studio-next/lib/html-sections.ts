@@ -111,7 +111,7 @@ function assertIntegrity(doc:Document):void{
   }
 }
 function layerLabel(el:HTMLElement):string{
-  return clean(el.getAttribute('aria-label')||el.getAttribute('alt')||
+  return clean(el.getAttribute('data-wc-name')||el.getAttribute('aria-label')||el.getAttribute('alt')||
     (el.children.length===0?el.textContent:'')||el.getAttribute('placeholder')||el.id,48)||el.tagName.toLowerCase();
 }
 
@@ -128,7 +128,7 @@ export function listSections(html:string):HtmlSection[]{
       end=j;
       const node=nodes[j];
       if(!LAYER_TAGS.has(node.tagName)||children.length>=120)continue;
-      if(node.tagName==='DIV'&&!node.id&&node.children.length>0&&!node.getAttribute('aria-label'))continue;
+      if(node.tagName==='DIV'&&!node.id&&node.children.length>0&&!node.getAttribute('aria-label')&&!node.hasAttribute('data-wc-name'))continue;
       let depth=0,parent=node.parentElement;
       while(parent&&parent!==el){depth++;parent=parent.parentElement;}
       children.push({index:j,tag:node.tagName,label:layerLabel(node),depth:Math.min(4,depth)});

@@ -18,7 +18,7 @@ import { ParkedItem, type Parked } from './parked-item';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
-import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, insertSnippet, moveElementTo, canContain, writeSeo, type EditResult } from '@/lib/element-editing';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
@@ -54,6 +54,39 @@ function setPageCss(html:string,css:string):string{
   if(!clean.trim()){style?.remove();}
   else{if(!style){style=doc.createElement('style');style.setAttribute('data-wc-page-css','true');}doc.head.append(style);style.textContent=clean;}
   return '<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML;
+}
+/** Propiedades visuales que se «congelan» al sacar un elemento de su contexto (p. ej. a la mesa de trabajo). */
+const BAKE_PROPS=['color','-webkit-text-fill-color','background-color','background-image','font-family','font-size','font-weight','font-style',
+  'line-height','letter-spacing','word-spacing','text-transform','text-decoration-line','text-align','text-shadow','border-radius','box-shadow',
+  'padding-top','padding-right','padding-bottom','padding-left','opacity'];
+/** Copia el aspecto calculado del elemento vivo (y de sus hijos) en estilos en línea del HTML copiado. */
+function bakeStyles(live:HTMLElement,html:string):string{
+  const doc=new DOMParser().parseFromString('<body>'+html+'</body>','text/html');
+  const root=doc.body.firstElementChild as HTMLElement|null;
+  if(!root)return html;
+  const liveNodes=[live,...Array.from(live.querySelectorAll<HTMLElement>('*'))];
+  const copyNodes=[root,...Array.from(root.querySelectorAll<HTMLElement>('*'))];
+  const win=live.ownerDocument.defaultView;
+  if(!win)return html;
+  liveNodes.forEach((node,i)=>{
+    const target=copyNodes[i];if(!target||target.tagName!==node.tagName)return;
+    const cs=win.getComputedStyle(node);
+    const decl:string[]=[];
+    for(const prop of BAKE_PROPS){
+      const value=cs.getPropertyValue(prop);
+      if(!value||/url\(|blob:|var\(/i.test(value))continue; // nada de recursos temporales de la vista
+      if(prop==='background-image'&&value==='none')continue;
+      decl.push(prop+': '+value);
+    }
+    const own=target.getAttribute('style')||'';
+    target.setAttribute('style',decl.join('; ')+(own?'; '+own:''));
+  });
+  return root.outerHTML;
+}
+/** Lee la posición libre (translate) en cualquiera de sus formas: «», «80px» o «80px -12px». */
+function readTranslate(value:string):{x:number;y:number}{
+  const m=String(value||'').trim().match(/^(-?\d+(?:\.\d+)?)px(?:\s+(-?\d+(?:\.\d+)?)px)?/);
+  return {x:m?Math.round(Number(m[1])):0,y:m&&m[2]!==undefined?Math.round(Number(m[2])):0};
 }
 function escapeText(text:string):string{
   return text.replace(/[<>&]/g,ch=>ch==='<'?'&lt;':ch==='>'?'&gt;':'&amp;').replace(/\n/g,'<br>');
@@ -147,6 +180,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const [inspectorOpen,setInspectorOpen]=useState(false);
   const pendingSectionRef=useRef<string|null>(null);
   const pendingIndexRef=useRef<number|null>(null);
+  // Selección múltiple (Mayús + clic): índices adicionales a la selección principal.
+  const [multi,setMulti]=useState<number[]>([]);
+  const multiRef=useRef<number[]>([]);multiRef.current=multi;
   const siteRef=useRef<SiteBundle|null>(null);
   // Posición de scroll de la vista: se conserva cuando el HTML cambia y la vista se vuelve a pintar.
   const scrollRef=useRef({x:0,y:0});
@@ -163,7 +199,16 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   // Webs con tema claro/oscuro (data-theme en <html>, que normalmente elige un script): la vista imita lo que
   // vería un visitante (preferencia del sistema) y se puede cambiar. No modifica el HTML guardado.
   const siteThemes=useMemo(()=>/<html\b[^>]*\bdata-theme\s*=\s*["'](?:light|dark)["']/i.test(site?.html||''),[site?.html]);
-  useEffect(()=>{const c=canvasScrollRef.current;if(c)c.scrollLeft=Math.max(0,(c.scrollWidth-c.clientWidth)/2);},[device,stage,view,site?.id]);
+  // Al abrir una web o cambiar de dispositivo: la página entera cabe en el lienzo (como en Figma) y queda centrada.
+  useEffect(()=>{
+    const c=canvasScrollRef.current;if(!c)return;
+    const pageW=device==='mobile'?390:device==='tablet'?820:1280;
+    const fit=Math.min(1,clampZoom((c.clientWidth-48)/pageW));
+    setZoom(fit);
+    requestAnimationFrame(()=>{c.scrollLeft=Math.max(0,(c.scrollWidth-c.clientWidth)/2);});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[device,stage,site?.id]);
+  useEffect(()=>{const c=canvasScrollRef.current;if(c)requestAnimationFrame(()=>{c.scrollLeft=Math.max(0,(c.scrollWidth-c.clientWidth)/2);});},[zoom,view]);
   useEffect(()=>{
     const c=canvasScrollRef.current;if(!c)return;
     const onWheel=(e:WheelEvent)=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();zoomBy(e.deltaY<0?1.1:1/1.1);};
@@ -254,7 +299,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(!site||html===site.html)return;
     setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets,parked:site.parked}]);setFuture([]);
     setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
-    setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);setCanvasMenu(null);
+    setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);setCanvasMenu(null);setMulti([]);
   },[site]);
   const changeSite=(loaded:SiteBundle)=>{
     scrollRef.current={x:0,y:0};
@@ -408,6 +453,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     const element=previewFrame.current?.contentDocument?.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');
     if(!element)return;
     selectedRef.current?.removeAttribute('data-wayup-selected');
+    if(multiRef.current.length){
+      for(const el of Array.from(element.ownerDocument.querySelectorAll('[data-wayup-selected]')))el.removeAttribute('data-wayup-selected');
+      setMulti([]);
+    }
     element.dataset.wayupSelected='true';
     selectedRef.current=element;
     setSelected(index);
@@ -422,8 +471,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       padding:element.style.padding||'',margin:element.style.margin||'',
       radius:element.style.borderRadius||'',fontWeight:element.style.fontWeight||'',
       fontFamily:element.style.fontFamily||'',textAlign:element.style.textAlign||'',
-      posX:element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/)?.[1]||'0',
-      posY:element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/)?.[2]||'0'
+      posX:String(readTranslate(element.style.translate).x),
+      posY:String(readTranslate(element.style.translate).y)
     });
     try{
       const cs=element.ownerDocument.defaultView!.getComputedStyle(element);
@@ -538,10 +587,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     window.addEventListener('pointermove',move,true);window.addEventListener('pointerup',up,true);window.addEventListener('pointercancel',up,true);
   }
   /** Mesa de trabajo: un elemento soltado fuera de la página se aparca (no se publica) y se puede devolver. */
-  function parkElement(index:number,pos?:{x:number;y:number;w:number}){
+  function parkElement(index:number,pos?:{x:number;y:number;w:number},prepared?:string){
     const current=siteRef.current;if(!current)return false;
     try{
-      const html=copyElement(current.html,index);
+      const html=prepared||copyElement(current.html,index);
       const holder=new DOMParser().parseFromString(html,'text/html').body.firstElementChild;
       const name=(holder?.getAttribute('data-wc-name')||holder?.getAttribute('aria-label')||(holder?.textContent||'').replace(/\s+/g,' ').trim().slice(0,40)||holder?.tagName.toLowerCase()||'Elemento');
       const removed=removeElement(current.html,index);
@@ -551,6 +600,29 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       setNotice('«'+name+'» en la mesa de trabajo. Muévelo por la mesa o arrástralo a la página para devolverlo.');
       return true;
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo aparcar.');return false;}
+  }
+  /** Añade o quita un elemento de la selección múltiple (la selección principal se mantiene). */
+  function toggleMulti(index:number){
+    const doc=previewFrame.current?.contentDocument;if(!doc)return;
+    if(index===selected)return;
+    const el=doc.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');if(!el)return;
+    const has=multiRef.current.includes(index);
+    if(has)el.removeAttribute('data-wayup-selected');else el.dataset.wayupSelected='true';
+    const next=has?multiRef.current.filter(i=>i!==index):[...multiRef.current,index];
+    setMulti(next);
+    if(next.length)setNotice((next.length+1)+' elementos seleccionados · Ctrl+G para agrupar · Supr para eliminar');
+  }
+  const selection=()=>selected===null?[]:[selected,...multi.filter(i=>i!==selected)];
+  function groupSelection(){
+    const current=siteRef.current;const ids=selection();
+    if(!current)return;
+    if(ids.length<2){setNotice('Selecciona varios elementos con Mayús + clic para agruparlos.');return;}
+    setMulti([]);
+    tryEdit(()=>groupElements(current.html,ids),'Grupo creado con '+ids.length+' elementos. Ctrl+Mayús+G para separar.');
+  }
+  function ungroupSelection(){
+    const current=siteRef.current;if(!current||selected===null)return;
+    tryEdit(()=>ungroupElement(current.html,selected),'Grupo separado.');
   }
   /** Aplica una operación sobre el HTML real y conserva la selección resultante tras recargar la vista. */
   function applyEdit(result:EditResult,message:string){
@@ -603,6 +675,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       return;
     }
     if(command==='duplicate')tryEdit(()=>duplicateElement(site.html,index),'Elemento duplicado.');
+    if(command==='group'){groupSelection();return;}
+    if(command==='ungroup'){ungroupSelection();return;}
+    if(command==='delete'&&multi.length){
+      const ids=selection().sort((a,b)=>b-a);
+      tryEdit(()=>{let h=site.html;for(const i of ids)h=removeElement(h,i).html;return {html:h,index:null};},ids.length+' elementos eliminados. Ctrl+Z para deshacer.');
+      return;
+    }
     if(command==='delete')tryEdit(()=>removeElement(site.html,index),'Elemento eliminado. Ctrl+Z para deshacer.');
     if(command==='up'||command==='down')tryEdit(()=>moveElement(site.html,index,command),'Orden actualizado.');
   }
@@ -625,6 +704,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(mod&&k==='x')return go(()=>runCanvasCommand('cut'));
     if(mod&&k==='v')return go(()=>runCanvasCommand('paste'));
     if(mod&&k==='d')return go(()=>runCanvasCommand('duplicate'));
+    if(mod&&k==='g'&&e.shiftKey)return go(ungroupSelection);
+    if(mod&&k==='g')return go(groupSelection);
     if(mod&&k==='h')return go(()=>runCanvasCommand('hide'));
     if(!mod&&!e.altKey&&k==='v')return go(()=>setTool('select'));
     if(!mod&&!e.altKey&&k==='m')return go(()=>setTool('move'));
@@ -663,7 +744,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const element=(event.target as Element).closest<HTMLElement>('[data-wayup-edit]');
       if(!element)return;
       const index=Number(element.dataset.wayupEdit);
-      if(Number.isSafeInteger(index))selectLayer(index,false); // sin desplazar: el elemento sigue bajo el cursor
+      if(Number.isSafeInteger(index)){if((event as MouseEvent).shiftKey&&selectedRef.current)toggleMulti(index);else selectLayer(index,false);} // sin desplazar: el elemento sigue bajo el cursor
     },true);
     doc.addEventListener('submit',event=>event.preventDefault(),true);
     const pending=pendingSectionRef.current;pendingSectionRef.current=null;
@@ -699,6 +780,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     const clamp=(n:number)=>Math.max(-6000,Math.min(6000,Math.round(n)));
     // El navegador (sobre todo Firefox) inicia su propio «arrastre nativo» de enlaces e imágenes: lo bloqueamos dentro de la vista.
     doc.addEventListener('dragstart',event=>event.preventDefault(),true);
+    // Mayús + clic sirve para seleccionar varios: que no seleccione texto a la vez.
+    doc.addEventListener('mousedown',event=>{if(event.shiftKey)event.preventDefault();},true);
     doc.addEventListener('mousedown',event=>{if(toolRef.current==='move')event.preventDefault();},true);
     doc.addEventListener('pointerdown',event=>{
       if(toolRef.current!=='move'||event.button!==0)return;
@@ -706,10 +789,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(!element||element===doc.body)return;
       const index=Number(element.dataset.wayupEdit);
       if(!Number.isSafeInteger(index))return;
-      const position=element.style.translate.match(/^(-?\d+)px\s+(-?\d+)px$/);
+      const position=readTranslate(element.style.translate);
       const st=element.style;
       moving={element,index,pointerId:event.pointerId,clientX:event.clientX,clientY:event.clientY,
-        x:Number(position?.[1]||0),y:Number(position?.[2]||0),moved:false,free:event.altKey||moveStyleRef.current==='libre',
+        x:position.x,y:position.y,moved:false,free:event.altKey||moveStyleRef.current==='libre',
         prev:{translate:st.translate,opacity:st.opacity,pointerEvents:st.pointerEvents,boxShadow:st.boxShadow,zIndex:st.zIndex,position:st.position,transition:st.transition}};
       event.preventDefault();
       try{doc.documentElement.setPointerCapture(event.pointerId);}catch{}
@@ -760,7 +843,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         const w=Math.round(state.element.getBoundingClientRect().width);
         const z=zoomRef.current;
         const pos=fr&&board?{x:Math.round((fr.left+event.clientX*z-board.left)/z-Math.min(w,320)/2),y:Math.round((fr.top+event.clientY*z-board.top)/z-12),w}:undefined;
-        parkElement(state.index,pos);return;
+        let baked:string|undefined;
+        try{baked=bakeStyles(state.element,copyElement(current.html,state.index));}catch{baked=undefined;}
+        parkElement(state.index,pos,baked);return;
       }
       // Libertad total: si en «Ordenar» se suelta en una zona sin elementos, se coloca libremente ahí mismo.
       const drop=state.free?null:computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
@@ -768,7 +853,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
         restore(true);st.setProperty('translate',x+'px '+y+'px','important');
         try{applyEdit({html:patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}),index:state.index},'Elemento colocado libremente ('+x+', '+y+' px). Deshacer lo devuelve a su sitio.');}
-        catch(error){restore(false);setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
+        catch{restore(false);}
         return;
       }
       // En «Ordenar» se oculta hasta que aparece ya en su nuevo sitio (sin volver al original).
@@ -776,7 +861,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         const result=moveElementTo(current.html,state.index,drop.index,drop.position);
         restore(true);st.setProperty('opacity','0','important');
         applyEdit(result,'Elemento movido '+(drop.position==='inside'?'dentro del contenedor':drop.position==='before'?'antes':'después')+'.');
-      }catch(error){restore(false);setNotice(error instanceof Error?error.message:'No se pudo mover el elemento.');}
+      }catch{
+        // No se puede encajar ahí (p. ej. dentro de sí mismo o de un texto): se coloca libremente donde se soltó.
+        const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
+        try{restore(true);st.setProperty('translate',x+'px '+y+'px','important');
+          applyEdit({html:patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}),index:state.index},'Elemento colocado donde lo soltaste.');}
+        catch{restore(false);}
+      }
     };
     doc.addEventListener('pointerup',event=>finishMove(event),true);
     doc.addEventListener('pointercancel',()=>finishMove(null),true);
@@ -1002,7 +1093,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       </div>
       <div className="flex min-h-0 flex-1">
         {view==='preview'&&<SectionExplorer sections={sections} selectedIndex={selected}
-          onSelect={index=>{selectLayer(index);if(window.matchMedia('(max-width: 1279px)').matches)setExplorerOpen(false);}}
+          onSelect={(index,additive)=>{if(additive&&selectedRef.current){toggleMulti(index);return;}selectLayer(index);if(window.matchMedia('(max-width: 1279px)').matches)setExplorerOpen(false);}}
           onAction={onSectionAction} mobileOpen={explorerOpen} onCloseMobile={()=>setExplorerOpen(false)}
           onElementMenu={(index,x,y)=>{selectLayer(index,true);setCanvasMenu({x,y});}}/>}
         {(explorerOpen||inspectorOpen)&&<button type="button" aria-label="Cerrar paneles" className="fixed inset-0 z-[65] bg-black/45 xl:hidden"
@@ -1117,7 +1208,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       <div className="mt-6 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">Los agentes necesitan un backend activo y deben publicarse en el dominio HTTPS autorizado. Si la web importada incluye scripts, revisa su procedencia antes de publicarlos.</div>
     </main>}
     {canvasMenu&&elementInfo&&<CanvasMenu x={canvasMenu.x} y={canvasMenu.y} tag={elementInfo.tag} canEditText={elementInfo.textEditable}
-      canPaste={hasClip} hidden={false} hasParent={selected!==null&&!!site&&parentIndex(site.html,selected)!==null}
+      canPaste={hasClip} hidden={false} multiCount={multi.length+1} inGroup={!!previewFrame.current?.contentDocument?.querySelector('[data-wayup-edit="'+selected+'"]')?.closest('[data-wc-group]')} hasParent={selected!==null&&!!site&&parentIndex(site.html,selected)!==null}
       onCommand={runCanvasCommand} onClose={()=>setCanvasMenu(null)}/>}
     {seoOpen&&site&&<SeoPanel html={site.html} onClose={()=>setSeoOpen(false)} onSave={seo=>{
       try{changeHtml(writeSeo(site.html,seo));setSeoOpen(false);setNotice('SEO actualizado en el documento.');}
