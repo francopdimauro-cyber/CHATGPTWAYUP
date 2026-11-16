@@ -212,7 +212,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   csp.content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline' blob: https://fonts.googleapis.com; font-src blob: data: https://fonts.gstatic.com; connect-src 'none'; form-action 'none'; object-src 'none'; script-src 'none'; frame-src 'none'; base-uri 'none'";
   doc.head.prepend(csp);
   const previewStyles=doc.createElement('style');
-  previewStyles.textContent='[data-wayup-edit]:hover{outline:1px dashed #668dff!important;outline-offset:2px;cursor:default}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #3d5cff!important;outline-offset:2px}[data-wayup-hidden]{opacity:.32!important;outline:1px dashed #9aa3b5!important}[data-wayup-editing]{outline:2px solid #f5b400!important;outline-offset:3px;cursor:text!important}[data-wayup-editing]:focus{outline-style:solid!important}';
+  previewStyles.textContent='[data-wayup-edit]{cursor:default}[data-wayup-edit][data-wayup-selected="true"]{outline:2px solid #3d5cff!important;outline-offset:2px}[data-wayup-hidden]{opacity:.32!important;outline:1px dashed #9aa3b5!important}[data-wayup-editing]{outline:2px solid #f5b400!important;outline-offset:3px;cursor:text!important}[data-wayup-editing]:focus{outline-style:solid!important}';
   doc.head.append(previewStyles);
   return {html:'<!DOCTYPE html>\n'+doc.documentElement.outerHTML,revoke:()=>urls.forEach(url=>URL.revokeObjectURL(url))};
 }
