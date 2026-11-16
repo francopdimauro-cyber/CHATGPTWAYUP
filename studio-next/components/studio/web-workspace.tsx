@@ -384,10 +384,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       tryEdit(()=>setStyles(siteRef.current!.html,index,size),'Tamaño actualizado: '+Object.values(size).join(' × ')+'.');
     });
   }
-  /** Arrastrar un bloque del panel a la web con eventos de puntero (captura en el botón de origen):
+  type DragItem={name:string;html:()=>string;section:boolean;parkedId?:string};
+  const blockItem=(id:string):DragItem|null=>{const b=blockById(id);return b?{name:b.name,html:()=>instantiateBlock(b.html),section:isSectionBlock(b)}:null;};
+  /** Arrastrar un bloque del panel (o un elemento aparcado) a la web con eventos de puntero:
    *  funciona igual en todos los navegadores, también cuando el cursor pasa por encima del iframe. */
-  function dragBlockStart(id:string,e:React.PointerEvent<HTMLButtonElement>){
-    const block=blockById(id);if(!block)return;
+  function dragItemStart(item:DragItem,e:React.PointerEvent<HTMLElement>){
     const source=e.currentTarget,start={x:e.clientX,y:e.clientY};
     e.preventDefault();
     try{source.setPointerCapture(e.pointerId);}catch{}
@@ -398,7 +399,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(!moved){
         moved=true;
         ghost=document.createElement('div');
-        ghost.textContent=block.name;
+        ghost.textContent=item.name;
         ghost.setAttribute('aria-hidden','true');
         ghost.style.cssText='position:fixed;z-index:200;pointer-events:none;padding:6px 12px;border-radius:8px;background:var(--wu-brand);color:#fff;font:600 12px/1.2 system-ui;box-shadow:0 10px 30px rgba(0,0,0,.35);transform:translate(12px,12px)';
         document.body.append(ghost);document.body.style.cursor='grabbing';
@@ -408,32 +409,53 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const r=frame.getBoundingClientRect();
       const inside=ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
       if(!inside){last=null;hideIndicator(doc);return;}
-      const drop=computeDrop(doc,ev.clientX-r.left,ev.clientY-r.top,{sectionLevel:isSectionBlock(block)});
+      const drop=computeDrop(doc,ev.clientX-r.left,ev.clientY-r.top,{sectionLevel:item.section});
       last=drop?{index:drop.index,position:drop.position}:null;
       showIndicator(doc,drop,drop?(drop.position==='inside'?'Insertar dentro':drop.position==='before'?'Insertar antes':'Insertar después'):'');
     };
+    const cleanup=()=>{source.removeEventListener('pointermove',move);source.removeEventListener('pointerup',up);source.removeEventListener('pointercancel',cancel);
+      ghost?.remove();document.body.style.cursor='';if(doc)hideIndicator(doc);};
     const up=()=>{
-      source.removeEventListener('pointermove',move);source.removeEventListener('pointerup',up);source.removeEventListener('pointercancel',cancel);
-      ghost?.remove();document.body.style.cursor='';if(doc)hideIndicator(doc);
-      if(!moved){insertBlock(id);return;}
-      if(last)insertBlock(id,last);else setNotice('Suelta el bloque encima de la web para colocarlo.');
+      cleanup();
+      if(!moved){if(!item.parkedId)insertItem(item);return;}
+      if(last)insertItem(item,last);else setNotice('Suelta el elemento encima de la web para colocarlo.');
     };
-    const cancel=()=>{moved=false;last=null;ghost?.remove();document.body.style.cursor='';if(doc)hideIndicator(doc);
-      source.removeEventListener('pointermove',move);source.removeEventListener('pointerup',up);source.removeEventListener('pointercancel',cancel);};
+    const cancel=()=>{moved=false;last=null;cleanup();};
     source.addEventListener('pointermove',move);source.addEventListener('pointerup',up);source.addEventListener('pointercancel',cancel);
   }
-  /** Inserta un bloque de la biblioteca en la posición indicada o junto a la selección. */
-  function insertBlock(id:string,drop?:{index:number;position:'before'|'after'|'inside'}){
-    const block=blockById(id);const current=siteRef.current;
-    if(!block||!current)return;
+  const dragBlockStart=(id:string,e:React.PointerEvent<HTMLButtonElement>)=>{const it=blockItem(id);if(it)dragItemStart(it,e);};
+  const insertBlock=(id:string,drop?:{index:number;position:'before'|'after'|'inside'})=>{const it=blockItem(id);if(it)insertItem(it,drop);};
+  /** Inserta un bloque o un elemento aparcado en la posición indicada o junto a la selección. */
+  function insertItem(item:DragItem,drop?:{index:number;position:'before'|'after'|'inside'}){
+    const current=siteRef.current;
+    if(!current)return;
     let index:number|null=drop?.index??selected;
     let position=drop?.position??'after';
     if(!drop&&index!==null){
       const el=previewFrame.current?.contentDocument?.querySelector<HTMLElement>('[data-wayup-edit="'+index+'"]');
-      if(el&&!isSectionBlock(block)&&canContain(el)&&el.children.length===0)position='inside';
-      if(el&&isSectionBlock(block)){const s=el.closest<HTMLElement>('section,header,footer,[data-wc-section]');if(s?.dataset.wayupEdit)index=Number(s.dataset.wayupEdit);position='after';}
+      if(el&&!item.section&&canContain(el)&&el.children.length===0)position='inside';
+      if(el&&item.section){const s=el.closest<HTMLElement>('section,header,footer,[data-wc-section]');if(s?.dataset.wayupEdit)index=Number(s.dataset.wayupEdit);position='after';}
     }
-    tryEdit(()=>insertSnippet(current.html,index,instantiateBlock(block.html),position),block.name+' añadido. Edítalo en Propiedades o con doble clic.');
+    try{
+      const result=insertSnippet(current.html,index,item.html(),position);
+      applyEdit(result,item.parkedId?item.name+' devuelto a la página desde la mesa de trabajo.':item.name+' añadido. Edítalo en Propiedades o con doble clic.');
+      if(item.parkedId)setSite(old=>old?{...old,parked:(old.parked||[]).filter(x=>x.id!==item.parkedId)}:old);
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo insertar.');}
+  }
+  /** Mesa de trabajo: un elemento soltado fuera de la página se aparca (no se publica) y se puede devolver. */
+  function parkElement(index:number){
+    const current=siteRef.current;if(!current)return false;
+    try{
+      const html=copyElement(current.html,index);
+      const holder=new DOMParser().parseFromString(html,'text/html').body.firstElementChild;
+      const name=(holder?.getAttribute('data-wc-name')||holder?.getAttribute('aria-label')||(holder?.textContent||'').replace(/\s+/g,' ').trim().slice(0,40)||holder?.tagName.toLowerCase()||'Elemento');
+      const removed=removeElement(current.html,index);
+      pendingIndexRef.current=null;
+      changeHtml(removed.html);
+      setSite(old=>old?{...old,parked:[...(old.parked||[]),{id:crypto.randomUUID(),name,html}].slice(-40)}:old);
+      setNotice('«'+name+'» aparcado en la mesa de trabajo. Arrástralo de vuelta a la página cuando quieras.');
+      return true;
+    }catch(error){setNotice(error instanceof Error?error.message:'No se pudo aparcar.');return false;}
   }
   /** Aplica una operación sobre el HTML real y conserva la selección resultante tras recargar la vista. */
   function applyEdit(result:EditResult,message:string){
@@ -634,6 +656,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       hideIndicator(doc);
       if(!state.moved||!event||!siteRef.current){restore(false);return;}
       const current=siteRef.current;
+      // Fuera de la página (en los laterales del lienzo): se aparca en la mesa de trabajo.
+      const vw=doc.defaultView?.innerWidth||0,vh=doc.defaultView?.innerHeight||0;
+      if(event.clientX<0||event.clientY<0||event.clientX>vw||event.clientY>vh){restore(false);parkElement(state.index);return;}
       // Libertad total: si en «Ordenar» se suelta en una zona sin elementos, se coloca libremente ahí mismo.
       const drop=state.free?null:computeDrop(doc,event.clientX,event.clientY,{exclude:state.element});
       if(state.free||!drop){
@@ -897,7 +922,26 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             <div className="relative min-h-0 flex-1">
             {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onDragBlock={dragBlockStart} onClose={()=>setTool('select')}
               target={selected!==null?'después del elemento seleccionado (o dentro, si es un contenedor vacío)':'al final de la página'}/>}
-            <div className="scroll-subtle absolute inset-0 overflow-auto p-3 sm:p-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
+            {(tool==='move'||(site.parked?.length||0)>0)&&<aside aria-label="Mesa de trabajo" className="absolute right-3 top-3 z-20 flex max-h-[calc(100%-24px)] w-[200px] flex-col overflow-hidden rounded-xl border border-dashed border-stroke bg-panel/95 shadow-pop backdrop-blur">
+              <div className="border-b border-stroke p-2.5">
+                <h2 className="text-[12px] font-semibold">Mesa de trabajo</h2>
+                <p className="mt-0.5 text-[10px] leading-4 text-faint">Con «Mover», arrastra un elemento fuera de la página para aparcarlo aquí. No se publica.</p>
+              </div>
+              <ul className="scroll-subtle min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
+                {(site.parked||[]).map(item=><li key={item.id} className="group flex items-center gap-1.5 rounded-lg border border-stroke bg-elevated p-2">
+                  <button type="button" title="Arrástralo a la página para devolverlo" className="min-w-0 flex-1 cursor-grab text-left active:cursor-grabbing"
+                    onPointerDown={e=>{if(e.button===0)dragItemStart({name:item.name,html:()=>item.html,section:/^<(section|header|footer|nav)/i.test(item.html),parkedId:item.id},e);}}>
+                    <span className="block truncate text-[11px] font-medium text-ink">{item.name}</span>
+                    <span className="block truncate font-mono text-[9.5px] text-faint">{(item.html.match(/^<([a-z0-9]+)/i)?.[1]||'').toLowerCase()}</span>
+                  </button>
+                  <button type="button" aria-label={'Eliminar '+item.name+' de la mesa de trabajo'} title="Eliminar de la mesa de trabajo"
+                    onClick={()=>{setSite(old=>old?{...old,parked:(old.parked||[]).filter(x=>x.id!==item.id)}:old);setDirty(true);}}
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint hover:bg-raised hover:text-red-500"><Trash2 size={12}/></button>
+                </li>)}
+                {!(site.parked?.length)&&<li className="rounded-lg border border-dashed border-stroke p-3 text-center text-[10.5px] text-faint">Vacía. Suelta aquí lo que quieras apartar.</li>}
+              </ul>
+            </aside>}
+            <div className={'scroll-subtle absolute inset-0 overflow-auto p-3 sm:p-6 '+((tool==='move'||(site.parked?.length||0)>0)?'lg:pr-[230px]':'')} style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
               <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel transition-[max-width] duration-300"
                 style={{maxWidth:device==='mobile'?390:device==='tablet'?820:1280}}>
                 <div className="relative h-full min-h-[620px] w-full">

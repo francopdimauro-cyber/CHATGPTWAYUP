@@ -12,6 +12,8 @@ export type SiteBundle = {
   agent?: {agentId:string;chatId:string;origin:string;title:string;linkedAt:number};
   cloud?: {id:string;version:number};
   versions: { number:number; html:string; savedAt:number }[];
+  /** Mesa de trabajo: elementos aparcados fuera de la página (no se publican ni exportan). */
+  parked?: { id:string; name:string; html:string }[];
 };
 export const MAX_IMPORT_BYTES=25_000_000;
 const MAX_FILE_BYTES=9_000_000;
