@@ -44,6 +44,16 @@ function appendCustomCss(html:string,css:string):string{
   doc.head.append(style);
   return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
 }
+/** Estilos propios de la página: un <style data-wc-page-css> al final del <head> (saneado como el CSS propio). */
+function setPageCss(html:string,css:string):string{
+  const clean=css.slice(0,50000).replace(/<\/?\s*style[^>]*>/gi,'').replace(/@import[^;]*;?/gi,'')
+    .replace(/url\(\s*(['"]?)(?:https?:|\/\/|javascript:)[^)]*\)/gi,'none').replace(/expression\s*\(/gi,'').replace(/javascript:/gi,'');
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  let style=doc.head.querySelector('style[data-wc-page-css]');
+  if(!clean.trim()){style?.remove();}
+  else{if(!style){style=doc.createElement('style');style.setAttribute('data-wc-page-css','true');}doc.head.append(style);style.textContent=clean;}
+  return '<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML;
+}
 function escapeText(text:string):string{
   return text.replace(/[<>&]/g,ch=>ch==='<'?'&lt;':ch==='>'?'&gt;':'&amp;').replace(/\n/g,'<br>');
 }
@@ -152,8 +162,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const editingRef=useRef<{el:HTMLElement;index:number;original:string}|null>(null);
   const keyRef=useRef<(e:KeyboardEvent)=>void>(()=>{});
   const [draftHtml,setDraftHtml]=useState('');
-  const [past,setPast]=useState<string[]>([]);
-  const [future,setFuture]=useState<string[]>([]);
+  // Historial: cada paso recuerda el HTML y los archivos (CSS, imágenes) para poder deshacer cualquier cambio.
+  type Snap={html:string;assets:Record<string,Uint8Array>};
+  const [past,setPast]=useState<Snap[]>([]);
+  const [future,setFuture]=useState<Snap[]>([]);
+  const [codeFile,setCodeFile]=useState<string>('__html__');
+  const [draftCode,setDraftCode]=useState('');
   const [dirty,setDirty]=useState(false);
   const [postSavePrompt,setPostSavePrompt]=useState(false);
   const [form,setForm]=useState<Record<string,string>>({
@@ -217,7 +231,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
   const changeHtml=useCallback((html:string)=>{
     if(!site||html===site.html)return;
-    setPast(old=>[...old.slice(-49),site.html]);setFuture([]);
+    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets}]);setFuture([]);
     setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
     setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);setCanvasMenu(null);
   },[site]);
@@ -231,13 +245,41 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   };
   const undo=()=>{
     if(!site||!past.length)return;
-    const previous=past[past.length-1];setPast(past.slice(0,-1));setFuture(v=>[site.html,...v]);
-    setSite({...site,html:previous});setDraftHtml(previous);setDirty(true);setSelected(null);
+    const previous=past[past.length-1];setPast(past.slice(0,-1));setFuture(v=>[{html:site.html,assets:site.assets},...v]);
+    setSite({...site,html:previous.html,assets:previous.assets});setDraftHtml(previous.html);setDirty(true);setSelected(null);
   };
   const redo=()=>{
     if(!site||!future.length)return;
-    const [next,...rest]=future;setFuture(rest);setPast(v=>[...v,site.html].slice(-50));
-    setSite({...site,html:next});setDraftHtml(next);setDirty(true);setSelected(null);
+    const [next,...rest]=future;setFuture(rest);setPast(v=>[...v,{html:site.html,assets:site.assets}].slice(-50));
+    setSite({...site,html:next.html,assets:next.assets});setDraftHtml(next.html);setDirty(true);setSelected(null);
+  };
+  /** Cambia un archivo de texto del proyecto (p. ej. css/styles.css) con historial. */
+  const changeAsset=(path:string,text:string)=>{
+    if(!site)return;
+    const bytes=strToU8(text.slice(0,2_000_000));
+    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets}]);setFuture([]);
+    setSite(old=>old?{...old,assets:{...old.assets,[path]:bytes},updatedAt:Date.now()}:old);
+    setDirty(true);
+  };
+  const cssFiles=useMemo(()=>site?Object.keys(site.assets).filter(p=>/\.css$/i.test(p)).sort():[],[site]);
+  const PAGE_CSS='__page__';
+  const readPageCss=(html:string)=>new DOMParser().parseFromString(html,'text/html').head.querySelector('style[data-wc-page-css]')?.textContent||'';
+  const openCodeFile=(file:string)=>{
+    if(!site)return;
+    setCodeFile(file);
+    if(file==='__html__')setDraftHtml(site.html);
+    else if(file===PAGE_CSS)setDraftCode(readPageCss(site.html));
+    else setDraftCode(strFromU8(site.assets[file]||new Uint8Array()));
+  };
+  /** Aplica el contenido de la pestaña de código abierta. */
+  const applyCode=()=>{
+    if(!site)return;
+    if(codeFile==='__html__'){if(draftHtml!==site.html)changeHtml(draftHtml);return;}
+    if(codeFile===PAGE_CSS){
+      if(draftCode===readPageCss(site.html))return;
+      changeHtml(setPageCss(site.html,draftCode));setNotice('Estilos propios de la página aplicados.');return;
+    }
+    if(draftCode!==strFromU8(site.assets[codeFile]||new Uint8Array())){changeAsset(codeFile,draftCode);setNotice(codeFile+' actualizado.');}
   };
   async function importFile(file:File){
     setBusy(true);setFileError('');
@@ -725,7 +767,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(!site||selected===null)return;
     try{
       const image=attachLocalImage(site,selected,new Uint8Array(await file.arrayBuffer()));
-      setPast(old=>[...old.slice(-49),site.html]);setFuture([]);
+      setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets}]);setFuture([]);
       setSite(image);setDraftHtml(image.html);setDirty(true);
       setSelected(null);selectedRef.current=null;
       setNotice('Imagen incorporada al proyecto y al ZIP. Guarda la versión para conservarla.');
@@ -877,7 +919,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             <button onClick={()=>{setView('preview');setTool('select');}} aria-pressed={view==='preview'&&tool==='select'} title="Seleccionar y editar (V)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='select'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><MousePointer2 size={13}/> Seleccionar</button>
             <button onClick={()=>{setView('preview');setTool('move');}} aria-pressed={view==='preview'&&tool==='move'} title="Arrastrar para reordenar · Alt+arrastrar para desplazar libremente (M)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='move'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><Move size={13}/> Mover</button>
             <button onClick={()=>{setView('preview');setTool('insert');}} aria-pressed={view==='preview'&&tool==='insert'} title="Insertar textos, botones, formas, imágenes y secciones (I)" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&tool==='insert'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><SquarePlus size={13}/> Insertar</button>
-            <button onClick={()=>{setView('code');setTool('select');}} aria-pressed={view==='code'} title="Código HTML" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='code'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><CodeXml size={13}/> Código</button>
+            <button onClick={()=>{setView('code');setTool('select');openCodeFile(codeFile);}} aria-pressed={view==='code'} title="Código HTML" className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='code'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><CodeXml size={13}/> Código</button>
           </div>
           {tool==='move'&&view==='preview'&&<div role="group" aria-label="Modo de mover" className="flex items-center gap-0.5 rounded-lg border border-brand/40 bg-brandsoft p-[3px]">
             <button onClick={()=>setMoveStyle('ordenar')} aria-pressed={moveStyle==='ordenar'} title="Encaja el elemento entre otros (mantiene la web responsive)"
@@ -930,7 +972,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               <ul className="scroll-subtle min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
                 {(site.parked||[]).map(item=><li key={item.id} className="group flex items-center gap-1.5 rounded-lg border border-stroke bg-elevated p-2">
                   <button type="button" title="Arrástralo a la página para devolverlo" className="min-w-0 flex-1 cursor-grab text-left active:cursor-grabbing"
-                    onPointerDown={e=>{if(e.button===0)dragItemStart({name:item.name,html:()=>item.html,section:/^<(section|header|footer|nav)/i.test(item.html),parkedId:item.id},e);}}>
+                    onPointerDown={e=>{if(e.button===0)dragItemStart({name:item.name,html:()=>item.html,section:/^<(section|header|footer|nav)\b/i.test(item.html),parkedId:item.id},e);}}>
                     <span className="block truncate text-[11px] font-medium text-ink">{item.name}</span>
                     <span className="block truncate font-mono text-[9.5px] text-faint">{(item.html.match(/^<([a-z0-9]+)/i)?.[1]||'').toLowerCase()}</span>
                   </button>
@@ -954,13 +996,24 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             </div>
             </div>
           </>:<>
-            <div className="flex items-center justify-between border-b border-stroke px-4 py-3 text-[11px] text-mist"><span><FileCode2 size={13} className="mr-2 inline text-brand"/> {site.entry}</span><span>{site.html.length.toLocaleString('es-ES')} caracteres · HTML editado directamente</span></div>
-            <textarea aria-label="Editor completo de HTML de la web"
+            <div role="tablist" aria-label="Archivos del proyecto" className="flex flex-wrap items-center gap-1 border-b border-stroke bg-panel px-3 py-2">
+              {[['__html__',site.entry],...cssFiles.map(f=>[f,f]),[PAGE_CSS,'Estilos propios']].map(([id,label])=>
+                <button key={id} role="tab" aria-selected={codeFile===id} onClick={()=>openCodeFile(id)}
+                  className={'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-[11px] '+(codeFile===id?'bg-brandsoft text-brand':'text-mist hover:bg-elevated hover:text-ink')}>
+                  <FileCode2 size={12}/>{label}</button>)}
+              <span className="ml-auto text-[10.5px] text-faint">{codeFile==='__html__'?site.html.length.toLocaleString('es-ES')+' caracteres':codeFile===PAGE_CSS?'CSS tuyo, se añade al final y gana al original':'Archivo CSS del proyecto'}</span>
+            </div>
+            {codeFile==='__html__'?<textarea aria-label="Editor completo de HTML de la web"
               className="scroll-subtle min-h-0 flex-1 resize-none bg-[#10141c] p-5 font-mono text-[12px] leading-6 text-[#dae6ff] outline-none"
               spellCheck={false} value={draftHtml} onChange={e=>setDraftHtml(e.target.value)}
               onBlur={()=>{if(draftHtml!==site.html)changeHtml(draftHtml)}}/>
-            <div className="flex items-center justify-end border-t border-stroke p-2">
-              <button onClick={()=>{if(draftHtml!==site.html)changeHtml(draftHtml);setView('preview')}} className={primary}><Check size={14}/> Aplicar HTML y ver resultado</button>
+            :<textarea aria-label={codeFile===PAGE_CSS?'Estilos propios de la página':'Editor del archivo '+codeFile}
+              className="scroll-subtle min-h-0 flex-1 resize-none bg-[#10141c] p-5 font-mono text-[12px] leading-6 text-[#dae6ff] outline-none"
+              spellCheck={false} value={draftCode} onChange={e=>setDraftCode(e.target.value)} onBlur={applyCode}
+              placeholder={codeFile===PAGE_CSS?'/* Tus reglas: se aplican por encima del CSS original */\n.hero h1 { letter-spacing: -0.02em; }':''}/>}
+            <div className="flex items-center justify-between gap-2 border-t border-stroke p-2">
+              <span className="text-[10.5px] text-faint">Se aplica al salir del editor o con el botón. Ctrl+Z deshace.</span>
+              <button onClick={()=>{applyCode();setView('preview')}} className={primary}><Check size={14}/> Aplicar y ver resultado</button>
             </div>
           </>}
         </div>
