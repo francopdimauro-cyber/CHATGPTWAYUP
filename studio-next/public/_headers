@@ -4,3 +4,8 @@
   X-Frame-Options: DENY
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
   Cross-Origin-Opener-Policy: same-origin
+
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache

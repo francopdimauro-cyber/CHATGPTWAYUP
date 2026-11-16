@@ -4,6 +4,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Link2, Strikethrough, Type, Underline } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
+import { ButtonStyles } from './button-styles';
 
 export type ElementInfo = {
   index: number; tag: string; textEditable: boolean; text: string;
@@ -110,6 +111,10 @@ export function PropertyPanel({ info, onStyles, onAttrs, onText, onEditText, ext
         <label className="flex items-center gap-2 text-[11px] text-mist"><input type="checkbox" checked={info.attrs.target === '_blank'} onChange={e => onAttrs({ target: e.target.checked ? '_blank' : '_self' })} /> Abrir en una pestaña nueva</label>
       </div>}
     </Group>
+
+    {(info.tag === 'A' || info.tag === 'BUTTON') && <Group title="Estilo de botón" open>
+      <ButtonStyles onStyles={onStyles} />
+    </Group>}
 
     <Group title="Tipografía" open>
       <div><span className={label}>Familia</span><Field ariaLabel="Familia tipográfica" mono={false} value={v('font-family')} placeholder={c('font-family').slice(0, 60)} onCommit={set('font-family')} /></div>

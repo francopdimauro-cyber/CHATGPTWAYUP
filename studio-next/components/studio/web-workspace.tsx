@@ -12,6 +12,7 @@ import { BrandLockup } from './brand-lockup';
 import { PropertyPanel, type ElementInfo } from './property-panel';
 import { CanvasMenu, type CanvasCommand } from './canvas-menu';
 import { SeoPanel } from './seo-panel';
+import { AgentLibrary } from './agent-library';
 import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setInlineContent, setStyles, toggleHidden, writeSeo, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
@@ -24,9 +25,7 @@ import { attachLocalImage, editHtmlStructure, htmlLayerOutline,
 
 type Stage='home'|'create'|'editor'|'agent'|'export';
 type View='preview'|'code';
-type BrowserEditorProps={
-  onClose():void;
-};
+type BrowserEditorProps={onClose?():void};
 const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
   .replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').slice(0,64)||'web';
 const BASE='rounded-lg border border-stroke bg-panel px-3 py-2.5 text-[12.5px] text-ink outline-none transition placeholder:text-faint focus:border-brand focus:ring-2 focus:ring-brand/15';
@@ -95,7 +94,8 @@ async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void):P
   if(!completed)throw Error('La generación terminó sin entregar un documento HTML completo.');
   return html;
 }
-export function WebWorkspace({onClose}:BrowserEditorProps){
+export function WebWorkspace({onClose}:BrowserEditorProps={}){
+  const [agentsOpen,setAgentsOpen]=useState(false);
   const [stage,setStage]=useState<Stage>('home');
   const [site,setSite]=useState<SiteBundle|null>(null);
   const [savedSites,setSavedSites]=useState<SiteBundle[]>([]);
@@ -530,7 +530,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
         required={required} onChange={event=>setForm({...form,[id]:event.target.value})}/>
     </label>
   );
-  return <div className="fixed inset-0 z-[60] flex min-h-0 flex-col overflow-hidden bg-app text-ink" role="dialog" aria-modal="true" aria-label="WayUp Studio — Crear y editar webs reales">
+  return <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-app text-ink">
     <header className="flex h-[58px] shrink-0 items-center justify-between gap-3 border-b border-stroke bg-panel px-3 sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
         <BrandLockup size={32}/>
@@ -558,7 +558,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       <div className="flex items-center gap-1.5">
         <ThemeToggle/>
         {site&&<button onClick={()=>setStage('home')} className={btn}><FolderOpen size={14}/><span className="hidden sm:inline">Mis webs</span></button>}
-        <button onClick={onClose} className={btn} title="Cerrar y volver al modo demostración" aria-label="Cerrar"><X size={15}/></button>
+        <button onClick={()=>setAgentsOpen(true)} className={btn} title="Gestionar tus agentes IA"><Bot size={14}/><span className="hidden sm:inline">Agentes IA</span></button>
+        {onClose&&<button onClick={onClose} className={btn} aria-label="Cerrar"><X size={15}/></button>}
       </div>
     </header>
     {(notice||fileError)&&<div role="status" className={'shrink-0 border-b px-4 py-2 text-[11px] '+(fileError?'border-red-500/30 bg-red-500/10 text-red-400':'border-stroke bg-elevated text-mist')}>{fileError||notice}</div>}
@@ -760,6 +761,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       try{changeHtml(writeSeo(site.html,seo));setSeoOpen(false);setNotice('SEO actualizado en el documento.');}
       catch(error){setNotice(error instanceof Error?error.message:'No se pudo guardar el SEO.');}
     }}/>}
+    {agentsOpen&&<AgentLibrary onClose={()=>setAgentsOpen(false)} onCreateForWeb={()=>{setAgentsOpen(false);if(site)setStage('agent');else{setStage('home');setNotice('Abre o crea una web: el agente se configura a partir de su contenido.');}}}/>}
     {postSavePrompt&&stage==='editor'&&<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setPostSavePrompt(false)}}>
       <div role="dialog" aria-modal="true" aria-labelledby="wayup-link-agent-question" className="w-full max-w-[470px] rounded-2xl border border-stroke bg-panel p-7 shadow-panel">
         <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-brandsoft text-brand"><Bot size={25}/></div>

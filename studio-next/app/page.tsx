@@ -1,5 +1,6 @@
-import { StudioApp } from '@/components/studio/studio-app';
+import { WebWorkspace } from '@/components/studio/web-workspace';
 
+// WayUp Studio abre directamente el creador/editor de webs reales.
 export default function Page() {
-  return <StudioApp />;
+  return <WebWorkspace />;
 }
