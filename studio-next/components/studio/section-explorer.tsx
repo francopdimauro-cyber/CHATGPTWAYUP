@@ -1,7 +1,7 @@
 'use client';
 
-import {useEffect,useMemo,useRef,useState,type MouseEvent as ReactMouseEvent} from 'react';
-import {ArrowDown,ArrowUp,ChevronDown,ChevronRight,Copy,CornerDownRight,FilePlus2,Layers3,MoreHorizontal,PanelTop,Pencil,Search,Trash2,X} from 'lucide-react';
+import React,{useEffect,useMemo,useRef,useState,type MouseEvent as ReactMouseEvent} from 'react';
+import {ArrowDown,ArrowUp,ChevronDown,ChevronRight,ChevronsLeft,ChevronsRight,Copy,CornerDownRight,FilePlus2,Layers3,MoreHorizontal,PanelTop,Pencil,Search,Trash2,X} from 'lucide-react';
 import type {HtmlSection,SectionPosition} from '@/lib/html-sections';
 
 export type SectionAction=
@@ -10,6 +10,13 @@ export type SectionAction=
   |{type:'rename';key:string;name:string};
 
 type Menu={key:string;x:number;y:number};
+const MIN_W=200,MAX_W=440,DEFAULT_W=268,PREF_KEY='wayup-studio-explorer-v1';
+function readPref():{width:number;collapsed:boolean}{
+  try{const v=JSON.parse(localStorage.getItem(PREF_KEY)||'{}');
+    return {width:Math.min(MAX_W,Math.max(MIN_W,Number(v.width)||DEFAULT_W)),collapsed:v.collapsed===true};}
+  catch{return {width:DEFAULT_W,collapsed:false};}
+}
+function writePref(v:{width:number;collapsed:boolean}){try{localStorage.setItem(PREF_KEY,JSON.stringify(v));}catch{}}
 const TAG_ICON_LABEL:Record<string,string>={H1:'H1',H2:'H2',H3:'H3',H4:'H4',P:'¶',A:'↗',BUTTON:'btn',IMG:'img',FORM:'form',UL:'ul',OL:'ol',LI:'li',INPUT:'in',LABEL:'lbl',SPAN:'txt',DIV:'div',NAV:'nav',FIGURE:'fig'};
 
 /** Explorador de secciones del HTML real: menú ⋯ y clic derecho con las mismas acciones; usable con toque. */
@@ -24,6 +31,31 @@ export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobile
   const [renaming,setRenaming]=useState<{key:string;value:string}|null>(null);
   const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
   const menuRef=useRef<HTMLDivElement>(null);
+  // Ancho y plegado del panel en escritorio (en móvil es un panel deslizante a pantalla casi completa).
+  const [width,setWidth]=useState(DEFAULT_W);
+  const [collapsed,setCollapsed]=useState(false);
+  const [resizing,setResizing]=useState(false);
+  useEffect(()=>{const p=readPref();setWidth(p.width);setCollapsed(p.collapsed);},[]);
+  const savePref=(w:number,c:boolean)=>writePref({width:w,collapsed:c});
+  const toggleCollapsed=()=>setCollapsed(c=>{savePref(width,!c);return !c;});
+  const startResize=(e:React.PointerEvent<HTMLDivElement>)=>{
+    if(e.button!==0)return;
+    e.preventDefault();
+    const handle=e.currentTarget,startX=e.clientX,startW=width;
+    try{handle.setPointerCapture(e.pointerId);}catch{}
+    setResizing(true);
+    let current=startW;
+    const move=(ev:PointerEvent)=>{current=Math.min(MAX_W,Math.max(MIN_W,startW+ev.clientX-startX));setWidth(current);};
+    const up=()=>{handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',up);
+      setResizing(false);savePref(current,false);};
+    handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);handle.addEventListener('pointercancel',up);
+  };
+  const keyResize=(e:React.KeyboardEvent<HTMLDivElement>)=>{
+    const step=e.shiftKey?40:16;
+    const next=e.key==='ArrowLeft'?width-step:e.key==='ArrowRight'?width+step:e.key==='Home'?MIN_W:e.key==='End'?MAX_W:null;
+    if(next===null)return;
+    e.preventDefault();const w=Math.min(MAX_W,Math.max(MIN_W,next));setWidth(w);savePref(w,false);
+  };
   const active=sections.find(s=>selectedIndex!==null&&selectedIndex>=s.index&&selectedIndex<=s.end);
 
   useEffect(()=>{if(active)setExpanded(old=>old.has(active.key)?old:new Set(old).add(active.key));},[active?.key]);
@@ -56,15 +88,32 @@ export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobile
   const position=menuSection?sections.indexOf(menuSection):-1;
   const item='flex min-h-[36px] w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[11.5px] text-ink hover:bg-raised focus:bg-raised focus:outline-none disabled:opacity-35 disabled:hover:bg-transparent';
 
-  return <aside aria-label="Explorador de secciones"
-    className={'flex w-[268px] shrink-0 flex-col border-r border-stroke bg-panel max-xl:fixed max-xl:inset-y-0 max-xl:left-0 max-xl:z-[70] max-xl:w-[min(320px,88vw)] max-xl:shadow-2xl max-xl:transition-transform '+
-      (mobileOpen?'max-xl:translate-x-0':'max-xl:-translate-x-full')}>
+  return <>
+  {collapsed&&<aside aria-label="Explorador plegado" className="hidden w-11 shrink-0 flex-col items-center gap-1.5 border-r border-stroke bg-panel py-2.5 xl:flex">
+    <button type="button" onClick={toggleCollapsed} title="Mostrar explorador" aria-label="Mostrar explorador"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-mist hover:bg-raised hover:text-ink"><ChevronsRight size={15}/></button>
+    <button type="button" onClick={()=>run({type:'add',position:'end'})} title="Añadir una sección al final" aria-label="Añadir sección"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-brand hover:bg-raised"><FilePlus2 size={15}/></button>
+    <Layers3 size={14} className="mt-2 text-faint" aria-hidden/>
+    <span className="font-mono text-[9px] text-faint">{sections.length}</span>
+  </aside>}
+  <aside aria-label="Explorador de secciones" style={{'--explorer-w':width+'px'} as React.CSSProperties}
+    className={'relative flex w-[268px] shrink-0 flex-col border-r border-stroke bg-panel xl:w-[var(--explorer-w)] max-xl:fixed max-xl:inset-y-0 max-xl:left-0 max-xl:z-[70] max-xl:w-[min(320px,88vw)] max-xl:shadow-2xl max-xl:transition-transform '+
+      (mobileOpen?'max-xl:translate-x-0':'max-xl:-translate-x-full')+(collapsed?' xl:hidden':'')}>
+    <div role="separator" aria-orientation="vertical" aria-label="Cambiar ancho del explorador" tabIndex={0}
+      aria-valuemin={MIN_W} aria-valuemax={MAX_W} aria-valuenow={width}
+      onPointerDown={startResize} onKeyDown={keyResize} onDoubleClick={()=>{setWidth(DEFAULT_W);savePref(DEFAULT_W,false);}}
+      title="Arrastra para cambiar el ancho · Doble clic para restablecer"
+      className={'group/handle absolute inset-y-0 -right-1.5 z-10 hidden w-3 cursor-col-resize touch-none focus:outline-none xl:block'}>
+      <span className={'absolute inset-y-0 left-1/2 w-[2px] -translate-x-1/2 transition-colors '+(resizing?'bg-brand':'bg-transparent group-hover/handle:bg-brand/60 group-focus/handle:bg-brand')}/>
+    </div>
     <div className="border-b border-stroke px-3 pb-3 pt-3">
       <div className="flex items-center justify-between gap-2">
         <h2 className="flex items-center gap-2 text-[12px] font-semibold"><Layers3 size={14} className="text-brand"/> Explorador</h2>
         <div className="flex items-center gap-1">
           <button type="button" onClick={()=>run({type:'add',position:'end'})} title="Añadir una sección al final"
             className="inline-flex min-h-[32px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[11px] font-semibold text-white hover:brightness-110"><FilePlus2 size={13}/> Sección</button>
+          <button type="button" onClick={toggleCollapsed} className="hidden h-8 w-8 items-center justify-center rounded-md text-mist hover:bg-raised hover:text-ink xl:inline-flex" title="Ocultar explorador" aria-label="Ocultar explorador"><ChevronsLeft size={15}/></button>
           <button type="button" onClick={onCloseMobile} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-mist hover:bg-raised xl:hidden" aria-label="Cerrar explorador"><X size={15}/></button>
         </div>
       </div>
@@ -142,5 +191,7 @@ export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobile
         <button type="button" role="menuitem" className={item+' text-red-400 hover:text-red-300'} onClick={()=>setConfirmDelete(menuSection.key)}><Trash2 size={14}/> Eliminar sección…</button>
       </>}
     </div>}
-  </aside>;
+  </aside>
+  {resizing&&<div className="fixed inset-0 z-[110] cursor-col-resize" aria-hidden/>}
+  </>;
 }

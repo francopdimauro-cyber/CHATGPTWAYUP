@@ -231,6 +231,10 @@ export function StudioApp() {
       onMoveSection={onMoveSection} onRenameSection={onRenameSection}
       collapsed={navCollapsed} onCollapse={()=>setNavCollapsed(v=>!v)} mobileOpen={mobileNav} onCloseMobile={()=>setMobileNav(false)}/>
     <Canvas doc={doc} mode={mode} device={device} zoom={zoom} selectedId={selectedId} onSelect={onSelect} onContextMenu={openContextMenu} onMode={setMode} onDevice={setDevice} onZoom={setZoom} onMove={onMove}/>
+    {!webWorkspaceOpen && <div role="note" className="fixed bottom-9 left-1/2 z-[40] flex max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-3 rounded-full border border-amber-400/40 bg-[#1a1712]/95 py-1.5 pl-4 pr-1.5 text-[11px] text-amber-100 shadow-xl backdrop-blur">
+      <span className="truncate"><strong className="font-semibold text-amber-300">Modo demostración</strong> · capas de ejemplo, no editan tu web</span>
+      <button type="button" onClick={()=>setWebWorkspaceOpen(true)} className="shrink-0 rounded-full bg-brand px-3 py-1.5 text-[11px] font-semibold text-white hover:brightness-110">Abrir mis webs</button>
+    </div>}
     {webWorkspaceOpen && <WebWorkspace onClose={()=>setWebWorkspaceOpen(false)}/>}
     {agentLibraryOpen && <AgentLibrary onClose={()=>setAgentLibraryOpen(false)} onCreateForWeb={()=>{setAgentLibraryOpen(false);setWebWorkspaceOpen(true);}}/>}
     <EditorContextMenu spot={contextSpot} canUndo={history.past.length>0} canRedo={history.future.length>0}
