@@ -19,7 +19,6 @@ type View='preview'|'code';
 type BrowserEditorProps={
   onClose():void;
 };
-const WEB_CREATOR='https://wayup-webcreator.francopdimauro.workers.dev/';
 const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
   .replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').slice(0,64)||'web';
 const BASE='rounded-xl border border-stroke bg-elevated px-3 py-2.5 text-[12px] text-ink outline-none focus:border-brand';
@@ -202,35 +201,15 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   }
   const [webAIReady,setWebAIReady]=useState(false);
   const [webAIReason,setWebAIReason]=useState('');
-  const [webLoginOpen,setWebLoginOpen]=useState(false);
-  const [webEmail,setWebEmail]=useState('');
-  const [webPassword,setWebPassword]=useState('');
-  const [webLoginBusy,setWebLoginBusy]=useState(false);
   const refreshWebAI=useCallback(async()=>{
     try{
       const response=await fetch('/studio-api/webcreator/status',{cache:'no-store',credentials:'same-origin'});
       const data=await response.json().catch(()=>null);
       setWebAIReady(response.ok&&data?.configured===true&&data?.authorized===true);
       setWebAIReason(String(data?.reason||'').slice(0,240));
-    }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar la conexión con WebCreator.');}
+    }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar el motor IA de Studio.');}
   },[]);
   useEffect(()=>{if(stage==='create')void refreshWebAI()},[stage,refreshWebAI]);
-  async function loginForEngines(event:React.FormEvent){
-    event.preventDefault();setWebLoginBusy(true);setFileError('');
-    try{
-      const response=await fetch('/studio-api/agents/auth/login',{
-        method:'POST',credentials:'same-origin',cache:'no-store',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({email:webEmail.trim(),password:webPassword})
-      });
-      const data=await response.json().catch(()=>({}));
-      if(!response.ok||!data.user?.id)throw Error(data.error||'No se pudo iniciar sesión.');
-      setWebPassword('');setWebLoginOpen(false);
-      setNotice('Sesión iniciada. El editor y Agent Builder comparten tu identidad.');
-      await refreshWebAI();void refreshCloud();
-    }catch(error){setFileError(error instanceof Error?error.message:'Error de inicio de sesión.');}
-    finally{setWebLoginBusy(false);}
-  }
   async function createWeb(){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
@@ -242,7 +221,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       changeSite({...generated,source:'generated'});
     }catch(error){
       setFileError(error instanceof Error?error.message:'Error al crear la web.');
-      setNotice('Si no tienes acceso al generador integrado, puedes usar el WebCreator original e importar su ZIP.');
+      setNotice('El editor local sigue disponible. Comprueba el estado del motor IA y reintenta.');
     }finally{setBusy(false);}
   }
 
@@ -484,27 +463,18 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           <button disabled={busy} onClick={createLocalWeb} className={primary}><FilePlus2 size={15}/> Crear web editable desde el briefing</button>
-          <button disabled={!webAIReady||busy} onClick={()=>void createWeb()} className={btn} title={webAIReady?'Motor de IA autorizado':'Se requiere conexión privada de Cloudflare Access con WebCreator'}>
+          <button disabled={!webAIReady||busy} onClick={()=>void createWeb()} className={btn} title={webAIReady?'Motor de IA autorizado':'Verifica tu acceso por correo y la conexión de Workers AI'}>
             {busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generación IA {webAIReady?'':'(sin conexión)'}
           </button>
-          <a href={WEB_CREATOR} target="_blank" rel="noopener noreferrer" className={btn}>Abrir WebCreator original <ChevronRight size={13}/></a>
         </div>
         <div className="mt-4 rounded-xl border border-stroke bg-elevated p-4 text-[11px] leading-5 text-mist">
           <div className="flex items-center justify-between gap-2">
             <strong>Conexión del generador IA</strong>
             <button className={btn} onClick={()=>void refreshWebAI()}>Comprobar conexión</button>
           </div>
-          <p className="mt-2">{webAIReady?(webAIReason||'Generador IA conectado.'):(webAIReason||'Inicia sesión para comprobar el generador.')}</p>
-          {!webAIReady&&<button className={btn+' mt-3'} onClick={()=>setWebLoginOpen(v=>!v)}>
-            <Bot size={14}/> Acceder con mi cuenta
-          </button>}
-          {webLoginOpen&&<form onSubmit={e=>void loginForEngines(e)} className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <input type="email" required autoComplete="username" className={BASE} placeholder="Correo de Agent Builder" value={webEmail} onChange={e=>setWebEmail(e.target.value)}/>
-            <input type="password" required autoComplete="current-password" className={BASE} placeholder="Contraseña" value={webPassword} onChange={e=>setWebPassword(e.target.value)}/>
-            <button type="submit" disabled={webLoginBusy} className={primary}>{webLoginBusy?'Accediendo…':'Iniciar sesión'}</button>
-          </form>}
+          <p className="mt-2">{webAIReady?(webAIReason||'Generador IA conectado.'):(webAIReason||'Comprueba tu sesión por correo y la conexión de Workers AI.')}</p>
         </div>
-        <p className="mt-3 text-[11px] leading-5 text-faint">El creador local no consume IA. La generación privada requiere autorización de Cloudflare; si falla, puedes continuar con el editor y tus agentes sin perder proyectos.</p>
+        <p className="mt-3 text-[11px] leading-5 text-faint">La generación utiliza Workers AI y tu sesión de correo. No necesitas la contraseña antigua de WebCreator. El editor local funciona incluso cuando no hay IA.</p>
       </div>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
