@@ -5,6 +5,7 @@ import { Circle, Command } from 'lucide-react';
 import { Canvas } from './canvas';
 import { WebWorkspace } from './web-workspace';
 import { AgentLibrary } from './agent-library';
+import { useStudioTheme } from '@/lib/theme';
 import { EditorContextMenu, type ContextSpot, type EditorCommand } from './context-menu';
 import { serializeStudioLayer, parseStudioLayer, cloneStudioLayer } from '@/lib/studio-clipboard';
 import { Inspector } from './inspector';
@@ -28,7 +29,7 @@ export function StudioApp() {
   const [mobileInspector, setMobileInspector] = useState(false);
   const [savedContent, setSavedContent] = useState(JSON.stringify(DEMO_PROJECT));
   const [notice, setNotice] = useState('');
-  const [theme, setTheme] = useState<'light'|'dark'>('dark');
+  const [theme, toggleTheme] = useStudioTheme();
   const [webWorkspaceOpen, setWebWorkspaceOpen] = useState(true);
   const [agentLibraryOpen, setAgentLibraryOpen] = useState(false);
   const [contextSpot, setContextSpot] = useState<ContextSpot | null>(null);
@@ -42,13 +43,7 @@ export function StudioApp() {
 
   useEffect(()=>{
     if(window.innerWidth<=1024)setNavCollapsed(true);
-    const stored=localStorage.getItem('wayup-studio-theme');
-    if(stored==='light'||stored==='dark')setTheme(stored);
   }, []);
-  useEffect(()=>{
-    document.documentElement.dataset.studioTheme=theme;
-    try { localStorage.setItem('wayup-studio-theme',theme); } catch {}
-  },[theme]);
 
   useEffect(()=>{
     const restored = loadLocalDemo(DEMO_PROJECT);
@@ -221,7 +216,7 @@ export function StudioApp() {
     <TopBar project={doc} dirty={dirty} saving={false} canUndo={history.past.length>0} canRedo={history.future.length>0}
       onUndo={undo} onRedo={redo} onSave={onSave}
       canCopy={Boolean(selectedId && doc.elements[selectedId])}
-      theme={theme} onTheme={()=>setTheme(v=>v==='dark'?'light':'dark')}
+      theme={theme} onTheme={toggleTheme}
       onCreateWeb={()=>setWebWorkspaceOpen(true)}
       onCreateAgent={()=>setAgentLibraryOpen(true)}
       onCopy={()=>void runCommand('copy')} onCut={()=>void runCommand('cut')}

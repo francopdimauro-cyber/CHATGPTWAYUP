@@ -2,6 +2,7 @@
 
 import { Check, ChevronDown, ChevronRight, Cloud, FolderOpen, Menu, PanelRightOpen, Redo2, Save, Undo2, Copy, Scissors, Clipboard, Files, Moon, Sun, Sparkles, Bot } from 'lucide-react';
 import type { ProjectDoc } from '@/lib/studio-types';
+import { BrandLockup } from './brand-lockup';
 
 interface TopBarProps {
   project: ProjectDoc;
@@ -30,11 +31,8 @@ export function TopBar({ project, dirty, saving, canUndo, canRedo, canCopy, them
     <header className="studio-header flex items-center justify-between border-b border-white/[.07] bg-[#11141a]/95 px-3 backdrop-blur-xl sm:px-5" aria-label="Barra superior de WayUp Studio">
       <div className="flex min-w-0 items-center gap-3">
         <button onClick={onToggleLibrary} className="ui-icon md:hidden" aria-label="Mostrar biblioteca"><Menu size={17} /></button>
-        <img src="/wayup-logo.png" width={38} height={38} alt="Logotipo oficial de WayUp" className="h-[38px] w-[38px] shrink-0 rounded-full object-contain shadow-[0_3px_16px_#1842d42b]"/>
-        <div className="mr-4 hidden leading-tight sm:block">
-          <div className="text-[13px] font-[780] tracking-[-.035em] text-ink">WayUp <span className="font-[430] text-mist">Studio</span></div>
-          <div className="mt-[2px] font-mono text-[8px] font-semibold tracking-[.14em] text-[#687488]">ESPACIO DE CREACIÓN</div>
-        </div>
+        <span className="mr-3 hidden sm:inline-flex"><BrandLockup subtitle="Modo demostración"/></span>
+        <span className="sm:hidden"><BrandLockup compact/></span>
         <div className="mx-1 hidden h-5 w-px bg-white/10 lg:block" />
         <div className="hidden shrink-0 items-center gap-2 text-faint lg:flex"><FolderOpen size={13} /><span className="text-[11px]">Proyectos</span><ChevronRight size={12} /></div>
         <div className="flex min-w-0 items-center gap-2">

@@ -1,23 +1,70 @@
 @import "tailwindcss";
 
-@theme {
-  --color-app: #090b0f;
-  --color-panel: #101318;
-  --color-elevated: #171b22;
-  --color-raised: #20252e;
-  --color-stroke: #262b34;
-  --color-faint: #747e8e;
-  --color-mist: #abb3bf;
-  --color-ink: #ecf0f4;
-  --color-brand: #7795ff;
-  --color-brandsoft: #192441;
-  --font-sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "Geist Mono", "SFMono-Regular", Consolas, monospace;
-  --shadow-panel: 0 14px 48px rgb(0 0 0 / .38), 0 2px 10px rgb(0 0 0 / .2);
+/* ── WayUp Studio · Obsidian Atelier ──────────────────────────────────────
+   Tokens semánticos: los componentes usan bg-app, bg-panel, text-ink, bg-brand…
+   y el tema (claro «Ivory Atelier» / oscuro «Obsidian») solo cambia estas variables.
+   El documento del cliente vive en un iframe aislado: nunca hereda estos estilos. */
+@theme inline {
+  --color-app: var(--wu-app);
+  --color-panel: var(--wu-panel);
+  --color-elevated: var(--wu-elevated);
+  --color-raised: var(--wu-raised);
+  --color-stroke: var(--wu-stroke);
+  --color-faint: var(--wu-faint);
+  --color-mist: var(--wu-mist);
+  --color-ink: var(--wu-ink);
+  --color-brand: var(--wu-brand);
+  --color-brandsoft: var(--wu-brandsoft);
+  --color-canvas: var(--wu-canvas);
+  --font-sans: var(--font-inter), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: var(--font-cormorant), "Cormorant Garamond", Georgia, serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  --shadow-panel: var(--wu-shadow-panel);
+  --shadow-pop: var(--wu-shadow-pop);
 }
+:root, :root[data-theme="dark"] {
+  color-scheme: dark;
+  --wu-app: #090a0e;
+  --wu-panel: #12141b;
+  --wu-elevated: #1a1d27;
+  --wu-raised: #222634;
+  --wu-stroke: #262a36;
+  --wu-faint: #7d8396;
+  --wu-mist: #a4a9b8;
+  --wu-ink: #f5f6f8;
+  --wu-brand: #4a68ff;
+  --wu-brandsoft: #171e44;
+  --wu-canvas: #0d0f14;
+  --wu-scroll: #343a48;
+  --wu-shadow-panel: 0 18px 50px rgb(0 0 0 / .45), 0 2px 8px rgb(0 0 0 / .25);
+  --wu-shadow-pop: 0 16px 40px rgb(0 0 0 / .5), 0 0 0 1px rgb(255 255 255 / .04);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --wu-app: #faf9f6;
+  --wu-panel: #ffffff;
+  --wu-elevated: #f4f3ef;
+  --wu-raised: #ebeae4;
+  --wu-stroke: #e3e3e0;
+  --wu-faint: #777d8c;
+  --wu-mist: #5d6474;
+  --wu-ink: #171923;
+  --wu-brand: #0029ff;
+  --wu-brandsoft: #e8eeff;
+  --wu-canvas: #efeee9;
+  --wu-scroll: #cfcfca;
+  --wu-shadow-panel: 0 14px 40px rgb(23 25 35 / .08), 0 1px 3px rgb(23 25 35 / .06);
+  --wu-shadow-pop: 0 14px 34px rgb(23 25 35 / .14), 0 0 0 1px rgb(23 25 35 / .05);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html.wu-theme-anim, html.wu-theme-anim * { transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease !important; }
+}
+/* Lockup de marca: el logotipo correcto según tema, sin parpadeo ni JavaScript. */
+.wu-logo-dark { display: none; }
+:root[data-theme="dark"] .wu-logo-light { display: none; }
+:root[data-theme="dark"] .wu-logo-dark { display: block; }
 
 :root {
-  color-scheme: dark;
   --ui-divider: rgb(255 255 255 / 7%);
   --ui-surface: #12151a;
   --ui-ease: 180ms cubic-bezier(.2,.8,.2,1);
@@ -29,13 +76,13 @@ body { background: var(--color-app); color: var(--color-ink); font-family: var(-
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-::selection { background: #607fff70; color: #fff; }
-:focus-visible { outline: 2px solid #92acff; outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--wu-brand) 35%, transparent); }
+:focus-visible { outline: 2px solid var(--wu-brand); outline-offset: 2px; }
 
-.scroll-subtle { scrollbar-width: thin; scrollbar-color: #353c48 transparent; }
+.scroll-subtle { scrollbar-width: thin; scrollbar-color: var(--wu-scroll) transparent; }
 .scroll-subtle::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-subtle::-webkit-scrollbar-track { background: transparent; }
-.scroll-subtle::-webkit-scrollbar-thumb { background: #363e4a; border: 2px solid transparent; border-radius: 999px; }
+.scroll-subtle::-webkit-scrollbar-thumb { background: var(--wu-scroll); border: 2px solid transparent; border-radius: 999px; }
 
 .studio-shell {
   display: grid;

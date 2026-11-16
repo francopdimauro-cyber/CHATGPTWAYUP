@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
-  FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
+  FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2, Tablet,
   Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
 import { SectionExplorer, type SectionAction } from './section-explorer';
+import { BrandLockup } from './brand-lockup';
+import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
@@ -23,10 +25,10 @@ type BrowserEditorProps={
 };
 const cleanName=(value:string):string=>value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
   .replace(/[^a-z0-9-]/g,'-').replace(/-+/g,'-').slice(0,64)||'web';
-const BASE='rounded-xl border border-stroke bg-elevated px-3 py-2.5 text-[12px] text-ink outline-none focus:border-brand';
-const btn='inline-flex min-h-[36px] items-center justify-center gap-2 rounded-lg border border-stroke bg-elevated px-3 text-[11px] font-semibold text-ink transition hover:border-brand/50 hover:bg-raised disabled:opacity-40';
-const primary='inline-flex min-h-[37px] items-center justify-center gap-2 rounded-lg bg-[#2855ee] px-4 text-[11px] font-bold text-white shadow-sm hover:bg-[#3e69f5] disabled:opacity-50';
-const steps=[['01','Crear web'],['02','Editar web'],['03','Agente IA'],['04','Exportar']] as const;
+const BASE='rounded-lg border border-stroke bg-panel px-3 py-2.5 text-[12.5px] text-ink outline-none transition placeholder:text-faint focus:border-brand focus:ring-2 focus:ring-brand/15';
+const btn='inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg border border-stroke bg-panel px-2.5 text-[11.5px] font-medium text-ink transition hover:border-brand/45 hover:bg-elevated disabled:opacity-40 disabled:hover:border-stroke';
+const primary='inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 text-[11.5px] font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-50';
+const steps=[['01','Crear'],['02','Editar'],['03','Agente IA'],['04','Exportar']] as const;
 function fileByte(bytes:Uint8Array):string{
   if(bytes.length>2_000_000)throw Error('El archivo HTML supera 2 MB.');
   return strFromU8(bytes);
@@ -97,7 +99,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [notice,setNotice]=useState('');
   const [fileError,setFileError]=useState('');
   const [view,setView]=useState<View>('preview');
-  const [device,setDevice]=useState<'desktop'|'mobile'>('desktop');
+  const [device,setDevice]=useState<'desktop'|'tablet'|'mobile'>('desktop');
   const [selected,setSelected]=useState<number|null>(null);
   const [moveMode,setMoveMode]=useState(false);
   const moveModeRef=useRef(false);
@@ -391,56 +393,64 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     </label>
   );
   return <div className="fixed inset-0 z-[60] flex min-h-0 flex-col overflow-hidden bg-app text-ink" role="dialog" aria-modal="true" aria-label="WayUp Studio — Crear y editar webs reales">
-    <header className="flex h-[63px] shrink-0 items-center justify-between gap-3 border-b border-stroke bg-panel px-4 sm:px-6">
+    <header className="flex h-[58px] shrink-0 items-center justify-between gap-3 border-b border-stroke bg-panel px-3 sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
-        <img src="/wayup-logo.png" className="h-9 w-9 shrink-0 rounded-full object-contain" alt="WayUp"/>
-        <div className="min-w-0"><div className="text-[13px] font-bold tracking-tight">WayUp Studio <span className="font-normal text-mist">/ Web Workspace</span></div>
-          <div className="truncate text-[10px] text-faint">{site?site.name:'Proyectos · Creador · Editor · Agente IA'}</div></div>
+        <BrandLockup size={32}/>
+        {site&&<>
+          <span className="hidden h-6 w-px bg-stroke md:block" aria-hidden/>
+          <span className="hidden min-w-0 flex-col leading-tight md:flex">
+            <span className="truncate text-[12.5px] font-semibold text-ink">{site.name}</span>
+            <span className="flex items-center gap-1.5 text-[10px] text-faint">
+              <span className={'h-1.5 w-1.5 rounded-full '+(dirty?'bg-amber-400':'bg-emerald-500')} aria-hidden/>
+              {dirty?'Cambios sin guardar':site.cloud?'Guardado en la nube · v'+site.cloud.version:'Guardado en este dispositivo'}
+            </span>
+          </span>
+        </>}
       </div>
-      <div className="hidden items-center gap-2 lg:flex">
-        {steps.map(([number,label],index)=>(
-          <div key={number} className="flex items-center gap-1.5">
-            {index>0&&<ChevronRight size={12} className="text-faint"/>}
-            <span className={'rounded-md px-2 py-1.5 text-[10px] font-semibold '+(
-              (stage==='home'||stage==='create'?index===0:stage==='editor'?index===1:stage==='agent'?index===2:index===3)?
-                'bg-brandsoft text-brand':'text-mist'
-            )}>{number} · {label}</span>
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        {site&&<button onClick={()=>setStage('home')} className={btn}><FolderOpen size={14}/> Proyectos</button>}
-        <button onClick={onClose} className={btn} title="Cerrar Web Workspace"><X size={15}/><span className="hidden sm:inline">Cerrar</span></button>
+      <nav aria-label="Pasos del proyecto" className="hidden items-center rounded-full border border-stroke bg-elevated p-1 lg:flex">
+        {steps.map(([number,label],index)=>{
+          const current=(stage==='home'||stage==='create'?0:stage==='editor'?1:stage==='agent'?2:3);
+          return <span key={number} aria-current={index===current?'step':undefined}
+            className={'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors '+(index===current?'bg-panel text-ink shadow-panel':index<current?'text-mist':'text-faint')}>
+            <span className={'inline-flex h-[18px] w-[18px] items-center justify-center rounded-full font-mono text-[9.5px] '+(index===current?'bg-brand text-white':index<current?'bg-brandsoft text-brand':'border border-stroke')}>{index<current?<Check size={10}/>:index+1}</span>
+            {label}
+          </span>;
+        })}
+      </nav>
+      <div className="flex items-center gap-1.5">
+        <ThemeToggle/>
+        {site&&<button onClick={()=>setStage('home')} className={btn}><FolderOpen size={14}/><span className="hidden sm:inline">Mis webs</span></button>}
+        <button onClick={onClose} className={btn} title="Cerrar y volver al modo demostración" aria-label="Cerrar"><X size={15}/></button>
       </div>
     </header>
     {(notice||fileError)&&<div role="status" className={'shrink-0 border-b px-4 py-2 text-[11px] '+(fileError?'border-red-500/30 bg-red-500/10 text-red-400':'border-stroke bg-elevated text-mist')}>{fileError||notice}</div>}
     {(stage==='home'||stage==='create')&&<main className="scroll-subtle mx-auto w-full max-w-[1090px] flex-1 overflow-y-auto px-5 py-8 sm:px-9">
-      <div className="mb-7 flex items-end justify-between gap-3">
-        <div><div className="mb-2 text-[10px] font-bold uppercase tracking-[.2em] text-brand">El estudio definitivo</div>
-          <h1 className="text-[clamp(25px,3vw,38px)] font-semibold tracking-[-.055em]">Una web real. Tu diseño. Tu agente.</h1>
-          <p className="mt-2 max-w-[600px] text-[12px] leading-6 text-mist">Crea una web con IA o abre cualquier proyecto HTML/ZIP para editar su código, diseño y exportación.</p></div>
+      <div className="mb-8 flex items-end justify-between gap-3">
+        <div><div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-[.22em] text-brand">{stage==='create'?'Crear web':'Mis webs'}</div>
+          <h1 className="font-display text-[clamp(34px,4.4vw,54px)] font-semibold leading-[1.02] tracking-[-.02em]">Una web real. <em className="font-medium text-brand">Tu diseño.</em> Tu agente.</h1>
+          <p className="mt-3 max-w-[580px] text-[13px] leading-6 text-mist">Genera una web con IA, importa un proyecto HTML o ZIP, o empieza en blanco. Todo se edita sobre el código real y se exporta sin dependencias.</p></div>
         {stage==='create'&&<button onClick={()=>setStage('home')} className={btn}><ArrowLeft size={14}/> Volver</button>}
       </div>
       {stage==='home'?<>
         <div className="grid gap-4 md:grid-cols-3">
-          <button onClick={()=>{setStage('create');setFileError('');}} className="group flex min-h-[175px] flex-col items-start gap-3 rounded-2xl border border-brand/30 bg-brandsoft p-5 text-left transition hover:border-brand">
+          <button onClick={()=>{setStage('create');setFileError('');}} className="group flex min-h-[176px] flex-col items-start gap-3 rounded-xl border border-brand/35 bg-brandsoft p-5 text-left transition hover:-translate-y-0.5 hover:border-brand hover:shadow-panel">
             <Sparkles size={25} className="text-brand"/>
-            <span className="text-[16px] font-bold">Generar con IA</span>
-            <span className="text-[12px] leading-5 text-mist">Briefing profesional, motor WebCreator y apertura automática en el editor.</span>
+            <span className="font-display text-[22px] font-semibold leading-none">Generar con IA</span>
+            <span className="text-[12px] leading-5 text-mist">Briefing profesional, motor IA de Studio y apertura automática en el editor.</span>
             <span className="mt-auto text-[11px] font-semibold text-brand">Crear proyecto →</span>
           </button>
-          <button onClick={()=>fileInput.current?.click()} className="flex min-h-[175px] flex-col items-start gap-3 rounded-2xl border border-stroke bg-panel p-5 text-left transition hover:border-brand/40">
+          <button onClick={()=>fileInput.current?.click()} className="group flex min-h-[176px] flex-col items-start gap-3 rounded-xl border border-stroke bg-panel p-5 text-left transition hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-panel">
             <FileUp size={25} className="text-brand"/>
-            <span className="text-[16px] font-bold">Importar una web</span>
+            <span className="font-display text-[22px] font-semibold leading-none">Importar una web</span>
             <span className="text-[12px] leading-5 text-mist">HTML o ZIP completo. Conserva CSS, imágenes, fuentes y estructura.</span>
             <span className="mt-auto text-[11px] font-semibold text-brand">Elegir archivo →</span>
           </button>
           <button onClick={()=>{
             const title='Mi nuevo proyecto';
             changeSite(siteFromHtml('<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+title+'</title><style>body{font:16px system-ui;margin:0;background:#f8f9fc;color:#151a26}header{padding:26px 6%;background:#fff;border-bottom:1px solid #ddd}main{padding:90px 6%;max-width:900px;margin:auto}h1{font-size:clamp(38px,6vw,72px);line-height:1.07}p{line-height:1.8}</style></head><body><header>MI MARCA · INICIO · SERVICIOS · CONTACTO</header><main><h1>Tu próxima gran web comienza aquí</h1><p>Selecciona cualquier elemento del lienzo y empieza a personalizarlo desde el Inspector. También puedes editar el código HTML completo.</p></main></body></html>',title));
-          }} className="flex min-h-[175px] flex-col items-start gap-3 rounded-2xl border border-stroke bg-panel p-5 text-left transition hover:border-brand/40">
+          }} className="group flex min-h-[176px] flex-col items-start gap-3 rounded-xl border border-stroke bg-panel p-5 text-left transition hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-panel">
             <FilePlus2 size={25} className="text-brand"/>
-            <span className="text-[16px] font-bold">Empezar en blanco</span>
+            <span className="font-display text-[22px] font-semibold leading-none">Empezar en blanco</span>
             <span className="text-[12px] leading-5 text-mist">Editor libre con código HTML y personalización de elementos reales.</span>
             <span className="mt-auto text-[11px] font-semibold text-brand">Nuevo lienzo →</span>
           </button>
@@ -467,7 +477,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
         </div>
         <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
       </>:<div className="rounded-2xl border border-stroke bg-panel p-5 sm:p-7">
-        <div className="mb-5 flex items-center justify-between"><h2 className="text-[17px] font-bold">Crear web con WebCreator</h2><span className="rounded-full bg-brandsoft px-3 py-1 text-[10px] text-brand">Formulario completo</span></div>
+        <div className="mb-5 flex items-center justify-between"><h2 className="font-display text-[24px] font-semibold">Briefing del proyecto</h2><span className="rounded-full bg-brandsoft px-3 py-1 text-[10px] text-brand">Formulario completo</span></div>
         <div className="grid gap-4 md:grid-cols-2">
           {editInputs('name','Nombre del negocio','Ej. Estudio Norte Demo',true)}
           {editInputs('industry','Sector o actividad','Gimnasio, restaurante, clínica…',true)}
@@ -500,25 +510,28 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       </div>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-4 py-2.5">
-        <div className="flex items-center gap-2 text-[10px] text-mist">
-          <span className="rounded-md bg-brandsoft px-2 py-1 font-bold text-brand">{site.source==='generated'?'GENERADA':'IMPORTADA'}</span>
-          <span className="hidden sm:inline">{site.entry}</span>
-          <span>{Object.keys(site.assets).length} recursos</span>
-          {dirty&&<span className="text-amber-400">● Sin guardar</span>}
-          {site.cloud&&<span className="text-brand">Nube · v{site.cloud.version}</span>}
-        </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-3 py-2 sm:px-4">
         <div className="flex flex-wrap items-center gap-1.5">
           <button onClick={()=>{setExplorerOpen(v=>!v);setInspectorOpen(false);}} aria-pressed={explorerOpen} className={btn+' xl:hidden'} title="Abrir explorador de secciones"><Layers3 size={14}/> Explorador</button>
           <button onClick={()=>{setInspectorOpen(v=>!v);setExplorerOpen(false);}} aria-pressed={inspectorOpen} className={btn+' lg:hidden'} title="Abrir propiedades del elemento"><SlidersHorizontal size={14}/> Propiedades</button>
-          <button onClick={undo} disabled={!past.length} className={btn} title="Deshacer"><Undo2 size={14}/></button>
-          <button onClick={redo} disabled={!future.length} className={btn} title="Rehacer"><Redo2 size={14}/></button>
-          <button onClick={()=>setView('preview')} className={btn+(view==='preview'?' border-brand text-brand':'')}><Paintbrush size={14}/> Visual</button>
-          <button onClick={()=>setMoveMode(v=>!v)} aria-pressed={moveMode} className={btn+(moveMode?' border-brand text-brand':'')} title="Activa para arrastrar elementos directamente en la web importada"><Move size={14}/> Mover</button>
-          <button onClick={()=>setView('code')} className={btn+(view==='code'?' border-brand text-brand':'')}><CodeXml size={14}/> HTML</button>
-          <button onClick={()=>void onSave()} disabled={busy} className={btn}><Save size={14}/> Guardar</button>
-          <button onClick={()=>void onCloudSave()} disabled={busy} className={btn} title="Guardar versión en Cloudflare con sesión y control de concurrencia"><Globe size={14}/> Guardar nube</button>
-          <button onClick={()=>setStage('agent')} className={primary}><Bot size={14}/> Siguiente: Agente IA</button>
+          <div className="flex items-center gap-0.5">
+            <button onClick={undo} disabled={!past.length} className={btn+' w-[34px] px-0'} title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><Undo2 size={14}/></button>
+            <button onClick={redo} disabled={!future.length} className={btn+' w-[34px] px-0'} title="Rehacer (Ctrl+Mayús+Z)" aria-label="Rehacer"><Redo2 size={14}/></button>
+          </div>
+          <div role="group" aria-label="Modo del editor" className="flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px]">
+            <button onClick={()=>{setView('preview');setMoveMode(false);}} aria-pressed={view==='preview'&&!moveMode} className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='preview'&&!moveMode?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><Paintbrush size={13}/> Diseño</button>
+            <button onClick={()=>{setView('preview');setMoveMode(v=>!v);}} aria-pressed={moveMode} className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(moveMode?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')} title="Arrastra elementos directamente en la web"><Move size={13}/> Mover</button>
+            <button onClick={()=>{setView('code');setMoveMode(false);}} aria-pressed={view==='code'} className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(view==='code'?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><CodeXml size={13}/> Código</button>
+          </div>
+          <span className="hidden items-center gap-2 pl-1 text-[10.5px] text-faint xl:flex">
+            <span className="rounded bg-brandsoft px-1.5 py-0.5 font-mono text-[9.5px] font-medium uppercase tracking-wider text-brand">{site.source==='generated'?'Generada':'Importada'}</span>
+            <span className="font-mono">{site.entry}</span><span>· {Object.keys(site.assets).length} recursos</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button onClick={()=>void onSave()} disabled={busy} className={btn} title="Guardar en este dispositivo"><Save size={14}/> Guardar</button>
+          <button onClick={()=>void onCloudSave()} disabled={busy} className={btn} title="Guardar una versión privada en la nube"><Globe size={14}/> Guardar en la nube</button>
+          <button onClick={()=>setStage('agent')} className={primary}><Bot size={14}/> Siguiente: agente IA</button>
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
@@ -527,15 +540,20 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           onAction={onSectionAction} mobileOpen={explorerOpen} onCloseMobile={()=>setExplorerOpen(false)}/>}
         {(explorerOpen||inspectorOpen)&&<button type="button" aria-label="Cerrar paneles" className="fixed inset-0 z-[65] bg-black/45 xl:hidden"
           onClick={()=>{setExplorerOpen(false);setInspectorOpen(false);}}/>}
-        <div className="flex min-w-0 flex-1 flex-col bg-app">
+        <div className="flex min-w-0 flex-1 flex-col bg-canvas">
           {view==='preview'?<>
-            <div className="flex items-center justify-center gap-2 border-b border-stroke py-2">
-              <button onClick={()=>setDevice('desktop')} aria-pressed={device==='desktop'} className={btn+(device==='desktop'?' border-brand':'')}><Monitor size={14}/> Escritorio</button>
-              <button onClick={()=>setDevice('mobile')} aria-pressed={device==='mobile'} className={btn+(device==='mobile'?' border-brand':'')}><Smartphone size={14}/> Móvil</button>
+            <div className="flex items-center justify-between gap-2 border-b border-stroke bg-panel/60 px-3 py-1.5">
+              <span className="hidden truncate text-[11px] text-faint sm:block">{activeSection?<>Sección: <span className="text-mist">{activeSection.name}</span></>:'Haz clic en la web para seleccionar un elemento'}</span>
+              <div role="group" aria-label="Dispositivo de vista previa" className="mx-auto flex items-center gap-0.5 rounded-lg border border-stroke bg-elevated p-[3px] sm:mx-0">
+                {([['desktop','Escritorio',Monitor],['tablet','Tableta',Tablet],['mobile','Móvil',Smartphone]] as const).map(([id,label,Icon])=>
+                  <button key={id} onClick={()=>setDevice(id)} aria-pressed={device===id} title={label}
+                    className={'inline-flex h-[28px] items-center gap-1.5 rounded-md px-2.5 text-[11.5px] font-medium transition '+(device===id?'bg-panel text-ink shadow-sm':'text-mist hover:text-ink')}><Icon size={13}/><span className="hidden md:inline">{label}</span></button>)}
+              </div>
+              <span className="hidden font-mono text-[10px] text-faint sm:block">{device==='mobile'?'390':device==='tablet'?'820':'1280'} px</span>
             </div>
-            <div className="scroll-subtle flex-1 overflow-auto p-3 sm:p-6">
-              <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-lg border border-stroke bg-white shadow-panel"
-                style={{maxWidth:device==='mobile'?390:1280}}>
+            <div className="scroll-subtle flex-1 overflow-auto p-3 sm:p-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
+              <div className="mx-auto h-full min-h-[480px] overflow-hidden rounded-md border border-stroke bg-white shadow-panel transition-[max-width] duration-300"
+                style={{maxWidth:device==='mobile'?390:device==='tablet'?820:1280}}>
                 <iframe title="Previsualización segura de la web importada" ref={previewFrame} onLoad={previewLoaded}
                   sandbox="allow-same-origin" referrerPolicy="no-referrer" srcDoc={preview?.html||''}
                   className="h-full min-h-[620px] w-full border-0 bg-white"/>
@@ -553,9 +571,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           </>}
         </div>
         <aside aria-label="Inspector de propiedades" className={'scroll-subtle w-[278px] shrink-0 overflow-y-auto border-l border-stroke bg-panel p-4 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-[70] max-lg:w-[min(320px,88vw)] max-lg:shadow-2xl '+(inspectorOpen?'':'max-lg:hidden')}>
-          <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-semibold">Inspector HTML</h2><span className="font-mono text-[9px] text-faint">DOM</span></div>
-          <p className="mb-4 text-[11px] leading-5 text-mist">Haz clic en un elemento de la web para editar sus propiedades. Los cambios se reflejan en el HTML exportado.</p>
-          {selected===null?<div className="rounded-lg border border-dashed border-stroke p-4 text-[11px] text-faint">Selecciona un texto, título o botón del Canvas.</div>:<>
+          <div className="mb-3 flex items-center justify-between"><h2 className="flex items-center gap-2 text-[12px] font-semibold"><SlidersHorizontal size={14} className="text-brand"/> Propiedades</h2>
+            <button type="button" onClick={()=>setInspectorOpen(false)} className="inline-flex h-8 w-8 items-center justify-center rounded-md text-mist hover:bg-raised lg:hidden" aria-label="Cerrar propiedades"><X size={15}/></button></div>
+          <p className="mb-4 text-[11px] leading-5 text-mist">Selecciona un elemento en la web o en el Explorador. Cada cambio se aplica al HTML real y se puede deshacer.</p>
+          {selected===null?<div className="rounded-lg border border-dashed border-stroke p-4 text-[11px] text-faint">Nada seleccionado.</div>:<>
             <div className="mb-2 rounded-lg border border-stroke bg-elevated px-3 py-2 font-mono text-[10px] text-mist">{activeLayer?.tag||'Nodo'} · #{selected}{activeSection?' · '+activeSection.name:''}</div>
             {activeSection&&activeSection.index!==selected&&<div className="mb-4 grid grid-cols-4 gap-1" aria-label="Acciones del elemento">
               <button className={btn+' justify-center px-0'} onClick={()=>modifyStructure('duplicate')} title="Duplicar elemento" aria-label="Duplicar elemento"><Copy size={13}/></button>
