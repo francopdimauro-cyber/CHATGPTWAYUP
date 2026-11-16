@@ -125,10 +125,12 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
     'marca-icono','marca-nombre','nav-inicio','nav-servicios','nav-planes','nav-metodo','nav-testimonios','nav-contacto','nav-cta',
     'servicio-etiqueta','servicio-titulo','servicio-descripcion',
   ]);
-  const inserted = doc.sections.flatMap(section=>section.children)
+  const inserted = doc.sections.filter(section=>section.id==='inicio').flatMap(section=>section.children)
     .filter((id,index,ids)=>!baseIds.has(id)&&ids.indexOf(id)===index&&Boolean(items[id]));
   return <div className="min-h-[620px] overflow-hidden bg-[#080b09] text-white" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
-    <nav className="relative z-20 flex min-h-[76px] items-center justify-between gap-2 border-b border-white/10 bg-[#090c0a] px-[5%]" aria-label="Navegación de la web en edición">
+    {doc.sections.map(section=>{
+      if(section.id==='cabecera')return (
+    <nav key={section.id} className="relative z-20 flex min-h-[76px] items-center justify-between gap-2 border-b border-white/10 bg-[#090c0a] px-[5%]" aria-label="Navegación de la web en edición">
       <div className="flex items-center gap-2.5">
         {node('marca-icono','flex min-h-10 min-w-10 shrink-0 items-center justify-center text-center no-underline')}
         {node('marca-nombre','shrink-0 leading-tight tracking-[-.05em]')}
@@ -140,7 +142,9 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
         {node('nav-cta','shrink-0 items-center justify-center whitespace-nowrap no-underline')}
       </div>
     </nav>
-    <section id="inicio" className="relative flex min-h-[510px] flex-col items-center justify-center px-[5%] pb-14 pt-12 text-center" style={{background: 'radial-gradient(ellipse 55% 48% at 50% 55%, #172009 0%, #090c09 68%, #070908 100%)'}}>
+      );
+      if(section.id==='inicio')return (
+    <section key={section.id} id="inicio" className="relative flex min-h-[510px] flex-col items-center justify-center px-[5%] pb-14 pt-12 text-center" style={{background: 'radial-gradient(ellipse 55% 48% at 50% 55%, #172009 0%, #090c09 68%, #070908 100%)'}}>
       {node('titulo', 'mx-auto my-0 max-w-full leading-[1.05] tracking-[-.058em]')}
       {node('subtitulo', 'mx-auto mb-7 mt-1.5 max-w-full leading-[1.1] tracking-[-.04em]')}
       {node('descripcion', 'mx-auto my-0 max-w-[650px] leading-[1.75] tracking-[-.01em]', {fontSize: device === 'movil' ? 13 : items.descripcion?.style.fontSize ?? 16})}
@@ -155,11 +159,26 @@ function GymPreview({ doc, mode, selectedId, onSelect, onMove, device }: Pick<Ca
       <div className="pointer-events-none absolute bottom-8 left-8 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#ecebda] text-[#1c241f]">◷</div>
       <div className="pointer-events-none absolute bottom-8 right-8 flex h-12 w-12 items-center justify-center rounded-full bg-[#b3ee06] text-[24px] text-black shadow-[0_0_23px_#b3ee0663]">✆</div>
     </section>
-    <div id="servicios" className="flex flex-col items-center border-t border-white/10 bg-[#101410] px-8 py-14 text-center">
+      );
+      if(section.id==='servicios')return (
+    <div key={section.id} id="servicios" className="flex flex-col items-center border-t border-white/10 bg-[#101410] px-8 py-14 text-center">
       {node('servicio-etiqueta','mx-auto font-mono uppercase tracking-[.2em]')}
       <div className="mt-3">{node('servicio-titulo','mx-auto')}</div>
       <div className="mx-auto mt-3 max-w-lg leading-relaxed">{node('servicio-descripcion','mx-auto')}</div>
     </div>
+      );
+      return <section key={section.id} id={section.id} className="border-t border-white/10 bg-[#101410] px-6 py-14 text-center sm:px-10">
+        <div className="mx-auto max-w-[850px]">
+          {section.children.length>0?section.children.map((id,i)=>
+            <div key={id} className={i===0?'mb-4 flex justify-center':'mt-3 flex justify-center'}>
+              {node(id,'max-w-full break-words leading-relaxed')}
+            </div>
+          ):<p className="rounded-lg border border-dashed border-white/15 px-4 py-12 text-[13px] text-[#a9b6a9]">
+            {section.label} · Esta sección aún no tiene elementos.
+          </p>}
+        </div>
+      </section>;
+    })}
   </div>;
 }
 
