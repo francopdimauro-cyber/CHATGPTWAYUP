@@ -696,6 +696,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             </div>}
             {elementInfo&&elementInfo.index===selected&&<PropertyPanel info={elementInfo}
               onStyles={styles=>tryEdit(()=>setStyles(site.html,elementInfo.index,styles),'Estilo aplicado al elemento.')}
+              onPreview={styles=>{const el=selectedRef.current;if(!el)return;for(const [prop,value] of Object.entries(styles))el.style.setProperty(prop,value);}}
               onAttrs={attrs=>tryEdit(()=>setAttributes(site.html,elementInfo.index,attrs),'Atributos actualizados.')}
               onText={text=>tryEdit(()=>setInlineContent(site.html,elementInfo.index,escapeText(text)),'Texto actualizado.')}
               onEditText={()=>startTextEdit(elementInfo.index)}

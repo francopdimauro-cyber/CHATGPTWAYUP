@@ -1,7 +1,7 @@
 'use client';
 /** Panel «Propiedades»: controles reales sobre el elemento seleccionado del HTML.
  *  Cada control aplica estilos en línea validados (lib/element-editing) y entra en el historial. */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Link2, Strikethrough, Type, Underline } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { ButtonStyles } from './button-styles';
@@ -14,6 +14,8 @@ export type ElementInfo = {
 type Props = {
   info: ElementInfo;
   onStyles(styles: Record<string, string>): void;
+  /** Vista previa en vivo (sin historial) mientras se arrastra un control. */
+  onPreview?(styles: Record<string, string>): void;
   onAttrs(attrs: Record<string, string>): void;
   onText(text: string): void;
   onEditText(): void;
@@ -55,22 +57,52 @@ function rgba(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16), r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
   return alpha >= 1 ? hex.toUpperCase() : `rgba(${r}, ${g}, ${b}, ${Math.round(alpha * 100) / 100})`;
 }
+/** Cambios continuos (arrastrar un regulador o el selector de color): se ven en vivo sobre la web
+ *  y solo se guardan UNA vez al soltar, como un único paso de deshacer. */
+function useLive(value: string, onCommit: (v: string) => void, onPreview?: (v: string) => void) {
+  const [live, setLive] = useState<string | null>(null);
+  const latest = useRef<string | null>(null);
+  const move = (v: string) => { latest.current = v; setLive(v); onPreview?.(v); };
+  const end = () => { const v = latest.current; latest.current = null; setLive(null); if (v !== null && v !== value) onCommit(v); };
+  return { live, move, end };
+}
+/** Regulador que previsualiza mientras se arrastra y confirma al soltar. */
+function LiveRange({ value, onMove, onEnd, ariaLabel, className = '' }: { value: number; onMove(n: number): void; onEnd(): void; ariaLabel: string; className?: string }) {
+  return <input type="range" min={0} max={100} value={value} aria-label={ariaLabel}
+    onChange={e => onMove(Number(e.target.value))} onPointerUp={onEnd} onKeyUp={onEnd} onBlur={onEnd} onTouchEnd={onEnd}
+    className={'accent-[var(--wu-brand)] ' + className} />;
+}
+function OpacityControl({ value, onCommit, onPreview }: { value: string; onCommit(v: string): void; onPreview(v: string): void }) {
+  const { live, move, end } = useLive(value, onCommit, onPreview);
+  const pct = Math.round(Number(live ?? value) * 100);
+  return <div><span className={label}>Opacidad · {pct}%</span>
+    <LiveRange value={pct} ariaLabel="Opacidad" className="mt-1 w-full" onMove={n => move(String(n / 100))} onEnd={end} /></div>;
+}
 /** Selector visual de color con HEX/RGB y transparencia. */
-function ColorField({ name, value, computed, onChange }: { name: string; value: string; computed: string; onChange(v: string): void }) {
-  const shown = value || computed;
+function ColorField({ name, value, computed, onChange, onPreview }: { name: string; value: string; computed: string; onChange(v: string): void; onPreview?(v: string): void }) {
+  const { live, move, end } = useLive(value, onChange, onPreview);
+  const shown = live ?? (value || computed);
   const { hex, alpha } = toHex(shown);
+  const [invalid, setInvalid] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => { const el = picker.current; if (!el) return; el.addEventListener('change', end); return () => el.removeEventListener('change', end); });
   return <div>
     <span className={label}>{name}</span>
     <div className="mt-1 flex items-center gap-1.5">
       <label className="relative h-[30px] w-[30px] shrink-0 cursor-pointer overflow-hidden rounded-md border border-stroke"
         style={{ backgroundImage: 'linear-gradient(45deg,#ccc 25%,transparent 25%,transparent 75%,#ccc 75%),linear-gradient(45deg,#ccc 25%,#fff 25%,#fff 75%,#ccc 75%)', backgroundSize: '8px 8px', backgroundPosition: '0 0,4px 4px' }}>
         <span className="absolute inset-0" style={{ background: shown }} />
-        <input type="color" aria-label={'Elegir ' + name.toLowerCase()} value={hex} onChange={e => onChange(rgba(e.target.value, alpha || 1))} className="absolute inset-0 cursor-pointer opacity-0" />
+        <input ref={picker} type="color" aria-label={'Elegir ' + name.toLowerCase()} value={hex}
+          onChange={e => move(rgba(e.target.value, alpha > 0 ? alpha : 1))} onBlur={end} className="absolute inset-0 cursor-pointer opacity-0" />
       </label>
-      <Field ariaLabel={name + ' en HEX o RGB'} value={value} placeholder={computed} onCommit={v => { if (!v.trim()) { onChange(''); return; } const c = parseColorCode(v); if (c) onChange(c); }} />
-      <input type="range" min={0} max={100} value={Math.round(alpha * 100)} aria-label={'Opacidad de ' + name.toLowerCase()}
-        onChange={e => onChange(rgba(hex, Number(e.target.value) / 100))} className="w-[62px] shrink-0 accent-[var(--wu-brand)]" />
+      <Field ariaLabel={name + ' en HEX o RGB'} value={live ?? value} placeholder={computed} onCommit={v => {
+        if (!v.trim()) { setInvalid(false); onChange(''); return; }
+        const c = parseColorCode(v); setInvalid(!c); if (c) onChange(c);
+      }} />
+      <LiveRange value={Math.round(alpha * 100)} ariaLabel={'Opacidad de ' + name.toLowerCase()} className="w-[62px] shrink-0"
+        onMove={n => move(rgba(hex, n / 100))} onEnd={end} />
     </div>
+    {invalid && <p className="mt-1 text-[10px] text-red-500">Formato no válido. Usa #RRGGBB, #RGB o rgb(0, 0, 0).</p>}
   </div>;
 }
 function Box({ prefix, info, onStyles }: { prefix: 'margin' | 'padding'; info: ElementInfo; onStyles(s: Record<string, string>): void }) {
@@ -89,9 +121,14 @@ function Box({ prefix, info, onStyles }: { prefix: 'margin' | 'padding'; info: E
 }
 const SHADOWS: [string, string][] = [['', 'Sin sombra'], ['0 1px 3px rgba(0, 0, 0, 0.12)', 'Sutil'], ['0 8px 24px rgba(0, 0, 0, 0.14)', 'Media'], ['0 20px 50px rgba(0, 0, 0, 0.22)', 'Profunda'], ['0 0 0 1px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.12)', 'Flotante']];
 
-export function PropertyPanel({ info, onStyles, onAttrs, onText, onEditText, extra }: Props) {
+export function PropertyPanel({ info, onStyles, onPreview, onAttrs, onText, onEditText, extra }: Props) {
+  const preview = (p: string) => (val: string) => onPreview?.({ [p]: val });
   const v = (p: string) => info.inline[p] || '';
   const c = (p: string) => info.computed[p] || '';
+  // Un degradado (background-image) tapa el color de fondo: al elegir un color sólido se sustituye.
+  const hasGradient = /gradient\(/.test(v('background-image') || c('background-image'));
+  const bgStyles = (val: string): Record<string, string> => hasGradient && val ? { 'background-color': val, 'background-image': 'none' } : { 'background-color': val };
+  const solidBg = (val: string) => onStyles(bgStyles(val));
   const set = (p: string) => (val: string) => onStyles({ [p]: val });
   const display = v('display') || c('display');
   const isFlex = display.includes('flex'), isGrid = display.includes('grid');
@@ -139,11 +176,12 @@ export function PropertyPanel({ info, onStyles, onAttrs, onText, onEditText, ext
       </div>
       <div><span className={label}>Mayúsculas</span><Select ariaLabel="Transformación del texto" value={v('text-transform')} onChange={set('text-transform')}
         options={[['', 'Heredado'], ['none', 'Normal'], ['uppercase', 'MAYÚSCULAS'], ['lowercase', 'minúsculas'], ['capitalize', 'Primera Letra']]} /></div>
-      <ColorField name="Color del texto" value={v('color')} computed={c('color')} onChange={set('color')} />
+      <ColorField name="Color del texto" value={v('color')} computed={c('color')} onChange={set('color')} onPreview={preview('color')} />
     </Group>
 
     <Group title="Fondo">
-      <ColorField name="Color de fondo" value={v('background-color')} computed={c('background-color')} onChange={set('background-color')} />
+      <ColorField name="Color de fondo" value={v('background-color')} computed={c('background-color')} onChange={solidBg} onPreview={val => onPreview?.(bgStyles(val))} />
+      {hasGradient && <p className="text-[10px] leading-4 text-faint">Este elemento tiene un degradado encima del color. Al elegir un color sólido se sustituye (puedes deshacerlo).</p>}
       <div><span className={label}>Degradado (CSS)</span><Field ariaLabel="Degradado de fondo" value={v('background-image').startsWith('linear') || v('background-image').startsWith('radial') ? v('background-image') : ''}
         placeholder="linear-gradient(135deg, #0029ff, #8cdded)" onCommit={set('background-image')} /></div>
       {v('background-image').startsWith('url') && <div className="grid grid-cols-2 gap-1.5">
@@ -157,16 +195,14 @@ export function PropertyPanel({ info, onStyles, onAttrs, onText, onEditText, ext
         <div><span className={label}>Grosor</span><Field ariaLabel="Grosor del borde" value={v('border-width')} placeholder={c('border-top-width')} onCommit={w => onStyles(w && !v('border-style') ? { 'border-width': w, 'border-style': 'solid' } : { 'border-width': w })} /></div>
         <div><span className={label}>Estilo</span><Select ariaLabel="Estilo del borde" value={v('border-style')} onChange={set('border-style')} options={[['', 'Heredado'], ['none', 'Ninguno'], ['solid', 'Continuo'], ['dashed', 'Discontinuo'], ['dotted', 'Punteado'], ['double', 'Doble']]} /></div>
       </div>
-      <ColorField name="Color del borde" value={v('border-color')} computed={c('border-top-color')} onChange={set('border-color')} />
+      <ColorField name="Color del borde" value={v('border-color')} computed={c('border-top-color')} onChange={set('border-color')} onPreview={preview('border-color')} />
       <div><span className={label}>Radio de esquinas</span><Field ariaLabel="Radio de esquinas" value={v('border-radius')} placeholder={c('border-top-left-radius')} onCommit={set('border-radius')} /></div>
     </Group>
 
     <Group title="Efectos">
       <div><span className={label}>Sombra</span><Select ariaLabel="Sombra" value={SHADOWS.some(([s]) => s === v('box-shadow')) ? v('box-shadow') : '__custom'} onChange={val => val !== '__custom' && onStyles({ 'box-shadow': val })}
         options={[...SHADOWS, ...(SHADOWS.some(([s]) => s === v('box-shadow')) ? [] : [['__custom', 'Personalizada'] as [string, string]])]} /></div>
-      <div><span className={label}>Opacidad · {Math.round(Number(v('opacity') || c('opacity') || 1) * 100)}%</span>
-        <input type="range" min={0} max={100} aria-label="Opacidad" className="mt-1 w-full accent-[var(--wu-brand)]" value={Math.round(Number(v('opacity') || c('opacity') || 1) * 100)}
-          onChange={e => onStyles({ opacity: String(Number(e.target.value) / 100) })} /></div>
+      <OpacityControl value={v('opacity') || c('opacity') || '1'} onCommit={set('opacity')} onPreview={preview('opacity')} />
     </Group>
 
     <Group title="Espaciado">
