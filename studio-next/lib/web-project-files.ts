@@ -86,16 +86,16 @@ export function siteFromZip(input:Uint8Array):SiteBundle {
 }
 export function agentSnippet(chatId:string):string {
   if(!/^[0-9a-f-]{36}$/i.test(chatId))throw Error('Identificador de chat inválido.');
-  return '<script src="https://agent-factory-free.francopdimauro.workers.dev/widget.js" data-chat="'+chatId+'" defer></'+'script>';
+  return '<script src="https://wayup-studio-agent-preview.francopdimauro.workers.dev/widget.js" data-chat="'+chatId+'" defer></'+'script>';
 }
 export function htmlForExport(site:SiteBundle,additionalSnippet?:string):string {
   let html=site.html;
   const snippet=additionalSnippet||(site.agent?agentSnippet(site.agent.chatId):undefined);
   if(snippet){
-    if(!/^<script src="https:\/\/agent-factory-free\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>$/i.test(snippet))
+    if(!/^<script src="https:\/\/wayup-studio-agent-preview\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>$/i.test(snippet))
       throw Error('Código de agente no autorizado.');
     // Si el cliente reemplaza el agente, no deben publicarse dos widgets activos.
-    html=html.replace(/\s*<!--\s*Asistente de WayUp\s*-->\s*<script src="https:\/\/agent-factory-free\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>/gi,'');
+    html=html.replace(/\s*<!--\s*Asistente de WayUp\s*-->\s*<script src="https:\/\/(?:agent-factory-free|wayup-studio-agent-preview)\.francopdimauro\.workers\.dev\/widget\.js" data-chat="[a-f0-9-]{36}" defer><\/script>/gi,'');
     if(!html.includes(snippet))html=html.replace(/<\/body>/i,'\n<!-- Asistente de WayUp -->\n'+snippet+'\n</body>');
   }
   return html;
