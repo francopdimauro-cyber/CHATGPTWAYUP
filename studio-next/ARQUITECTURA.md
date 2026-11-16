@@ -6,7 +6,7 @@ La captura muestra una mezcla de tres sistemas visuales: barra superior blanca c
 
 ## Dirección de arte
 
-**Una herramienta creativa, no un dashboard.** El cromatismo de la aplicación desaparece en favor de las webs de los clientes. El verde de Entrena-T se muestra solo en el Canvas, mientras que el cobalto queda reservado a la identidad de WAY UP y la selección activa. Superficies oscuras continuas, paneles sin tarjetas anidadas innecesarias, texto de alta legibilidad, transiciones controladas y controles contextuales.
+**Una herramienta creativa, no un dashboard.** El cromatismo de la aplicación desaparece en favor de las webs de los clientes. El verde de Estudio Norte se muestra solo en el Canvas, mientras que el cobalto queda reservado a la identidad de WAY UP y la selección activa. Superficies oscuras continuas, paneles sin tarjetas anidadas innecesarias, texto de alta legibilidad, transiciones controladas y controles contextuales.
 
 ### Tokens
 

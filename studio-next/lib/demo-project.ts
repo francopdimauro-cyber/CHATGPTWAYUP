@@ -31,7 +31,7 @@ const base = (patch: Partial<ElementStyle> = {}): ElementStyle => ({
 
 export const DEMO_PROJECT: ProjectDoc = {
   id: 'entrena-t-parquesol',
-  name: 'Entrena-T Parquesol',
+  name: 'Estudio Norte Demo',
   slug: 'entrena-t-parquesol',
   version: 3,
   lastEdited: '15 nov 2026, 08:07',
@@ -51,7 +51,7 @@ export const DEMO_PROJECT: ProjectDoc = {
       style:base({fontSize:24,fontWeight:900,color:'#0c1500',background:'#b3ee06',radius:999,paddingX:13,paddingY:6}),
     },
     'marca-nombre':{
-      id:'marca-nombre',label:'Nombre en cabecera',kind:'parrafo',sectionId:'cabecera',text:'Entrena-T',
+      id:'marca-nombre',label:'Nombre en cabecera',kind:'parrafo',sectionId:'cabecera',text:'Estudio Norte',
       style:base({fontSize:16,fontWeight:750,color:'#ffffff'}),
     },
     'nav-inicio':{id:'nav-inicio',label:'Menú: Inicio',kind:'boton',sectionId:'cabecera',text:'INICIO',href:'#inicio',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
@@ -61,7 +61,7 @@ export const DEMO_PROJECT: ProjectDoc = {
     'nav-testimonios':{id:'nav-testimonios',label:'Menú: Testimonios',kind:'boton',sectionId:'cabecera',text:'TESTIMONIOS',href:'#testimonios',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
     'nav-contacto':{id:'nav-contacto',label:'Menú: Contacto',kind:'boton',sectionId:'cabecera',text:'CONTACTO',href:'#contacto',style:base({fontSize:10,fontWeight:750,color:'#ffffff',background:'transparent'})},
     'nav-cta':{id:'nav-cta',label:'Botón superior',kind:'boton',sectionId:'cabecera',text:'EMPEZAR',href:'#contacto',style:base({fontSize:10,fontWeight:800,color:'#101609',background:'#b3ee06',radius:6,paddingX:16,paddingY:12})},
-    'servicio-etiqueta':{id:'servicio-etiqueta',label:'Etiqueta de servicios',kind:'parrafo',sectionId:'servicios',text:'Entrena-T Parquesol',style:base({fontSize:10,fontWeight:750,color:'#b3ee06'})},
+    'servicio-etiqueta':{id:'servicio-etiqueta',label:'Etiqueta de servicios',kind:'parrafo',sectionId:'servicios',text:'Estudio Norte Demo',style:base({fontSize:10,fontWeight:750,color:'#b3ee06'})},
     'servicio-titulo':{id:'servicio-titulo',label:'Título de servicios',kind:'subtitulo',sectionId:'servicios',text:'Entrenamiento diseñado para ti',style:base({fontSize:24,fontWeight:650,color:'#ffffff'})},
     'servicio-descripcion':{id:'servicio-descripcion',label:'Descripción de servicios',kind:'parrafo',sectionId:'servicios',text:'Metodología cercana, programas personalizados y objetivos reales.',style:base({fontSize:12,fontWeight:400,color:'#abb2a9'})},
     titulo: {
@@ -74,7 +74,7 @@ export const DEMO_PROJECT: ProjectDoc = {
     },
     descripcion: {
       id: 'descripcion', label: 'Descripción principal', kind: 'parrafo', sectionId: 'inicio',
-      text: 'En Entrena-T Parquesol combinamos atención individualizada, seguimiento constante y trato cercano para que entrenar se convierta en una experiencia segura, motivadora y efectiva. No es una obligación, es tu momento.',
+      text: 'En Estudio Norte Demo combinamos atención individualizada, seguimiento constante y trato cercano para que entrenar se convierta en una experiencia segura, motivadora y efectiva. No es una obligación, es tu momento.',
       style: base({ fontSize: 17, fontWeight: 400, fontFamily: 'Arial, sans-serif', shadow: 'ninguna', color: '#e7e9e7' }),
     },
     cta: {

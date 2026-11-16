@@ -32,7 +32,7 @@ async function loadTS(relativePath){
 const { DEMO_PROJECT, BUTTON_PRESETS } = await loadTS('lib/demo-project.ts');
 const { historyReducer } = await loadTS('lib/studio-store.ts');
 assert.equal(BUTTON_PRESETS.length,21,'La biblioteca conserva los 21 diseños');
-assert.equal(DEMO_PROJECT.name,'Entrena-T Parquesol');
+assert.equal(DEMO_PROJECT.name,'Estudio Norte Demo');
 const initial = {past:[],present:DEMO_PROJECT,future:[]};
 const moved = historyReducer(initial,{type:'estilo',elementId:'subtitulo',patch:{x:32,y:-8}});
 assert.equal(moved.present.elements.subtitulo.style.x,32);

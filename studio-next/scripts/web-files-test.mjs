@@ -19,7 +19,7 @@ async function loadTyped(path){
 const starter=await loadTyped('lib/starter-web.ts');
 const files=await loadTyped('lib/web-project-files.ts');
 const brief={
-  name:'Entrena-T Valladolid',
+  name:'Estudio Norte Ficticio',
   industry:'Centro deportivo',
   audience:'Personas que buscan entrenamientos personalizados',
   goal:'Solicitar información',
@@ -33,7 +33,7 @@ const html=starter.starterHtml(brief);
 assert.match(html,/<html lang="es">/);
 assert.match(html,/data-wc-section="cabecera"/);
 assert.match(html,/data-wc-section="servicios"/);
-assert.match(html,/Entrena-T Valladolid/);
+assert.match(html,/Estudio Norte Ficticio/);
 assert.ok(!html.includes('info@ejemplo.invalid'),'No inventa correo');
 assert.ok(!html.includes('<script'),'No introduce scripts al crear base local');
 const malicious=starter.starterHtml({...brief,name:'<img src=x onerror=alert(1)>',services:'<script>alert(1)</script> prestación profesional'});

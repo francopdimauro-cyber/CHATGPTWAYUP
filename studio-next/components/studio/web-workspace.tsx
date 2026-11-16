@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2,
-  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
+import { SectionExplorer, type SectionAction } from './section-explorer';
+import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
-import { addHtmlSection, attachLocalImage, editHtmlStructure, htmlLayerOutline,
+import { attachLocalImage, editHtmlStructure, htmlLayerOutline,
   downloadBytes, htmlForExport, listSavedSites, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
   type SiteBundle } from '@/lib/web-project-files';
@@ -100,7 +102,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const [moveMode,setMoveMode]=useState(false);
   const moveModeRef=useRef(false);
   const [selectedValues,setSelectedValues]=useState({text:'',color:'',background:'',fontSize:'',href:'',alt:'',width:'',height:'',padding:'',margin:'',radius:'',fontWeight:'',fontFamily:'',textAlign:'',posX:'0',posY:'0'});
-  const [layerSearch,setLayerSearch]=useState('');
+  const [explorerOpen,setExplorerOpen]=useState(false);
+  const [inspectorOpen,setInspectorOpen]=useState(false);
+  const pendingSectionRef=useRef<string|null>(null);
   const [draftHtml,setDraftHtml]=useState('');
   const [past,setPast]=useState<string[]>([]);
   const [future,setFuture]=useState<string[]>([]);
@@ -118,8 +122,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
   useEffect(()=>{moveModeRef.current=moveMode;const doc=previewFrame.current?.contentDocument;if(doc?.body)doc.body.style.cursor=moveMode?'grab':'';},[moveMode]);
   const layers=useMemo(()=>site?htmlLayerOutline(site.html):[],[site]);
-  const activeLayer=layers.find(layer=>layer.index===selected);
-  const filteredLayers=layers.filter(layer=>(layer.tag+' '+layer.label+' '+layer.id).toLowerCase().includes(layerSearch.toLowerCase())).slice(0,250);
+  const sections=useMemo(()=>{try{return site?listSections(site.html):[];}catch{return [];}},[site]);
+  const sectionsRef=useRef(sections);sectionsRef.current=sections;
+  const activeSection=sectionForIndex(sections,selected);
+  const activeLayer=layers.find(layer=>layer.index===selected)||
+    (activeSection&&activeSection.index===selected?{index:selected,tag:activeSection.tag,label:activeSection.name,depth:0,id:''}:undefined);
   useEffect(()=>()=>preview?.revoke(),[preview]);
   useEffect(()=>{void listSavedSites().then(setSavedSites).catch(()=>setNotice('No se pudo abrir la biblioteca local de proyectos.'));},[]);
   const changeHtml=useCallback((html:string)=>{
@@ -128,7 +135,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
     setSite(old=>old?{...old,html,updatedAt:Date.now()}:old);
     setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;
   },[site]);
-  const changeSite=(value:SiteBundle)=>{
+  const changeSite=(loaded:SiteBundle)=>{
+    // Claves estables de sección (data-wc-section) para que el Explorador opere sobre el HTML real.
+    let value=loaded;
+    try{const html=ensureSectionKeys(loaded.html);if(html!==loaded.html)value={...loaded,html};}catch{}
     setSite(value);setDraftHtml(value.html);setPast([]);setFuture([]);setDirty(false);
     setSelected(null);setNotice('');setPostSavePrompt(false);setView('preview');setStage('editor');
   };
@@ -260,6 +270,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       if(Number.isSafeInteger(index))selectLayer(index);
     },true);
     doc.addEventListener('submit',event=>event.preventDefault(),true);
+    const pending=pendingSectionRef.current;pendingSectionRef.current=null;
+    if(pending){const target=sectionsRef.current.find(s=>s.key===pending);if(target)setTimeout(()=>selectLayer(target.index),0);}
     type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean};
     let moving:Moving|null=null;
     const clamp=(n:number)=>Math.max(-1200,Math.min(1200,Math.round(n)));
@@ -308,10 +320,20 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       setNotice(action==='duplicate'?'Elemento duplicado en el HTML.':action==='remove'?'Elemento eliminado; puedes deshacerlo.':'Orden cambiado; puedes deshacerlo.');
     }catch(error){setNotice(error instanceof Error?error.message:'No se pudo modificar el bloque.');}
   }
-  function insertSection(){
+  function onSectionAction(action:SectionAction){
     if(!site)return;
-    try{changeHtml(addHtmlSection(site.html));setNotice('Nueva sección añadida al documento real.');}
-    catch(error){setNotice(error instanceof Error?error.message:'No se pudo añadir la sección.');}
+    try{
+      const result=action.type==='add'?addSection(site.html,action.position,action.key):
+        action.type==='duplicate'?duplicateSection(site.html,action.key):
+        action.type==='remove'?removeSection(site.html,action.key):
+        action.type==='rename'?renameSection(site.html,action.key,action.name):
+        moveSection(site.html,action.key,action.type);
+      pendingSectionRef.current=action.type==='remove'?null:result.key||null;
+      changeHtml(result.html);
+      setNotice(({add:action.type==='add'&&action.position==='inside'?'Bloque añadido dentro de la sección.':'Nueva sección añadida al documento.',
+        duplicate:'Sección duplicada con identificadores únicos.',remove:'Sección eliminada. Puedes deshacerlo.',
+        rename:'Sección renombrada.',up:'Sección movida arriba en el HTML.',down:'Sección movida abajo en el HTML.'} as Record<string,string>)[action.type]);
+    }catch(error){pendingSectionRef.current=null;setNotice(error instanceof Error?error.message:'No se pudo modificar la sección.');}
   }
   async function changeImage(file:File){
     if(!site||selected===null)return;
@@ -447,7 +469,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
       </>:<div className="rounded-2xl border border-stroke bg-panel p-5 sm:p-7">
         <div className="mb-5 flex items-center justify-between"><h2 className="text-[17px] font-bold">Crear web con WebCreator</h2><span className="rounded-full bg-brandsoft px-3 py-1 text-[10px] text-brand">Formulario completo</span></div>
         <div className="grid gap-4 md:grid-cols-2">
-          {editInputs('name','Nombre del negocio','Ej. Entrena-T Parquesol',true)}
+          {editInputs('name','Nombre del negocio','Ej. Estudio Norte Demo',true)}
           {editInputs('industry','Sector o actividad','Gimnasio, restaurante, clínica…',true)}
           {editInputs('audience','Público objetivo','Personas que buscan entrenamiento personal')}
           {editInputs('goal','Objetivo de la web','Conseguir reservas, contactos, ventas…')}
@@ -486,7 +508,9 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
           {dirty&&<span className="text-amber-400">● Sin guardar</span>}
           {site.cloud&&<span className="text-brand">Nube · v{site.cloud.version}</span>}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button onClick={()=>{setExplorerOpen(v=>!v);setInspectorOpen(false);}} aria-pressed={explorerOpen} className={btn+' xl:hidden'} title="Abrir explorador de secciones"><Layers3 size={14}/> Explorador</button>
+          <button onClick={()=>{setInspectorOpen(v=>!v);setExplorerOpen(false);}} aria-pressed={inspectorOpen} className={btn+' lg:hidden'} title="Abrir propiedades del elemento"><SlidersHorizontal size={14}/> Propiedades</button>
           <button onClick={undo} disabled={!past.length} className={btn} title="Deshacer"><Undo2 size={14}/></button>
           <button onClick={redo} disabled={!future.length} className={btn} title="Rehacer"><Redo2 size={14}/></button>
           <button onClick={()=>setView('preview')} className={btn+(view==='preview'?' border-brand text-brand':'')}><Paintbrush size={14}/> Visual</button>
@@ -498,29 +522,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
-        {view==='preview'&&<aside className="hidden w-[232px] shrink-0 flex-col border-r border-stroke bg-panel xl:flex" aria-label="Navegador de capas HTML">
-          <div className="border-b border-stroke px-3 py-3">
-            <h2 className="flex items-center gap-2 text-[12px] font-semibold"><Layers3 size={14} className="text-brand"/> Estructura de la web</h2>
-            <input className={BASE+' mt-3 w-full'} value={layerSearch} onChange={e=>setLayerSearch(e.target.value)} placeholder="Buscar sección o elemento…" aria-label="Buscar capas"/>
-          </div>
-          <div className="scroll-subtle min-h-0 flex-1 overflow-y-auto px-2 py-2">
-            {filteredLayers.map(layer=><button key={layer.index} type="button"
-              onClick={()=>selectLayer(layer.index)} aria-pressed={selected===layer.index}
-              style={{paddingLeft:8+layer.depth*11}}
-              className={'mb-0.5 flex w-full items-center gap-2 rounded-md py-2 pr-2 text-left text-[10px] '+(selected===layer.index?'bg-brandsoft text-brand':'text-mist hover:bg-raised')}>
-              <span className="shrink-0 font-mono text-[9px] text-faint">{layer.tag.toLowerCase()}</span>
-              <span className="min-w-0 truncate">{layer.label}</span>
-            </button>)}
-            {!filteredLayers.length&&<p className="p-3 text-[11px] text-faint">No se encontraron capas.</p>}
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 border-t border-stroke p-2">
-            <button className={btn} onClick={insertSection} title="Añadir nueva sección"><FilePlus2 size={13}/> Sección</button>
-            <button className={btn} onClick={()=>modifyStructure('duplicate')} disabled={selected===null} title="Duplicar elemento"><Copy size={13}/> Duplicar</button>
-            <button className={btn} onClick={()=>modifyStructure('up')} disabled={selected===null} title="Mover arriba"><ArrowUp size={13}/> Subir</button>
-            <button className={btn} onClick={()=>modifyStructure('down')} disabled={selected===null} title="Mover abajo"><ArrowDown size={13}/> Bajar</button>
-            <button className={btn+' col-span-2'} onClick={()=>modifyStructure('remove')} disabled={selected===null} title="Eliminar y poder deshacer"><Trash2 size={13}/> Eliminar elemento</button>
-          </div>
-        </aside>}
+        {view==='preview'&&<SectionExplorer sections={sections} selectedIndex={selected}
+          onSelect={index=>{selectLayer(index);if(window.matchMedia('(max-width: 1279px)').matches)setExplorerOpen(false);}}
+          onAction={onSectionAction} mobileOpen={explorerOpen} onCloseMobile={()=>setExplorerOpen(false)}/>}
+        {(explorerOpen||inspectorOpen)&&<button type="button" aria-label="Cerrar paneles" className="fixed inset-0 z-[65] bg-black/45 xl:hidden"
+          onClick={()=>{setExplorerOpen(false);setInspectorOpen(false);}}/>}
         <div className="flex min-w-0 flex-1 flex-col bg-app">
           {view==='preview'?<>
             <div className="flex items-center justify-center gap-2 border-b border-stroke py-2">
@@ -546,11 +552,17 @@ export function WebWorkspace({onClose}:BrowserEditorProps){
             </div>
           </>}
         </div>
-        <aside className="scroll-subtle hidden w-[278px] shrink-0 overflow-y-auto border-l border-stroke bg-panel p-4 lg:block">
+        <aside aria-label="Inspector de propiedades" className={'scroll-subtle w-[278px] shrink-0 overflow-y-auto border-l border-stroke bg-panel p-4 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-[70] max-lg:w-[min(320px,88vw)] max-lg:shadow-2xl '+(inspectorOpen?'':'max-lg:hidden')}>
           <div className="mb-3 flex items-center justify-between"><h2 className="text-[12px] font-semibold">Inspector HTML</h2><span className="font-mono text-[9px] text-faint">DOM</span></div>
           <p className="mb-4 text-[11px] leading-5 text-mist">Haz clic en un elemento de la web para editar sus propiedades. Los cambios se reflejan en el HTML exportado.</p>
           {selected===null?<div className="rounded-lg border border-dashed border-stroke p-4 text-[11px] text-faint">Selecciona un texto, título o botón del Canvas.</div>:<>
-            <div className="mb-4 rounded-lg border border-stroke bg-elevated px-3 py-2 font-mono text-[10px] text-mist">{activeLayer?.tag||'Nodo'} · #{selected}</div>
+            <div className="mb-2 rounded-lg border border-stroke bg-elevated px-3 py-2 font-mono text-[10px] text-mist">{activeLayer?.tag||'Nodo'} · #{selected}{activeSection?' · '+activeSection.name:''}</div>
+            {activeSection&&activeSection.index!==selected&&<div className="mb-4 grid grid-cols-4 gap-1" aria-label="Acciones del elemento">
+              <button className={btn+' justify-center px-0'} onClick={()=>modifyStructure('duplicate')} title="Duplicar elemento" aria-label="Duplicar elemento"><Copy size={13}/></button>
+              <button className={btn+' justify-center px-0'} onClick={()=>modifyStructure('up')} title="Subir elemento" aria-label="Subir elemento"><ArrowUp size={13}/></button>
+              <button className={btn+' justify-center px-0'} onClick={()=>modifyStructure('down')} title="Bajar elemento" aria-label="Bajar elemento"><ArrowDown size={13}/></button>
+              <button className={btn+' justify-center px-0 text-red-400'} onClick={()=>modifyStructure('remove')} title="Eliminar elemento" aria-label="Eliminar elemento"><Trash2 size={13}/></button>
+            </div>}
             {activeLayer?.tag==='A'&&<label className="mb-3 block text-[11px] text-mist"><span className="flex items-center gap-1.5"><Link2 size={13}/> Destino del enlace</span>
               <input className={BASE+' mt-1 w-full'} value={selectedValues.href} onChange={e=>setSelectedValues({...selectedValues,href:e.target.value})} placeholder="https://… o #seccion"/>
               <button className={btn+' mt-2'} onClick={()=>patch({href:selectedValues.href})}>Guardar enlace</button>

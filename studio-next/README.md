@@ -41,7 +41,7 @@ Abrir http://localhost:3000. Requiere Node.js >=20.9.
 - `app/`: entrada de Next.js, metadatos, tokens y estilos globales.
 - `components/studio/top-bar.tsx`: cabecera compacta y acciones principales.
 - `components/studio/navigator.tsx`: panel de proyectos/capas y árbol.
-- `components/studio/canvas.tsx`: entorno de trabajo y reproducción del ejemplo Entrena-T.
+- `components/studio/canvas.tsx`: entorno de trabajo y reproducción del ejemplo Estudio Norte.
 - `components/studio/inspector.tsx`: panel contextual y biblioteca de botones.
 - `components/studio/studio-app.tsx`: coordinación de estados, comandos y acciones.
 - `lib/studio-types.ts`: contratos TypeScript de documentos, elementos y acciones.
@@ -52,7 +52,7 @@ Abrir http://localhost:3000. Requiere Node.js >=20.9.
 
 El Worker actual utiliza HTML/CSS/JavaScript incrustado y D1/R2; no React. Por tanto, **este proyecto es una propuesta implementada de frontend, no un reemplazo directo del editor actual**. Recomendamos montar la nueva interfaz detrás de una ruta de desarrollo (`/studio-next`) y conectar los controles a un adaptador para los endpoints existentes (`/api/projects`, `/api/projects/:id`, versiones, medios), conservando Cloudflare Access.
 
-Para editar páginas HTML arbitrarias, sustituir el renderer de Entrena-T de este prototipo por un iframe aislado y un protocolo autenticado `postMessage` para seleccionar/mover/editar nodos. No ejecutar scripts de las webs generadas en modo edición. La demo no pretende importar HTML ni generar sitios completos. Al conectar el backend, exigir concurrencia optimista (`expectedVersion`), persistir cada guardado en D1 y mantener la versión anterior disponible para rollback.
+Para editar páginas HTML arbitrarias, sustituir el renderer de Estudio Norte de este prototipo por un iframe aislado y un protocolo autenticado `postMessage` para seleccionar/mover/editar nodos. No ejecutar scripts de las webs generadas en modo edición. La demo no pretende importar HTML ni generar sitios completos. Al conectar el backend, exigir concurrencia optimista (`expectedVersion`), persistir cada guardado en D1 y mantener la versión anterior disponible para rollback.
 
 ## Estado de verificación
 
