@@ -370,8 +370,8 @@ export function patchSelectedElement(html:string,index:number,changes:{
   }
   if(changes.moveX!==undefined||changes.moveY!==undefined){
     const x=changes.moveX??0,y=changes.moveY??0;
-    if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>1200||Math.abs(y)>1200)
-      throw Error('El desplazamiento debe estar entre -1200 y 1200 píxeles.');
+    if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>6000||Math.abs(y)>6000)
+      throw Error('El desplazamiento debe estar entre -6000 y 6000 píxeles.');
     node.style.translate=Math.round(x)+'px '+Math.round(y)+'px';
   }
   if(changes.href!==undefined){

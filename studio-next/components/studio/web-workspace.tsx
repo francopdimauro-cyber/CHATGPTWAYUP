@@ -116,8 +116,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const [tool,setTool]=useState<'select'|'move'|'insert'>('select');
   const toolRef=useRef<'select'|'move'|'insert'>('select');
   // Al mover: «ordenar» lo encaja en la maquetación (responsive); «libre» lo deja exactamente donde se suelta.
-  const [moveStyle,setMoveStyle]=useState<'ordenar'|'libre'>('ordenar');
-  const moveStyleRef=useRef<'ordenar'|'libre'>('ordenar');moveStyleRef.current=moveStyle;
+  const [moveStyle,setMoveStyle]=useState<'ordenar'|'libre'>('libre');
+  const moveStyleRef=useRef<'ordenar'|'libre'>('libre');moveStyleRef.current=moveStyle;
   const moveMode=tool==='move';
   const moveModeRef={get current(){return toolRef.current==='move';}};
   const setMoveMode=(v:boolean|((p:boolean)=>boolean))=>{const next=typeof v==='function'?v(toolRef.current==='move'):v;setTool(next?'move':'select');};
@@ -492,7 +492,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     type Moving={element:HTMLElement;index:number;pointerId:number;clientX:number;clientY:number;x:number;y:number;moved:boolean;free:boolean;
       prev:{translate:string;opacity:string;pointerEvents:string;boxShadow:string;zIndex:string;position:string;transition:string}};
     let moving:Moving|null=null;
-    const clamp=(n:number)=>Math.max(-1200,Math.min(1200,Math.round(n)));
+    const clamp=(n:number)=>Math.max(-6000,Math.min(6000,Math.round(n)));
     // El navegador (sobre todo Firefox) inicia su propio «arrastre nativo» de enlaces e imágenes: lo bloqueamos dentro de la vista.
     doc.addEventListener('dragstart',event=>event.preventDefault(),true);
     doc.addEventListener('mousedown',event=>{if(toolRef.current==='move')event.preventDefault();},true);
