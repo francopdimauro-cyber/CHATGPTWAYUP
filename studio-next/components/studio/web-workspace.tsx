@@ -677,7 +677,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       <div className="flex min-h-0 flex-1">
         {view==='preview'&&<SectionExplorer sections={sections} selectedIndex={selected}
           onSelect={index=>{selectLayer(index);if(window.matchMedia('(max-width: 1279px)').matches)setExplorerOpen(false);}}
-          onAction={onSectionAction} mobileOpen={explorerOpen} onCloseMobile={()=>setExplorerOpen(false)}/>}
+          onAction={onSectionAction} mobileOpen={explorerOpen} onCloseMobile={()=>setExplorerOpen(false)}
+          onElementMenu={(index,x,y)=>{selectLayer(index,true);setCanvasMenu({x,y});}}/>}
         {(explorerOpen||inspectorOpen)&&<button type="button" aria-label="Cerrar paneles" className="fixed inset-0 z-[65] bg-black/45 xl:hidden"
           onClick={()=>{setExplorerOpen(false);setInspectorOpen(false);}}/>}
         <div className="flex min-w-0 flex-1 flex-col bg-canvas">

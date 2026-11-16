@@ -20,10 +20,12 @@ function writePref(v:{width:number;collapsed:boolean}){try{localStorage.setItem(
 const TAG_ICON_LABEL:Record<string,string>={H1:'H1',H2:'H2',H3:'H3',H4:'H4',P:'¶',A:'↗',BUTTON:'btn',IMG:'img',FORM:'form',UL:'ul',OL:'ol',LI:'li',INPUT:'in',LABEL:'lbl',SPAN:'txt',DIV:'div',NAV:'nav',FIGURE:'fig'};
 
 /** Explorador de secciones del HTML real: menú ⋯ y clic derecho con las mismas acciones; usable con toque. */
-export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobileOpen,onCloseMobile}:{
+export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobileOpen,onCloseMobile,onElementMenu}:{
   sections:HtmlSection[];selectedIndex:number|null;
   onSelect(index:number):void;onAction(action:SectionAction):void;
   mobileOpen:boolean;onCloseMobile():void;
+  /** Clic derecho sobre un elemento interno: abre el menú de elemento del lienzo. */
+  onElementMenu?(index:number,x:number,y:number):void;
 }){
   const [search,setSearch]=useState('');
   const [expanded,setExpanded]=useState<Set<string>>(new Set());
@@ -155,6 +157,7 @@ export function SectionExplorer({sections,selectedIndex,onSelect,onAction,mobile
           {isOpen&&children.length>0&&<ul role="group" className="mb-1">
             {children.map(c=><li key={c.index} role="treeitem" aria-selected={selectedIndex===c.index}>
               <button type="button" onClick={()=>onSelect(c.index)} style={{paddingLeft:30+c.depth*10}}
+                onContextMenu={e=>{if(!onElementMenu)return;e.preventDefault();onSelect(c.index);onElementMenu(c.index,e.clientX,e.clientY);}}
                 className={'flex min-h-[30px] w-full items-center gap-2 rounded-md pr-2 text-left text-[11px] '+(selectedIndex===c.index?'bg-brandsoft text-brand':'text-mist hover:bg-raised hover:text-ink')}>
                 <span className="w-7 shrink-0 font-mono text-[9px] text-faint">{TAG_ICON_LABEL[c.tag]||c.tag.toLowerCase()}</span>
                 <span className="truncate">{c.label}</span>
