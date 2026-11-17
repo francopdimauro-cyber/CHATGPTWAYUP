@@ -358,3 +358,65 @@ export function ungroupElement(html:string,index:number):EditResult{
   group.remove();
   return {html:serialize(doc),index:indexOf(doc,first)};
 }
+
+/* ── Botones: «Cambiar botón» ────────────────────────────────────────────── */
+/** Cambia el diseño, color, tamaño e icono de un botón sin tocar sus clases, id ni atributos de comportamiento.
+ *  design: id de BUTTON_DESIGNS o null para volver al diseño original de la web. icon: SVG en línea propio o null. */
+export function changeButton(html:string,index:number,opts:{design?:string|null;color?:string;textColor?:string;size?:'s'|'m'|'l';
+  icon?:string|null;iconPosition?:'before'|'after';text?:string;css:string}):EditResult{
+  const doc=parse(html);const node=nodeAt(doc,index);
+  if(opts.design!==undefined){
+    if(opts.design===null){
+      node.removeAttribute('data-wc-btn');node.removeAttribute('data-wc-btn-size');
+      node.style.removeProperty('--wcb-c');node.style.removeProperty('--wcb-t');
+      node.querySelectorAll('[data-wc-btn-icon]').forEach(n=>n.remove());
+      if(!node.getAttribute('style')?.trim())node.removeAttribute('style');
+      return {html:serialize(doc),index:indexOf(doc,node)??index};
+    }
+    if(!/^[a-z]{3,20}$/.test(opts.design))throw Error('Diseño de botón no válido.');
+    node.setAttribute('data-wc-btn',opts.design);
+  }
+  const hex=(v:string|undefined,what:string)=>{if(v===undefined)return undefined;if(!/^#[\da-f]{6}$/i.test(v))throw Error('Color '+what+' no válido (usa #rrggbb).');return v.toLowerCase();};
+  const c=hex(opts.color,'del botón'),t=hex(opts.textColor,'del texto');
+  if(c)node.style.setProperty('--wcb-c',c);
+  if(t)node.style.setProperty('--wcb-t',t);
+  if(opts.size){if(!['s','m','l'].includes(opts.size))throw Error('Tamaño no válido.');node.setAttribute('data-wc-btn-size',opts.size);}
+  if(opts.text!==undefined){
+    const text=opts.text.replace(/[ -]/g,' ').trim().slice(0,120);
+    if(!text)throw Error('El botón necesita un texto.');
+    // Se conserva el icono propio; el resto del contenido se sustituye por el texto nuevo.
+    const icons=Array.from(node.querySelectorAll('[data-wc-btn-icon]'));
+    const before=icons.length>0&&node.firstElementChild===icons[0];
+    node.textContent=text;
+    for(const ic of icons){if(before)node.prepend(ic);else node.append(ic);}
+  }
+  if(opts.icon!==undefined){
+    node.querySelectorAll('[data-wc-btn-icon]').forEach(n=>n.remove());
+    if(opts.icon){
+      if(!/^<svg[\s>]/i.test(opts.icon.trim())||opts.icon.length>8000)throw Error('Icono no válido.');
+      const holder=doc.createElement('span');holder.innerHTML=opts.icon;
+      const svg=holder.querySelector('svg');if(!svg)throw Error('Icono no válido.');
+      stripActive(svg);
+      const wrap=doc.createElement('span');wrap.setAttribute('data-wc-btn-icon','');wrap.setAttribute('aria-hidden','true');wrap.append(svg);
+      if(opts.iconPosition==='before')node.prepend(wrap);else node.append(wrap);
+    }
+  }
+  // Hoja de estilos de los diseños: una sola vez en el <head>, regenerada si cambia de versión.
+  let sheet=doc.head.querySelector<HTMLStyleElement>('style[data-wc-buttons]');
+  if(!sheet){sheet=doc.createElement('style');sheet.setAttribute('data-wc-buttons','');doc.head.append(sheet);}
+  if(sheet.textContent!==opts.css)sheet.textContent=opts.css;
+  return {html:serialize(doc),index:indexOf(doc,node)??index};
+}
+/** Convierte un <button> en enlace <a> conservando su contenido, clases, id y atributos (salvo los propios de formulario). */
+export function buttonToLink(html:string,index:number):EditResult{
+  const doc=parse(html);const node=nodeAt(doc,index);
+  if(node.tagName==='A')return {html,index};
+  if(node.tagName!=='BUTTON')throw Error('Este elemento no es un botón.');
+  if(node.closest('form')&&(node.getAttribute('type')||'submit')==='submit')throw Error('Es el botón de envío de un formulario: convertirlo lo dejaría sin enviar.');
+  const a=doc.createElement('a');
+  for(const attr of Array.from(node.attributes))if(!/^(type|form\w*|disabled|name|value)$/i.test(attr.name))a.setAttribute(attr.name,attr.value);
+  a.setAttribute('href','#');
+  while(node.firstChild)a.append(node.firstChild);
+  node.replaceWith(a);
+  return {html:serialize(doc),index:indexOf(doc,a)??index};
+}

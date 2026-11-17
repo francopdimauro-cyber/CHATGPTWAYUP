@@ -18,12 +18,13 @@ import { ParkedItem, type Parked } from './parked-item';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
-import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, type EditResult } from '@/lib/element-editing';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
 import { visualReview } from '@/lib/visual-review';
+import { buttonDesignsCss, contrastText, toHexColor } from '@/lib/button-designs';
 import { attachLocalImage, editHtmlStructure, htmlLayerOutline,
   downloadBytes, htmlForExport, listSavedSites, livePreview, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
@@ -295,6 +296,13 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const fitZoom=()=>{const c=canvasScrollRef.current;if(!c)return;const pageW=(device==='mobile'?390:device==='tablet'?820:1280);setZoom(clampZoom((c.clientWidth-48)/pageW));};
   // Webs con tema claro/oscuro (data-theme en <html>, que normalmente elige un script): la vista imita lo que
   // vería un visitante (preferencia del sistema) y se puede cambiar. No modifica el HTML guardado.
+  // Secciones de la web a las que puede llevar un botón (id + nombre legible).
+  const anchors=useMemo(()=>{
+    if(!site?.html)return [] as {id:string;label:string}[];
+    const doc=new DOMParser().parseFromString(site.html,'text/html');
+    return Array.from(doc.querySelectorAll<HTMLElement>('section[id],header[id],footer[id],[data-wc-section][id],main [id]')).filter((el,i,all)=>all.indexOf(el)===i)
+      .slice(0,60).map(el=>({id:el.id,label:(el.getAttribute('data-wc-name')||el.querySelector('h1,h2,h3')?.textContent||el.id).trim().slice(0,48)}));
+  },[site?.html]);
   const siteThemes=useMemo(()=>/<html\b[^>]*\bdata-theme\s*=\s*["'](?:light|dark)["']/i.test(site?.html||''),[site?.html]);
   // Al abrir una web o cambiar de dispositivo: la página entera cabe en el lienzo (como en Figma) y queda centrada.
   useEffect(()=>{
@@ -607,9 +615,15 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       for(const prop of [...EDITABLE_STYLE_PROPS,'border-top-width','border-top-color','border-top-left-radius']){
         inline[prop]=element.style.getPropertyValue(prop);computed[prop]=cs.getPropertyValue(prop);
       }
-      setElementInfo({index,tag:element.tagName,textEditable:isTextEditable(element),text:element.textContent||'',inline,computed,
+      const isButton=element.tagName==='A'||element.tagName==='BUTTON'||element.getAttribute('role')==='button';
+      const brand=element.style.getPropertyValue('--wcb-c').trim()||toHexColor(cs.backgroundColor)||toHexColor(cs.color)||'#2855ee';
+      const iconEl=element.querySelector('[data-wc-btn-icon]');
+      setElementInfo({index,tag:element.tagName,textEditable:isTextEditable(element),text:(iconEl?Array.from(element.childNodes).filter(n=>n!==iconEl).map(n=>n.textContent).join(''):element.textContent||'').trim(),inline,computed,
         attrs:{href:element.getAttribute('href')||'',target:element.getAttribute('target')||'',alt:element.getAttribute('alt')||'',
-          id:element.id||'',title:element.getAttribute('title')||'',ariaLabel:element.getAttribute('aria-label')||''}});
+          id:element.id||'',title:element.getAttribute('title')||'',ariaLabel:element.getAttribute('aria-label')||''},
+        button:isButton?{design:element.getAttribute('data-wc-btn')||'',size:element.getAttribute('data-wc-btn-size')||'m',color:brand,
+          textColor:element.style.getPropertyValue('--wcb-t').trim()||contrastText(brand),inForm:Boolean(element.closest('form')),
+          hasIcon:Boolean(iconEl),iconBefore:Boolean(iconEl&&iconEl===element.firstElementChild)}:undefined});
     }catch{setElementInfo(null);}
     if(scroll)element.scrollIntoView({block:'center',behavior:'smooth'});
     if(toolRef.current==='select')drawResize(element);
@@ -1352,6 +1366,16 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               onStyles={styles=>tryEdit(()=>setStyles(site.html,elementInfo.index,styles),'Estilo aplicado al elemento.')}
               onFont={family=>tryEdit(()=>setFont(site.html,elementInfo.index,family),'Tipografía aplicada: '+family.split(',')[0].replace(/["']/g,'')+'.')}
               onPreview={styles=>{const el=selectedRef.current;if(!el)return;for(const [prop,value] of Object.entries(styles))el.style.setProperty(prop,value);}}
+              anchors={anchors}
+              onButton={change=>tryEdit(()=>{
+                let r:EditResult={html:site.html,index:elementInfo.index};
+                const at=()=>r.index??elementInfo.index;
+                if(change.convert)r=buttonToLink(r.html,at());
+                const {href,newTab,convert,...look}=change;void convert;
+                r=changeButton(r.html,at(),{...look,css:buttonDesignsCss()});
+                if(href!==undefined)r=setAttributes(r.html,at(),{href,target:newTab?'_blank':'_self'});
+                return r;
+              },change.design===null?'Botón devuelto a su diseño original.':'Botón actualizado.')}
               onAttrs={attrs=>tryEdit(()=>setAttributes(site.html,elementInfo.index,attrs),'Atributos actualizados.')}
               onText={text=>tryEdit(()=>setInlineContent(site.html,elementInfo.index,escapeText(text)),'Texto actualizado.')}
               onEditText={()=>startTextEdit(elementInfo.index)}

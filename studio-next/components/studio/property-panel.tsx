@@ -2,15 +2,18 @@
 /** Panel «Propiedades»: controles reales sobre el elemento seleccionado del HTML.
  *  Cada control aplica estilos en línea validados (lib/element-editing) y entra en el historial. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Link2, Strikethrough, Type, Underline } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Link2, MousePointerClick, Strikethrough, Type, Underline } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { ButtonStyles } from './button-styles';
+import { ButtonDialog, type ButtonChange } from './button-dialog';
 import { FontPicker } from './font-picker';
 
 export type ElementInfo = {
   index: number; tag: string; textEditable: boolean; text: string;
   inline: Record<string, string>; computed: Record<string, string>;
   attrs: { href: string; target: string; alt: string; id: string; title: string; ariaLabel: string };
+  /** Datos de botón (enlaces y botones): diseño de WAY UP aplicado, tamaño, colores y si está en un formulario. */
+  button?: { design: string; size: string; color: string; textColor: string; inForm: boolean; iconBefore: boolean; hasIcon: boolean };
 };
 type Props = {
   info: ElementInfo;
@@ -22,6 +25,10 @@ type Props = {
   onAttrs(attrs: Record<string, string>): void;
   onText(text: string): void;
   onEditText(): void;
+  /** «Cambiar botón»: aplica diseño, texto, icono y comportamiento en un solo paso. */
+  onButton?(change: ButtonChange): void;
+  /** Secciones de la web a las que puede llevar un botón. */
+  anchors?: { id: string; label: string }[];
   extra?: ReactNode;
 };
 
@@ -125,7 +132,8 @@ function Box({ prefix, info, onStyles }: { prefix: 'margin' | 'padding'; info: E
 const primary = (css: string) => (css.split(',')[0] || '').trim().replace(/^["']|["']$/g, '') || '—';
 const SHADOWS: [string, string][] = [['', 'Sin sombra'], ['0 1px 3px rgba(0, 0, 0, 0.12)', 'Sutil'], ['0 8px 24px rgba(0, 0, 0, 0.14)', 'Media'], ['0 20px 50px rgba(0, 0, 0, 0.22)', 'Profunda'], ['0 0 0 1px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.12)', 'Flotante']];
 
-export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, extra }: Props) {
+export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, onButton, anchors = [], extra }: Props) {
+  const [buttonOpen, setButtonOpen] = useState(false);
   const preview = (p: string) => (val: string) => onPreview?.({ [p]: val });
   const v = (p: string) => info.inline[p] || '';
   const c = (p: string) => info.computed[p] || '';
@@ -153,7 +161,12 @@ export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onTe
       </div>}
     </Group>
 
-    {(info.tag === 'A' || info.tag === 'BUTTON') && <Group title="Estilo de botón" open>
+    {info.button && onButton && <div className="border-b border-stroke py-3">
+      <button type="button" onClick={() => setButtonOpen(true)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2.5 text-[12px] font-semibold text-white hover:brightness-110"><MousePointerClick size={14} /> Cambiar botón</button>
+      <p className="mt-1.5 text-[10.5px] leading-4 text-faint">Diseño, color, tamaño, texto, icono y qué hace al pulsarlo.</p>
+      {buttonOpen && <ButtonDialog info={info} anchors={anchors} onApply={onButton} onClose={() => setButtonOpen(false)} />}
+    </div>}
+    {(info.tag === 'A' || info.tag === 'BUTTON') && <Group title="Estilos rápidos de botón">
       <ButtonStyles onStyles={onStyles} />
     </Group>}
 
