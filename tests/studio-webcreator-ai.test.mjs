@@ -26,7 +26,7 @@ function fakeDb(){
 const PLAN='IDEA: movimiento con criterio. '+'SECCIONES: hero, marquee, lista numerada, bento, cifras, FAQ, CTA. '.repeat(4);
 const isPlan=input=>String(input?.messages?.[0]?.content||'').startsWith('Eres director de arte');
 // La pasada de planificación responde siempre un plan fijo; las pruebas controlan solo la generación del HTML.
-const isTeam=input=>/^Eres (el DIRECTOR|un DESARROLLADOR|el REVISOR)/.test(String(input?.messages?.[0]?.content||''));
+const isTeam=input=>/^Eres (el DIRECTOR|un DESARROLLADOR|el REVISOR|el REDACTOR)/.test(String(input?.messages?.[0]?.content||''));
 async function generate(ai,{planFails=false,team=null}={}){
   // Por defecto el equipo responde algo inválido: así se prueba la vía de una pasada (sin marcar modelos como no disponibles).
   const wrapped={run:async(model,input)=>{
@@ -134,10 +134,12 @@ test('Equipo de modelos: director, constructores en paralelo y revisor montan un
   const director=['===META===','Centro ficticio | Entrenamiento personal a medida','===FUENTES===','https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&family=Inter&display=swap',
     '===CSS===',':root{--a:#c00}'+css,'===SECCIONES===','cabecera | header | Marca | navegación | no','inicio | hero gráfico | Muévete con criterio | titular enorme | athlete stretching at dawn',
     'metodo | lista numerada | Cómo trabajamos | pasos | no','planes | bento | Elige tu ritmo | servicios | no','pie | footer | Marca | datos | no','===FIN==='].join('\n');
-  const calls={director:0,builder:0,reviewer:0};
+  const calls={director:0,builder:0,reviewer:0,copy:0};const builderInputs=[];
   const team=(model,input)=>{
     const sys=input.messages[0].content,user=input.messages[1].content;
     if(sys.startsWith('Eres el DIRECTOR')){calls.director++;return sse([director]);}
+    if(sys.startsWith('Eres el REDACTOR')){calls.copy++;return sse(['===SECCION inicio===\nANTETÍTULO: Valladolid\nTITULAR: Muévete con *criterio*\nENTRADILLA: Texto del redactor para el hero.\n===SECCION metodo===\nTITULAR: Así trabajamos\n===FIN===']);}
+    if(!sys.startsWith('Eres el REVISOR'))builderInputs.push(user);
     if(sys.startsWith('Eres el REVISOR')){calls.reviewer++;return sse(['===CSS===\n.hero h1{letter-spacing:-.03em}\n.btn:focus-visible{outline:2px solid red}\n===FIN===']);}
     calls.builder++;
     const id=/id="([a-z0-9-]+)"/.exec(user.split('TU ENCARGO')[1])?.[1];
@@ -149,7 +151,11 @@ test('Equipo de modelos: director, constructores en paralelo y revisor montan un
   const {final}=await generate({run:async()=>{throw Error('no debe usarse la vía de una pasada')}},{team});
   assert.equal(final.event,'complete');
   assert.equal(final.data.mode,'studio-team');
-  assert.equal(calls.director,1);assert.equal(calls.builder,5);assert.equal(calls.reviewer,1);
+  assert.equal(calls.director,1);assert.equal(calls.builder,5);assert.equal(calls.reviewer,1);assert.equal(calls.copy,1);
+  const heroInput=builderInputs.find(u=>/data-wc-section="inicio"/.test(u.split('TU ENCARGO')[1]||''));
+  assert.match(heroInput,/TEXTOS DEFINITIVOS DEL REDACTOR[\s\S]*Muévete con \*criterio\*/,'el constructor recibe los textos del redactor');
+  assert.match(heroInput,/EJEMPLO DE REFERENCIA del patrón «hero»/,'y el ejemplo de su patrón');
+  assert.match(builderInputs.find(u=>/CABECERA/.test(u)),/EJEMPLO DE REFERENCIA del patrón «cabecera»/);
   const html=final.data.html;
   for(const id of ['inicio','metodo','planes'])assert.match(html,new RegExp('data-wc-section="'+id+'"'));
   assert.match(html,/<header class="site-header"/);assert.match(html,/<footer class="site-footer"/);
