@@ -1,7 +1,7 @@
 'use client';
 /** Creador de webs en 4 pasos: negocio → referencias → dirección creativa → generar.
  *  Cada paso usa servicios reales (/studio-api/webcreator/*); si algo no está disponible se dice claramente. */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, Check, FilePlus2, Globe, ImagePlus, LoaderCircle, Palette, Search, Sparkles, Trash2, Wand2 } from 'lucide-react';
 
 export type Direction = {
@@ -20,7 +20,8 @@ type RefImage = { id: string; name: string; dataUrl: string; role: string; note:
 export type ClientPhoto = { name: string; dataUrl: string; note: string; description: string };
 type Props = {
   form: Record<string, string>; setForm(f: Record<string, string>): void; brief: string; busy: boolean;
-  aiReady: boolean; aiReason: string; onCheckAI(): void; onGenerate(direction: Direction | null, photos: ClientPhoto[], style: { notes: string; css: string }): void; onLocal(): void; error: string;
+  aiReady: boolean; aiReason: string; onCheckAI(): void; onGenerate(direction: Direction | null, photos: ClientPhoto[], style: { notes: string; css: string; js: string }): void; onLocal(): void; error: string;
+  progress?: { message: string; startedAt: number } | null;
 };
 const FONT_OPTIONS = ['Serif editorial', 'Serif clásica', 'Sans humanista', 'Sans geométrica', 'Sans neutra', 'Display condensada', 'Monoespaciada'];
 const FONT_PREVIEW: Record<string, string> = {
@@ -55,7 +56,7 @@ function Card({ title, subtitle, children, icon }: { title: string; subtitle?: s
   </section>;
 }
 
-export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, onCheckAI, onGenerate, onLocal, error }: Props) {
+export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, onCheckAI, onGenerate, onLocal, error, progress }: Props) {
   const [step, setStep] = useState(0);
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState('modernizar');
@@ -66,6 +67,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
   const [webRefs, setWebRefs] = useState<WebRef[]>([]);
   const [styleNotes, setStyleNotes] = useState('');
   const [customCss, setCustomCss] = useState('');
+  const [customJs, setCustomJs] = useState('');
   const [direction, setDirection] = useState<Direction | null>(null);
   const [working, setWorking] = useState('');
   const [message, setMessage] = useState('');
@@ -223,6 +225,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
         <button type="button" className={primary} disabled={!aiReady || !!working} onClick={() => void propose()}>
           {working.startsWith('Creando') ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />} {direction ? 'Proponer otra' : 'Proponer dirección'}</button>
       </div>
+      {progress && <GenerationProgress progress={progress} />}
       {!aiReady && <p className="mt-2 text-[11px] text-amber-600">{aiReason || 'Motor IA no disponible.'} <button type="button" className="underline" onClick={onCheckAI}>Comprobar</button></p>}
       {direction && <div className="mt-5 space-y-4">
         <textarea aria-label="Concepto" className={input + ' min-h-[70px] resize-y'} value={direction.resumen} onChange={e => setDirection({ ...direction, resumen: e.target.value })} />
@@ -259,7 +262,11 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
       <label className="mt-3 block text-[11.5px] font-medium text-mist">CSS propio
         <textarea className={input + ' mt-1 min-h-[120px] resize-y font-mono text-[11.5px]'} maxLength={20000} value={customCss} onChange={e => setCustomCss(e.target.value)} spellCheck={false}
           placeholder={'body::before { content: ""; position: fixed; inset: 0; opacity: .035; background-image: url("data:image/svg+xml,…"); }'} /></label>
-      <p className="mt-1 text-[10.5px] text-faint">Se revisa por seguridad: no se admiten @import, recursos externos ni JavaScript.</p>
+      <p className="mt-1 text-[10.5px] text-faint">CSS: por seguridad no se admiten @import ni recursos externos (las imágenes en data: sí).</p>
+      <label className="mt-3 block text-[11.5px] font-medium text-mist">JavaScript propio
+        <textarea className={input + ' mt-1 min-h-[110px] resize-y font-mono text-[11.5px]'} maxLength={80000} value={customJs} onChange={e => setCustomJs(e.target.value)} spellCheck={false}
+          placeholder={'// Se añade al final de la web, además del JavaScript que escribe la IA\ndocument.querySelectorAll(".contador").forEach(c => { /* … */ });'} /></label>
+      <p className="mt-1 text-[10.5px] text-faint">La IA ya añade su propio JavaScript (menú móvil, apariciones al hacer scroll…). Esto es opcional y se ejecuta en «En vivo» y en la web publicada; en el lienzo de edición no se ejecuta.</p>
     </Card>}
 
     {step === 3 && <Card title="Generar tu web" subtitle={direction ? 'Se generará siguiendo la dirección creativa aprobada. Después se abre en el editor.' : 'Sin dirección creativa: la IA decidirá el diseño a partir del briefing.'} icon={<Sparkles size={16} className="text-brand" />}>
@@ -268,11 +275,11 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
         <li>· Web analizada: <span className="text-ink">{analysis ? analysis.url + ' (' + MODES.find(m => m[0] === mode)?.[1] + ')' : 'ninguna'}</span></li>
         <li>· Fotos que se incluirán en la web: <span className="text-ink">{images.filter(i => i.useInWeb).length}</span></li>
         <li>· Webs de referencia: <span className="text-ink">{webRefs.filter(r => r.selected).length}</span> · Referencias visuales: <span className="text-ink">{images.length}</span> · Conservar: <span className="text-ink">{preserve.join(', ') || 'nada en concreto'}</span></li>
-        <li>· Estilo a medida: <span className="text-ink">{styleNotes || customCss ? (styleNotes ? 'indicaciones' : '') + (styleNotes && customCss ? ' + ' : '') + (customCss ? 'CSS propio' : '') : 'no'}</span></li>
+        <li>· Estilo a medida: <span className="text-ink">{[styleNotes && 'indicaciones', customCss && 'CSS propio', customJs && 'JavaScript propio'].filter(Boolean).join(' + ') || 'no'}</span></li>
         <li>· Dirección: <span className="text-ink">{direction ? direction.resumen.slice(0, 120) : 'automática'}</span></li>
       </ul>
       <div className="mt-5 flex flex-wrap gap-2">
-        <button type="button" className={primary} disabled={!aiReady || busy} onClick={() => onGenerate(direction, images.filter(i => i.useInWeb).map(i => ({ name: i.name, dataUrl: i.dataUrl, note: i.note, description: String(i.analysis?.composicion || i.analysis?.estilo || '') })), { notes: styleNotes, css: customCss })}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />} Generar mi web con IA</button>
+        <button type="button" className={primary} disabled={!aiReady || busy} onClick={() => onGenerate(direction, images.filter(i => i.useInWeb).map(i => ({ name: i.name, dataUrl: i.dataUrl, note: i.note, description: String(i.analysis?.composicion || i.analysis?.estilo || '') })), { notes: styleNotes, css: customCss, js: customJs })}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />} Generar mi web con IA</button>
         <button type="button" className={btn} disabled={busy} onClick={onLocal}><FilePlus2 size={14} /> Crear sin IA (plantilla editable)</button>
       </div>
       {!aiReady && <p className="mt-2 text-[11px] text-amber-600">{aiReason || 'Motor IA no disponible.'} <button type="button" className="underline" onClick={onCheckAI}>Comprobar</button></p>}
@@ -284,4 +291,29 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
       {step < 3 && <button type="button" className={primary} disabled={!canNext} onClick={() => setStep(s => s + 1)}>Siguiente <ArrowRight size={14} /></button>}
     </div>
   </div>;
+}
+
+/** Panel de progreso de la generación: fase actual, tiempo transcurrido y barra en movimiento. */
+function GenerationProgress({ progress }: { progress: { message: string; startedAt: number } }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const secs = Math.max(0, Math.floor((now - progress.startedAt) / 1000));
+  const time = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+  const writing = /caracteres/.test(progress.message);
+  const hint = writing ? 'La web se está escribiendo; al terminar se abre sola en el editor.'
+    : secs < 20 ? 'Preparando el diseño a partir de tu dirección creativa…'
+    : 'El modelo está pensando la estructura antes de escribir; puede tardar 1–3 minutos. No cierres esta pestaña.';
+  return (
+    <div role="status" aria-live="polite" className="mt-4 rounded-xl border border-brand/30 bg-brandsoft p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-2 text-[12.5px] font-semibold text-brand"><LoaderCircle size={15} className="animate-spin" /> {progress.message}</p>
+        <span className="font-mono text-[12px] text-brand">{time}</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-brand/15">
+        <div className="h-full w-1/3 rounded-full bg-brand" style={{ animation: 'wu-progreso 1.6s ease-in-out infinite' }} />
+      </div>
+      <p className="mt-2 text-[11px] text-mist">{hint}</p>
+      <style>{'@keyframes wu-progreso{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}'}</style>
+    </div>
+  );
 }

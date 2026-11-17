@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2, Tablet,
-  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search, MousePointer2, SquarePlus } from 'lucide-react';
+  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search, MousePointer2, SquarePlus, Play, RotateCcw } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
@@ -24,7 +24,7 @@ import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSect
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
 import { attachLocalImage, editHtmlStructure, htmlLayerOutline,
-  downloadBytes, htmlForExport, listSavedSites, patchSelectedElement, safePreview,
+  downloadBytes, htmlForExport, listSavedSites, livePreview, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
   type SiteBundle } from '@/lib/web-project-files';
 
@@ -53,6 +53,16 @@ function setPageCss(html:string,css:string):string{
   let style=doc.head.querySelector('style[data-wc-page-css]');
   if(!clean.trim()){style?.remove();}
   else{if(!style){style=doc.createElement('style');style.setAttribute('data-wc-page-css','true');}doc.head.append(style);style.textContent=clean;}
+  return '<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML;
+}
+/** Script propio de la página: un <script data-wc-page-js> al final del <body>. Se ejecuta en la web publicada
+ *  y en la vista «En vivo»; nunca dentro del lienzo de edición. */
+function setPageJs(html:string,js:string):string{
+  const code=js.slice(0,80000).replace(/<\/(script)/gi,'<\\/$1');
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  let script=doc.body.querySelector('script[data-wc-page-js]');
+  if(!code.trim()){script?.remove();}
+  else{if(!script){script=doc.createElement('script');script.setAttribute('data-wc-page-js','true');}doc.body.append(script);script.textContent=code;}
   return '<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML;
 }
 /** Propiedades visuales que se «congelan» al sacar un elemento de su contexto (p. ej. a la mesa de trabajo). */
@@ -110,7 +120,7 @@ function briefFrom(form:Record<string,string>):string{
     'Marca y colores de referencia: '+form.palette,
     'REQUISITOS DEL EDITOR WAYUP: utiliza secciones semánticas con data-wc-section estable,',
     'títulos reales, navegación y botones funcionales con anclas válidas.',
-    'Entrega HTML5 completo y responsivo, sin scripts ni imágenes externas inventadas.'
+    'Entrega HTML5 completo y responsivo, con JavaScript propio para las interacciones (sin librerías externas) y sin imágenes externas inventadas.'
   ].join('\n');
 }
 async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void,direction:Direction|null=null):Promise<string>{
@@ -161,10 +171,15 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const [cloudBusy,setCloudBusy]=useState(false);
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState('');
+  // Progreso de la generación con IA, visible en el propio creador mientras dura (no se oculta solo).
+  const [genStatus,setGenStatus]=useState<{message:string;startedAt:number}|null>(null);
   const [fileError,setFileError]=useState('');
   useEffect(()=>{if(!notice)return;const t=setTimeout(()=>setNotice(''),6000);return()=>clearTimeout(t);},[notice]);
   const [view,setView]=useState<View>('preview');
   const [device,setDevice]=useState<'desktop'|'tablet'|'mobile'>('desktop');
+  // Vista «En vivo»: la web con su JavaScript funcionando (aislada del editor). liveKey reinicia la página.
+  const [live,setLive]=useState(false);
+  const [liveKey,setLiveKey]=useState(0);
   const [selected,setSelected]=useState<number|null>(null);
   // Herramientas del lienzo: seleccionar (V), mover/reordenar (M) e insertar (I).
   const [tool,setTool]=useState<'select'|'move'|'insert'>('select');
@@ -276,6 +291,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const selectedRef=useRef<HTMLElement|null>(null);
   siteRef.current=site;
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
+  const liveHtml=useMemo(()=>{if(!live||!site)return '';try{return livePreview(site);}catch{return '';}},[live,site]);
+  useEffect(()=>{if(!live)return;const k=(e:KeyboardEvent)=>{if(e.key==='Escape')setLive(false);};window.addEventListener('keydown',k);return()=>window.removeEventListener('keydown',k);},[live]);
   const previewHead=useMemo(()=>(preview?.html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1]||''),[preview?.html]);
   useEffect(()=>{toolRef.current=tool;const doc=previewFrame.current?.contentDocument;if(doc?.body){doc.body.style.cursor=tool==='move'?'grab':'';doc.body.style.userSelect=tool==='move'?'none':'';}
     if(tool!=='select')clearHandles(doc);else if(selectedRef.current)drawResize(selectedRef.current);},[tool]);
@@ -360,12 +377,16 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   };
   const cssFiles=useMemo(()=>site?Object.keys(site.assets).filter(p=>/\.css$/i.test(p)).sort():[],[site]);
   const PAGE_CSS='__page__';
+  const PAGE_JS='__js__';
   const readPageCss=(html:string)=>new DOMParser().parseFromString(html,'text/html').head.querySelector('style[data-wc-page-css]')?.textContent||'';
+  const readPageJs=(html:string)=>(new DOMParser().parseFromString(html,'text/html').body.querySelector('script[data-wc-page-js]')?.textContent||'').replace(/<\\\/script/gi,'</script');
+  const jsFiles=useMemo(()=>site?Object.keys(site.assets).filter(p=>/\.m?js$/i.test(p)).sort():[],[site]);
   const openCodeFile=(file:string)=>{
     if(!site)return;
     setCodeFile(file);
     if(file==='__html__')setDraftHtml(site.html);
     else if(file===PAGE_CSS)setDraftCode(readPageCss(site.html));
+    else if(file===PAGE_JS)setDraftCode(readPageJs(site.html));
     else setDraftCode(strFromU8(site.assets[file]||new Uint8Array()));
   };
   /** Aplica el contenido de la pestaña de código abierta. */
@@ -375,6 +396,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(codeFile===PAGE_CSS){
       if(draftCode===readPageCss(site.html))return;
       changeHtml(setPageCss(site.html,draftCode));setNotice('Estilos propios de la página aplicados.');return;
+    }
+    if(codeFile===PAGE_JS){
+      if(draftCode===readPageJs(site.html))return;
+      changeHtml(setPageJs(site.html,draftCode));setNotice('Script propio guardado. Pruébalo con «En vivo».');return;
     }
     if(draftCode!==strFromU8(site.assets[codeFile]||new Uint8Array())){changeAsset(codeFile,draftCode);setNotice(codeFile+' actualizado.');}
   };
@@ -446,11 +471,14 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     }catch{setWebAIReady(false);setWebAIReason('No se pudo comprobar el motor IA de Studio.');}
   },[]);
   useEffect(()=>{if(stage==='create')void refreshWebAI()},[stage,refreshWebAI]);
-  async function createWeb(direction:Direction|null=null,photos:ClientPhoto[]=[],style:{notes:string;css:string}={notes:'',css:''}){
+  async function createWeb(direction:Direction|null=null,photos:ClientPhoto[]=[],style:{notes:string;css:string;js?:string}={notes:'',css:''}){
     if(form.name.trim().length<2||form.services.trim().length<20){
       setFileError('Introduce el nombre del negocio y al menos 20 caracteres sobre sus servicios.');return;
     }
-    setFileError('');setBusy(true);setNotice('Generando la web con el motor IA conectado…');
+    setFileError('');setBusy(true);
+    const startedAt=Date.now();
+    setGenStatus({message:'Enviando el encargo al motor IA…',startedAt});
+    const onProgress=(message:string)=>setGenStatus({message,startedAt});
     try{
       // Fotos del cliente: rutas del proyecto que la IA debe usar; los archivos se añaden al proyecto (y al ZIP).
       const assets=photos.slice(0,8).map((photo,i)=>{
@@ -464,8 +492,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         assets.map(a=>'- '+a.path+' — '+a.alt).join('\n'):'';
       const styleBrief=style.notes.trim()?'\n\nINDICACIONES DE ESTILO DEL CLIENTE (prioritarias sobre la dirección general):\n'+style.notes.trim().slice(0,3000):'';
       const cssBrief=style.css.trim()?'\n\nEl cliente aportará su propio CSS, que se añadirá al final: no lo contradigas ni lo dupliques.':'';
-      let html=await streamGeneratedWeb(briefFrom(form)+photoBrief+styleBrief+cssBrief,setNotice,direction);
+      const jsBrief=style.js?.trim()?'\n\nEl cliente aportará su propio JavaScript, que se añadirá al final del <body>: no dupliques lo que ya hace. Su código empieza así:\n'+style.js.trim().slice(0,600):'';
+      let html=await streamGeneratedWeb(briefFrom(form)+photoBrief+styleBrief+cssBrief+jsBrief,onProgress,direction);
       if(style.css.trim())html=appendCustomCss(html,style.css);
+      if(style.js?.trim())html=setPageJs(html,style.js);
       // Si la IA se ha dejado alguna foto, se añade en una galería para no perder ninguna.
       const missing=assets.filter(a=>!html.includes(a.path));
       if(missing.length)html=insertSnippet(html,null,'<section data-wc-section="galeria-fotos" data-wc-name="Galería" id="galeria-fotos" style="padding:72px 6%;max-width:1200px;margin:0 auto"><h2 style="margin:0 0 24px">Galería</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">'+
@@ -477,7 +507,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     }catch(error){
       setFileError(error instanceof Error?error.message:'Error al crear la web.');
       setNotice('El editor local sigue disponible. Comprueba el estado del motor IA y reintenta.');
-    }finally{setBusy(false);}
+    }finally{setBusy(false);setGenStatus(null);}
   }
 
   function selectLayer(index:number,scroll=true){
@@ -722,6 +752,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     window.addEventListener('keyup',up);return()=>window.removeEventListener('keyup',up);
   },[]);
   keyRef.current=(e:KeyboardEvent)=>{
+    if(live)return; // en «En vivo» no hay atajos de edición (Esc la cierra)
     if(e.code==='Space'&&stage==='editor'&&view==='preview'&&!editingRef.current){
       const t=e.target as HTMLElement|null;
       if(!(t&&(t.isContentEditable||['INPUT','TEXTAREA','SELECT','BUTTON'].includes(t.tagName)))){
@@ -1105,7 +1136,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         </div>
         <input ref={fileInput} type="file" hidden accept=".zip,.html,.htm" onChange={e=>{const file=e.target.files?.[0];if(file)void importFile(file);}}/>
       </>:<CreatorWizard form={form} setForm={setForm} brief={briefFrom(form)} busy={busy} aiReady={webAIReady} aiReason={webAIReason}
-        onCheckAI={()=>void refreshWebAI()} onGenerate={(direction,photos,style)=>void createWeb(direction,photos,style)} onLocal={createLocalWeb} error={fileError}/>}
+        onCheckAI={()=>void refreshWebAI()} onGenerate={(direction,photos,style)=>void createWeb(direction,photos,style)} onLocal={createLocalWeb} error={fileError} progress={genStatus}/>}
     </main>}
     {site&&stage==='editor'&&<main className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-stroke bg-panel px-3 py-2 sm:px-4">
@@ -1166,8 +1197,26 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
                 <button type="button" onClick={()=>zoomBy(1.2)} aria-label="Acercar" title="Acercar (Ctrl + rueda)" className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md text-mist hover:bg-panel hover:text-ink">+</button>
                 <button type="button" onClick={fitZoom} title="Ajustar la página a la ventana" className="rounded-md px-2 text-[11px] text-mist hover:bg-panel hover:text-ink">Ajustar</button>
               </div>
+              <button type="button" onClick={()=>{setLive(v=>!v);setLiveKey(k=>k+1);setCanvasMenu(null);}} aria-pressed={live}
+                title="Ver la web funcionando de verdad: animaciones, menús y JavaScript (Esc para volver a editar)"
+                className={'inline-flex h-[34px] items-center gap-1.5 rounded-lg border px-3 text-[11.5px] font-semibold transition '+(live?'border-brand bg-brand text-white':'border-brand/40 bg-brandsoft text-brand hover:border-brand')}>
+                <Play size={13}/>{live?'Volver a editar':'En vivo'}</button>
             </div>
             <div className="relative min-h-0 flex-1">
+            {live&&<div className="absolute inset-0 z-[40] flex flex-col bg-canvas">
+              <div className="flex items-center justify-between gap-2 border-b border-brand/30 bg-brandsoft px-3 py-1.5 text-[11px] text-brand">
+                <span><b>En vivo</b> · la web funciona como publicada (JavaScript, animaciones, menús). Aquí no se edita; los enlaces externos y formularios están desactivados.</span>
+                <span className="flex shrink-0 gap-1">
+                  <button type="button" onClick={()=>setLiveKey(k=>k+1)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-panel" title="Recargar la página"><RotateCcw size={12}/> Recargar</button>
+                  <button type="button" onClick={()=>setLive(false)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-panel" title="Volver a editar (Esc)"><X size={12}/> Cerrar</button>
+                </span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-5">
+                <iframe key={liveKey} title="Vista en vivo de la web" srcDoc={liveHtml} sandbox="allow-scripts" referrerPolicy="no-referrer"
+                  className="mx-auto block h-full min-h-[560px] rounded-md border border-stroke bg-white shadow-panel"
+                  style={{width:device==='mobile'?390:device==='tablet'?820:'100%',maxWidth:'100%'}}/>
+              </div>
+            </div>}
             {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onDragBlock={dragBlockStart} onClose={()=>setTool('select')}
               target={selected!==null?'después del elemento seleccionado (o dentro, si es un contenedor vacío)':'al final de la página'}/>}
             <div ref={canvasScrollRef} className="scroll-subtle absolute inset-0 overflow-auto py-3 sm:py-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
@@ -1190,20 +1239,21 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
             </div>
           </>:<>
             <div role="tablist" aria-label="Archivos del proyecto" className="flex flex-wrap items-center gap-1 border-b border-stroke bg-panel px-3 py-2">
-              {[['__html__',site.entry],...cssFiles.map(f=>[f,f]),[PAGE_CSS,'Estilos propios']].map(([id,label])=>
+              {[['__html__',site.entry],...cssFiles.map(f=>[f,f]),...jsFiles.map(f=>[f,f]),[PAGE_CSS,'Estilos propios'],[PAGE_JS,'Script propio']].map(([id,label])=>
                 <button key={id} role="tab" aria-selected={codeFile===id} onClick={()=>openCodeFile(id)}
                   className={'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-[11px] '+(codeFile===id?'bg-brandsoft text-brand':'text-mist hover:bg-elevated hover:text-ink')}>
                   <FileCode2 size={12}/>{label}</button>)}
-              <span className="ml-auto text-[10.5px] text-faint">{codeFile==='__html__'?site.html.length.toLocaleString('es-ES')+' caracteres':codeFile===PAGE_CSS?'CSS tuyo, se añade al final y gana al original':'Archivo CSS del proyecto'}</span>
+              <span className="ml-auto text-[10.5px] text-faint">{codeFile==='__html__'?site.html.length.toLocaleString('es-ES')+' caracteres':codeFile===PAGE_CSS?'CSS tuyo, se añade al final y gana al original':codeFile===PAGE_JS?'JavaScript tuyo, al final de la página · se ejecuta en «En vivo» y al publicar':/\.m?js$/i.test(codeFile)?'Archivo JavaScript del proyecto':'Archivo CSS del proyecto'}</span>
             </div>
             {codeFile==='__html__'?<textarea aria-label="Editor completo de HTML de la web"
               className="scroll-subtle min-h-0 flex-1 resize-none bg-[#10141c] p-5 font-mono text-[12px] leading-6 text-[#dae6ff] outline-none"
               spellCheck={false} value={draftHtml} onChange={e=>setDraftHtml(e.target.value)}
               onBlur={()=>{if(draftHtml!==site.html)changeHtml(draftHtml)}}/>
-            :<textarea aria-label={codeFile===PAGE_CSS?'Estilos propios de la página':'Editor del archivo '+codeFile}
+            :<textarea aria-label={codeFile===PAGE_CSS?'Estilos propios de la página':codeFile===PAGE_JS?'Script propio de la página':'Editor del archivo '+codeFile}
               className="scroll-subtle min-h-0 flex-1 resize-none bg-[#10141c] p-5 font-mono text-[12px] leading-6 text-[#dae6ff] outline-none"
               spellCheck={false} value={draftCode} onChange={e=>setDraftCode(e.target.value)} onBlur={applyCode}
-              placeholder={codeFile===PAGE_CSS?'/* Tus reglas: se aplican por encima del CSS original */\n.hero h1 { letter-spacing: -0.02em; }':''}/>}
+              placeholder={codeFile===PAGE_CSS?'/* Tus reglas: se aplican por encima del CSS original */\n.hero h1 { letter-spacing: -0.02em; }':
+                codeFile===PAGE_JS?'// Tu JavaScript: se ejecuta al cargar la página publicada\ndocument.querySelectorAll(\'section\').forEach(s => s.classList.add(\'visible\'));':''}/>}
             <div className="flex items-center justify-between gap-2 border-t border-stroke p-2">
               <span className="text-[10.5px] text-faint">Se aplica al salir del editor o con el botón. Ctrl+Z deshace.</span>
               <button onClick={()=>{applyCode();setView('preview')}} className={primary}><Check size={14}/> Aplicar y ver resultado</button>
@@ -1236,7 +1286,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               <p className="my-2 text-[10px] leading-4 text-faint">PNG, JPG, GIF o WebP. Máximo 5 MB. La imagen queda dentro del ZIP.</p>
             </div>}/>}
           </>}
-          <div className="mt-7 border-t border-stroke pt-4 text-[10px] leading-5 text-faint">Vista de edición protegida: el JavaScript importado no se ejecuta dentro del editor. Los archivos originales se conservan para exportación.</div>
+          <div className="mt-7 border-t border-stroke pt-4 text-[10px] leading-5 text-faint">Lienzo de edición protegido: aquí el JavaScript no se ejecuta. Pulsa «En vivo» para ver la web funcionando con sus scripts; todo se conserva al exportar.</div>
         </aside>
       </div>
     </main>}

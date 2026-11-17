@@ -220,6 +220,59 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
   return {html:'<!DOCTYPE html>\n'+doc.documentElement.outerHTML,revoke:()=>urls.forEach(url=>URL.revokeObjectURL(url))};
 }
 
+/** Vista «En vivo»: la web tal como se publicará, con su JavaScript funcionando.
+ *  Se muestra en un iframe sandbox="allow-scripts" SIN allow-same-origin (origen opaco: no ve el editor ni sus datos),
+ *  con CSP sin red (connect-src 'none'), sin marcos ni recursos externos salvo Google Fonts, y sin salir de la página. */
+export function livePreview(site:SiteBundle):string{
+  const folder=site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'';
+  const asset=(value:string):Uint8Array|undefined=>{
+    if(!value||/^(?:[a-z]+:|\/\/|#)/i.test(value))return undefined;
+    const path=value.split(/[?#]/)[0].replace(/^\.\//,'');
+    return site.assets[folder+path]||site.assets[path];
+  };
+  const dataUrl=(path:string,bytes:Uint8Array)=>{
+    let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+    return 'data:'+assetMime(path)+';base64,'+btoa(bin);
+  };
+  const doc=new DOMParser().parseFromString(htmlForExport({...site,agent:undefined}),'text/html');
+  for(const node of Array.from(doc.querySelectorAll('iframe,object,embed,base,meta[http-equiv],frame,frameset')))node.remove();
+  for(const node of Array.from(doc.querySelectorAll<HTMLElement>('[data-wc-hidden]')))node.hidden=true;
+  for(const node of Array.from(doc.querySelectorAll('img[src],source[src],video[src],audio[src],video[poster]'))){
+    for(const attr of ['src','poster']){
+      const value=node.getAttribute(attr);if(value===null)continue;
+      const bytes=asset(value);
+      if(bytes&&bytes.length<8_000_000)node.setAttribute(attr,dataUrl(value,bytes));
+      else if(!/^data:/i.test(value))node.removeAttribute(attr);
+    }
+    node.removeAttribute('srcset');
+  }
+  for(const link of Array.from(doc.querySelectorAll('link[rel~="stylesheet"]'))){
+    const href=link.getAttribute('href')||'';
+    if(/^https:\/\/fonts\.googleapis\.com\/css2?\?/.test(href)){link.setAttribute('referrerpolicy','no-referrer');continue;}
+    const bytes=asset(href);
+    if(bytes&&bytes.length<2_000_000){const s=doc.createElement('style');s.textContent=strFromU8(bytes).replace(/@import[^;]+;/gi,'');link.replaceWith(s);}
+    else link.remove();
+  }
+  for(const script of Array.from(doc.querySelectorAll('script[src]'))){
+    const bytes=asset(script.getAttribute('src')||'');
+    if(bytes&&bytes.length<2_000_000){
+      const inline=doc.createElement('script');
+      for(const attr of Array.from(script.attributes))if(attr.name!=='src'&&attr.name!=='defer'&&attr.name!=='async')inline.setAttribute(attr.name,attr.value);
+      inline.textContent=strFromU8(bytes);
+      script.replaceWith(inline);
+    }else script.remove();
+  }
+  const csp=doc.createElement('meta');
+  csp.httpEquiv='Content-Security-Policy';
+  csp.content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data: blob:; media-src data: blob:; font-src data: https://fonts.gstatic.com; connect-src 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'";
+  // Los enlaces externos no sacan la vista de la página: solo funcionan las anclas internas.
+  const guard=doc.createElement('script');
+  guard.textContent="document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href')||'';if(h.charAt(0)!=='#'){e.preventDefault();}},true);document.addEventListener('submit',function(e){e.preventDefault();},true);";
+  doc.head.prepend(guard);
+  doc.head.prepend(csp);
+  return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
+}
+
 /** Índices DOM estables para vista protegida, árbol y operaciones reales. */
 const BLOCKED_EDITOR_TAGS = new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','TEMPLATE','LINK','META']);
 export function editableHtmlNodes(doc:Document):HTMLElement[]{

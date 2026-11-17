@@ -71,9 +71,17 @@ test('Límite del proveedor produce un error específico',async()=>{
   assert.equal(final.event,'error');
   assert.equal(final.data.code,'provider_limit');
 });
-test('HTML con scripts se rechaza sin probar otro modelo',async()=>{
+test('JavaScript propio y seguro se conserva; el peligroso o externo se quita',async()=>{
+  const good='<script>document.documentElement.classList.add("js");const b=document.querySelector("button");b?.addEventListener("click",()=>b.classList.toggle("open"));</script>';
+  const bad='<script>fetch("/robar")</script><script src="https://cdn.example/x.js"></script><script>window.open("x")</script>';
+  const {final}=await generate({run:async()=>sse([FULL.replace('</body>',good+bad+'</body>')])});
+  assert.equal(final.event,'complete');
+  assert.match(final.data.html,/classList\.add\("js"\)/);
+  assert.doesNotMatch(final.data.html,/fetch|cdn\.example|window\.open/);
+});
+test('HTML con iframes o eventos en atributos se rechaza sin probar otro modelo',async()=>{
   let calls=0;
-  const {final}=await generate({run:async()=>{calls++;return sse([FULL.replace('</body>','<script>alert(1)</script></body>')]);}});
+  const {final}=await generate({run:async()=>{calls++;return sse([FULL.replace('</body>','<img src="a.png" onerror="alert(1)"></body>')]);}});
   assert.equal(final.event,'error');
   assert.equal(final.data.code,'active');
   assert.equal(calls,1);

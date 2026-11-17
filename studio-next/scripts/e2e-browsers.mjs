@@ -23,7 +23,7 @@ async function run(name, type) {
     await page.getByRole('button', { name: /Empezar en blanco/ }).click();
     await page.getByRole('button', { name: 'Código', exact: false }).filter({ hasText: 'Código' }).first().click();
     await page.getByLabel('Editor completo de HTML de la web').fill(HTML);
-    await page.getByRole('button', { name: /Aplicar HTML/ }).click();
+    await page.getByRole('button', { name: /Aplicar y ver resultado/ }).click();
     const frame = page.frameLocator('iframe[title^="Previsualizaci"]');
     // Marco visible (hay dos: el oculto prepara la siguiente versión sin parpadeo).
     const frameHandle = async () => (await page.$('iframe[title^="Previsualizaci"]')).contentFrame();
