@@ -26,8 +26,13 @@ function fakeDb(){
 const PLAN='IDEA: movimiento con criterio. '+'SECCIONES: hero, marquee, lista numerada, bento, cifras, FAQ, CTA. '.repeat(4);
 const isPlan=input=>String(input?.messages?.[0]?.content||'').startsWith('Eres director de arte');
 // La pasada de planificación responde siempre un plan fijo; las pruebas controlan solo la generación del HTML.
-async function generate(ai,{planFails=false}={}){
-  const wrapped={run:async(model,input)=>{if(isPlan(input)){if(planFails)throw Error('plan caído');return sse([PLAN]);}return ai.run(model,input);}};
+const isTeam=input=>/^Eres (el DIRECTOR|un DESARROLLADOR|el REVISOR)/.test(String(input?.messages?.[0]?.content||''));
+async function generate(ai,{planFails=false,team=null}={}){
+  // Por defecto el equipo responde algo inválido: así se prueba la vía de una pasada (sin marcar modelos como no disponibles).
+  const wrapped={run:async(model,input)=>{
+    if(isTeam(input))return team?team(model,input):sse(['sin bloques']);
+    if(isPlan(input)){if(planFails)throw Error('plan caído');return sse([PLAN]);}
+    return ai.run(model,input);}};
   const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:wrapped};
   const res=await wayupStudioWebCreatorBridge(new Request(ORIGIN+'/studio-api/webcreator/generate-stream',{
     method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify({briefing:BRIEFING})}),env,ctx);
@@ -76,11 +81,12 @@ test('Límite del proveedor produce un error específico',async()=>{
   assert.equal(final.data.code,'provider_limit');
 });
 test('JavaScript propio y seguro se conserva; el peligroso o externo se quita',async()=>{
-  const good='<script>document.documentElement.classList.add("js");const b=document.querySelector("button");b?.addEventListener("click",()=>b.classList.toggle("open"));</script>';
+  const good='<script>function abrir(){return 1}document.documentElement.classList.add("js");const b=document.querySelector("button");b?.addEventListener("click",()=>b.classList.toggle("open"));</script>';
   const bad='<script>fetch("/robar")</script><script src="https://cdn.example/x.js"></script><script>window.open("x")</script>';
   const {final}=await generate({run:async()=>sse([FULL.replace('</body>',good+bad+'</body>')])});
   assert.equal(final.event,'complete');
   assert.match(final.data.html,/classList\.add\("js"\)/);
+  assert.match(final.data.html,/function abrir/,'la palabra function no debe bloquear el script');
   assert.doesNotMatch(final.data.html,/fetch|cdn\.example|window\.open/);
 });
 test('HTML con iframes o eventos en atributos se rechaza sin probar otro modelo',async()=>{
@@ -121,4 +127,36 @@ test('Ruta de imágenes IA: devuelve una imagen JPEG y respeta el origen',async(
   assert.equal(ok.status,200);
   assert.match((await ok.json()).image,/^data:image\/jpeg;base64,/);
   assert.equal((await call('https://otro.test')).status,403);
+});
+
+test('Equipo de modelos: director, constructores en paralelo y revisor montan una web completa con JavaScript propio',async()=>{
+  const css='.x{color:#111}'.repeat(80);
+  const director=['===META===','Centro ficticio | Entrenamiento personal a medida','===FUENTES===','https://fonts.googleapis.com/css2?family=Fraunces:wght@400;700&family=Inter&display=swap',
+    '===CSS===',':root{--a:#c00}'+css,'===SECCIONES===','cabecera | header | Marca | navegación | no','inicio | hero gráfico | Muévete con criterio | titular enorme | athlete stretching at dawn',
+    'metodo | lista numerada | Cómo trabajamos | pasos | no','planes | bento | Elige tu ritmo | servicios | no','pie | footer | Marca | datos | no','===FIN==='].join('\n');
+  const calls={director:0,builder:0,reviewer:0};
+  const team=(model,input)=>{
+    const sys=input.messages[0].content,user=input.messages[1].content;
+    if(sys.startsWith('Eres el DIRECTOR')){calls.director++;return sse([director]);}
+    if(sys.startsWith('Eres el REVISOR')){calls.reviewer++;return sse(['===CSS===\n.hero h1{letter-spacing:-.03em}\n.btn:focus-visible{outline:2px solid red}\n===FIN===']);}
+    calls.builder++;
+    const id=/id="([a-z0-9-]+)"/.exec(user.split('TU ENCARGO')[1])?.[1];
+    const html=/CABECERA/.test(user)?'<header class="site-header" data-header><a href="#inicio">Marca</a></header>':
+      /el PIE/.test(user)?'<footer class="site-footer">© Marca</footer>':
+      '<section id="'+id+'" data-wc-section="'+id+'"><h2 data-reveal>'+id+'</h2>'+(id==='inicio'?'<img data-wc-ai-image="athlete stretching at dawn" alt="Atleta">':'')+'<script>fetch("/x")</script></section>';
+    return sse(['===HTML===\n'+html+'\n===CSS===\n#'+(id||'x')+'{padding:80px 0}\n===FIN===']);
+  };
+  const {final}=await generate({run:async()=>{throw Error('no debe usarse la vía de una pasada')}},{team});
+  assert.equal(final.event,'complete');
+  assert.equal(final.data.mode,'studio-team');
+  assert.equal(calls.director,1);assert.equal(calls.builder,5);assert.equal(calls.reviewer,1);
+  const html=final.data.html;
+  for(const id of ['inicio','metodo','planes'])assert.match(html,new RegExp('data-wc-section="'+id+'"'));
+  assert.match(html,/<header class="site-header"/);assert.match(html,/<footer class="site-footer"/);
+  assert.match(html,/fonts\.googleapis\.com\/css2\?family=Fraunces/);
+  assert.match(html,/IntersectionObserver/,'lleva el JavaScript propio del equipo');
+  assert.match(html,/letter-spacing:-\.03em/,'incluye la revisión');
+  assert.match(html,/data-wc-ai-image="athlete stretching at dawn"/);
+  assert.doesNotMatch(html,/fetch\(/,'los scripts de los constructores se descartan');
+  assert.match(html,/<title>Centro ficticio<\/title>/);
 });

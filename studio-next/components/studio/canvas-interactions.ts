@@ -64,7 +64,8 @@ function isTextLike(el: HTMLElement): boolean {
   const win = el.ownerDocument.defaultView;
   if (!win || /^(IMG|VIDEO|PICTURE|SVG|CANVAS|IFRAME|INPUT|TEXTAREA|SELECT)$/i.test(el.tagName)) return false;
   if (!(el.textContent || '').trim()) return false;
-  return Array.from(el.children).every(c => /^(inline|inline-block|inline-flex|contents)$/.test(win.getComputedStyle(c).display) && !c.querySelector('img,video,picture,svg'));
+  // Con texto y sin fotos/vídeos dentro → se escala la letra (como Canva/Figma al escalar). Las tarjetas con imagen escalan su caja.
+  return !el.querySelector('img,video,picture,canvas,iframe');
 }
 const isMedia = (el: HTMLElement) => /^(IMG|VIDEO|PICTURE|SVG|CANVAS)$/i.test(el.tagName);
 function readTranslatePx(v: string): { x: number; y: number } {
@@ -115,6 +116,8 @@ function drawHandlesV2(doc: Document, el: HTMLElement, onEnd: (styles: Record<st
       const pad0 = { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
       const east = dir.includes('e'), west = dir.includes('w'), south = dir.includes('s'), north = dir.includes('n');
       const fit = cs.objectFit && cs.objectFit !== 'fill' ? cs.objectFit : 'cover';
+      // Un elemento «en línea» ignora width, height y translate: se pasa a inline-block (se ve igual).
+      const inlineEl = cs.display === 'inline';
       let out: Record<string, string> = {};
       try { h.setPointerCapture(id); } catch {}
       const set = (prop: string, value: string) => { el.style.setProperty(prop, value, 'important'); out[prop] = value; };
@@ -126,6 +129,7 @@ function drawHandlesV2(doc: Document, el: HTMLElement, onEnd: (styles: Record<st
         let w = start.width + (east ? dx : west ? -dx : 0);
         let hh = start.height + (south ? dy : north ? -dy : 0);
         out = {};
+        if (inlineEl) set('display', 'inline-block');
         if (corner && !m.shiftKey) {
           // Escala proporcional: manda el eje que más se ha movido.
           const kx = w / start.width, ky = hh / start.height;

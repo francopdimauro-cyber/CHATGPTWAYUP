@@ -5,7 +5,7 @@ const URL = process.argv[2] || 'http://localhost:3123/';
 const HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Web ficticia tiradores</title>
 <style>body{margin:0;font-family:Arial}section{padding:60px}.logo{display:inline-block;font-size:20px;font-weight:700}
 img{display:block;width:200px;height:120px;margin-left:420px}</style></head><body><section id="a"><span class="logo" id="logo">MarcaFicticia</span>
-<p id="p">Texto de prueba.</p><img id="img" alt="x" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="></section></body></html>`;
+<p id="p">Texto de <em id="sp">prueba en línea</em>.</p><p id="eb" style="display:flex;gap:8px;font-size:14px;margin-left:420px">ALDEA <span style="display:block">·</span> SIERRA</p><img id="img" alt="x" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="></section></body></html>`;
 const browser = await chromium.launch({ channel: 'msedge' });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
 const out = []; const check = (l, ok, x = '') => out.push((ok ? '✔ ' : '✘ ') + l + (x ? ' · ' + x : ''));
@@ -38,6 +38,13 @@ try {
   const b = await live('#logo');
   check('Esquina escala la letra del texto', b.font > a.font * 1.3, a.font + 'px → ' + b.font + 'px');
 
+  paso = 'esquina en texto con bloque dentro';
+  await fl.locator('#eb').click();
+  const g0 = await live('#eb');
+  await drag(await handle('se'), 60, 10);
+  const g1 = await live('#eb');
+  check('Esquina escala la letra aunque tenga bloques dentro', g1.font > g0.font * 1.15, g0.font + 'px → ' + g1.font + 'px');
+
   paso = 'lado izquierdo en imagen';
   await fl.locator('#img').click();
   const c = await live('#img');
@@ -53,10 +60,21 @@ try {
   check('Esquina en imagen agranda', e1.w > e0.w + 30, Math.round(e0.w) + ' → ' + Math.round(e1.w));
   check('Esquina en imagen mantiene la proporción', Math.abs(e1.w / e1.h - e0.w / e0.h) < 0.03, (e0.w / e0.h).toFixed(2) + ' → ' + (e1.w / e1.h).toFixed(2));
 
+  paso = 'mover libre un elemento en línea';
+  await page.getByRole('button', { name: 'Mover' }).first().click();
+  await page.getByRole('button', { name: 'Libre' }).click();
+  const s0 = await fl.locator('#sp').evaluate(e => e.getBoundingClientRect().toJSON());
+  const ib = await iframeBox();
+  const from = { x: ib.x + s0.x + s0.width / 2, y: ib.y + s0.y + s0.height / 2 };
+  await drag(from, 120, 90);
+  const s1 = await fl.locator('#sp').evaluate(e => e.getBoundingClientRect().toJSON());
+  check('Un elemento en línea se mueve de verdad en modo Libre', Math.abs(s1.x - s0.x - 120) < 8 && Math.abs(s1.y - s0.y - 90) < 8, Math.round(s1.x - s0.x) + ', ' + Math.round(s1.y - s0.y));
+  await page.getByRole('button', { name: 'Seleccionar' }).first().click();
+
   paso = 'deshacer';
   await page.getByRole('button', { name: 'Deshacer' }).click(); await page.waitForTimeout(1000);
-  const f = await live('#img');
-  check('Deshacer vuelve atrás un paso', Math.abs(f.w - e0.w) < 3, Math.round(f.w) + ' vs ' + Math.round(e0.w));
+  const f = await fl.locator('#sp').evaluate(e => e.getBoundingClientRect().toJSON());
+  check('Deshacer devuelve el elemento movido a su sitio', Math.abs(f.x - s0.x) < 3 && Math.abs(f.y - s0.y) < 3, Math.round(f.x - s0.x) + ', ' + Math.round(f.y - s0.y));
 } catch (e) { out.push('✘ ERROR en «' + paso + '»: ' + e.message.split('\n')[0]); }
 console.log(out.join('\n'));
 await browser.close();

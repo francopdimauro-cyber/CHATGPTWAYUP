@@ -88,6 +88,9 @@ function bakeStyles(live:HTMLElement,html:string):string{
       if(prop==='background-image'&&value==='none')continue;
       decl.push(prop+': '+value);
     }
+    // El elemento raíz conserva su forma de mostrarse (p. ej. un <em> que su contenedor convertía en bloque);
+    // si era «en línea», pasa a inline-block para que se pueda mover y redimensionar fuera de su sitio.
+    if(i===0){const d=cs.display;decl.push('display: '+(d==='inline'?'inline-block':d));}
     const own=target.getAttribute('style')||'';
     target.setAttribute('style',decl.join('; ')+(own?'; '+own:''));
   });
@@ -985,8 +988,14 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(state.free||!drop){
         const x=clamp(state.x+event.clientX-state.clientX),y=clamp(state.y+event.clientY-state.clientY);
         restore(true);st.setProperty('translate',x+'px '+y+'px','important');
-        try{applyEdit({html:patchSelectedElement(current.html,state.index,{moveX:x,moveY:y}),index:state.index},'Elemento colocado libremente ('+x+', '+y+' px). Deshacer lo devuelve a su sitio.');}
-        catch{restore(false);}
+        // Un elemento «en línea» (span, em, a…) no se desplaza con translate: se pasa a inline-block, que se ve igual.
+        const inline=doc.defaultView?.getComputedStyle(state.element).display==='inline';
+        if(inline)st.setProperty('display','inline-block','important');
+        try{
+          let html=patchSelectedElement(current.html,state.index,{moveX:x,moveY:y});
+          if(inline)html=setStyles(html,state.index,{display:'inline-block'}).html;
+          applyEdit({html,index:state.index},'Elemento colocado libremente ('+x+', '+y+' px). Deshacer lo devuelve a su sitio.');
+        }catch{restore(false);}
         return;
       }
       // En «Ordenar» se oculta hasta que aparece ya en su nuevo sitio (sin volver al original).
