@@ -450,3 +450,61 @@ export function replaceSymbol(html:string,index:number,opts:{svg:string;name:str
   }
   return {html:serialize(doc),index:indexOf(doc,node)??index};
 }
+
+/** «Cambiar imagen»: sustituye la foto de un <img> (o solo ajusta encuadre y filtros) sin tocar sus clases, id ni
+ *  el resto de atributos. La caja se mantiene fijando aspect-ratio + object-fit; el encuadre móvil va en una regla
+ *  propia de la página para esa imagen. */
+export type ImageChange={src?:string;original?:string|null;crop?:string|null;aspect?:number|null;fit?:'cover'|'contain';
+  position:string;positionMobile?:string|null;filter:string;alt?:string;credit?:{text:string;link:string}|null};
+const POS_RE=/^\d{1,3}% \d{1,3}%$/;
+const FILTER_RE=/^(?:(?:brightness|contrast|saturate|grayscale|sepia)\(\d+(?:\.\d+)?\)\s*){0,5}$/;
+const ASSET_RE=/^[\w\-./]+\.(?:png|jpe?g|webp|gif)$/i;
+export function changeImage(html:string,index:number,o:ImageChange):EditResult{
+  const doc=parse(html);const node=nodeAt(doc,index);
+  if(node.tagName!=='IMG')throw Error('Selecciona una imagen.');
+  if(o.src!==undefined){
+    if(!ASSET_RE.test(o.src)||o.src.includes('..'))throw Error('Ruta de imagen no válida.');
+    node.setAttribute('src',o.src);
+    // srcset/sizes y las <source> de <picture> harían que el navegador siguiera mostrando la foto antigua.
+    node.removeAttribute('srcset');node.removeAttribute('sizes');node.removeAttribute('data-wc-ai-image');
+    if(node.parentElement?.tagName==='PICTURE')for(const s of Array.from(node.parentElement.querySelectorAll(':scope > source')))s.remove();
+    // original: ruta → se guarda; null → se quita; sin indicar → se conserva el que hubiera.
+    if(o.original===null)node.removeAttribute('data-wc-img-original');
+    else if(o.original!==undefined){if(!ASSET_RE.test(o.original)||o.original.includes('..'))throw Error('Ruta de imagen no válida.');node.setAttribute('data-wc-img-original',o.original);}
+    if(o.credit===null||o.credit===undefined){node.removeAttribute('data-wc-credit');node.removeAttribute('data-wc-credit-link');}
+  }
+  if(o.credit){
+    node.setAttribute('data-wc-credit',o.credit.text.replace(/[<>]/g,'').slice(0,120));
+    if(/^https:\/\//.test(o.credit.link))node.setAttribute('data-wc-credit-link',o.credit.link.slice(0,300));
+  }
+  if(o.crop===null)node.removeAttribute('data-wc-crop');
+  else if(o.crop&&/^[\d.]+,[\d.]+,[\d.]+,[\d.]+$/.test(o.crop))node.setAttribute('data-wc-crop',o.crop);
+  if(typeof o.aspect==='number'&&Number.isFinite(o.aspect)&&o.aspect>0.05&&o.aspect<20){
+    node.style.setProperty('aspect-ratio',String(Number(o.aspect.toFixed(4))));
+  }
+  node.style.setProperty('object-fit',o.fit==='contain'?'contain':'cover');
+  if(!POS_RE.test(o.position))throw Error('Encuadre no válido.');
+  if(o.position==='50% 50%')node.style.removeProperty('object-position');else node.style.setProperty('object-position',o.position);
+  const filter=o.filter.trim();
+  if(!FILTER_RE.test(filter))throw Error('Filtro no válido.');
+  if(filter)node.style.setProperty('filter',filter);else node.style.removeProperty('filter');
+  if(o.alt!==undefined)node.setAttribute('alt',o.alt.replace(/\s+/g,' ').trim().slice(0,200));
+  // Encuadre propio en móvil.
+  let id=node.getAttribute('data-wc-img')||'';
+  const oldRule=id?doc.head.querySelector('style[data-wc-img-style="'+id+'"]'):null;
+  if(o.positionMobile&&POS_RE.test(o.positionMobile)&&o.positionMobile!==o.position){
+    if(!/^[a-z0-9]{6}$/.test(id)){id=shortId();node.setAttribute('data-wc-img',id);}
+    const rule=oldRule||doc.createElement('style');
+    rule.setAttribute('data-wc-img-style',id);
+    rule.textContent='@media (max-width:640px){img[data-wc-img="'+id+'"]{object-position:'+o.positionMobile+'!important}}';
+    if(!oldRule)doc.head.append(rule);
+  }else if(oldRule)oldRule.remove();
+  return {html:serialize(doc),index:indexOf(doc,node)??index};
+}
+/** Encuadre móvil guardado para una imagen (o null). */
+export function mobilePosition(html:string,index:number):string|null{
+  const doc=parse(html);const node=nodeAt(doc,index);const id=node.getAttribute('data-wc-img');
+  if(!id)return null;
+  const m=/object-position:(\d{1,3}% \d{1,3}%)/.exec(doc.head.querySelector('style[data-wc-img-style="'+id+'"]')?.textContent||'');
+  return m?m[1]:null;
+}

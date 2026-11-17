@@ -294,6 +294,41 @@ async function studioPixabayPhoto(env,prompt){
     return {image:'data:'+type+';base64,'+btoa(bin),source:'pixabay',credit:'Foto de '+String(hit.user||'Pixabay').slice(0,60)+' en Pixabay',link:String(hit.pageURL||'https://pixabay.com/').slice(0,300)};
   }catch(error){console.warn('studio-pixabay error',String(error?.message||error).slice(0,120));return null;}
 }
+/* Buscador de fotos de Pixabay para «Cambiar imagen». Las miniaturas se muestran temporalmente desde Pixabay
+   (lo permite su API para resultados de búsqueda); la foto elegida se descarga al proyecto con su procedencia. */
+const PIXABAY_IMAGE_RE=/^https:\/\/(pixabay\.com|cdn\.pixabay\.com)\//;
+async function studioPhotoSearch(env,data){
+  if(!env?.PIXABAY_API_KEY)throw new StudioAIError('El buscador de fotos no está configurado.','photos_off');
+  const q=String(data?.q||'').replace(/[^\p{L}\p{N}\s-]/gu,' ').replace(/\s+/g,' ').trim().slice(0,100);
+  if(q.length<2)throw new StudioAIError('Escribe qué foto buscas.','photo_query');
+  const orientation=['horizontal','vertical'].includes(data?.orientation)?data.orientation:'all';
+  const page=Math.max(1,Math.min(10,Number(data?.page)||1));
+  const url='https://pixabay.com/api/?key='+encodeURIComponent(env.PIXABAY_API_KEY)+'&q='+encodeURIComponent(q)+'&lang=es'+
+    '&image_type=photo&safesearch=true&per_page=24&page='+page+'&orientation='+orientation;
+  const r=await fetch(url,{headers:{Accept:'application/json'}});
+  if(!r.ok)throw new StudioAIError('Pixabay no respondió ('+r.status+').','photo_search');
+  const body=await r.json();
+  const hits=(Array.isArray(body?.hits)?body.hits:[]).filter(h=>Number.isInteger(h?.id)&&PIXABAY_IMAGE_RE.test(String(h?.webformatURL||'')));
+  return {total:Math.min(Number(body?.totalHits)||0,240),photos:hits.map(h=>({id:h.id,thumb:String(h.webformatURL).replace(/_640(\.\w+)$/,'_340$1'),
+    w:Number(h.imageWidth)||0,h:Number(h.imageHeight)||0,user:String(h.user||'').slice(0,60),tags:String(h.tags||'').slice(0,120)}))};
+}
+async function studioPhotoGet(env,data){
+  if(!env?.PIXABAY_API_KEY)throw new StudioAIError('El buscador de fotos no está configurado.','photos_off');
+  const id=Number(data?.id);
+  if(!Number.isInteger(id)||id<=0)throw new StudioAIError('Foto no válida.','photo_query');
+  const r=await fetch('https://pixabay.com/api/?key='+encodeURIComponent(env.PIXABAY_API_KEY)+'&id='+id,{headers:{Accept:'application/json'}});
+  if(!r.ok)throw new StudioAIError('Pixabay no respondió ('+r.status+').','photo_search');
+  const hit=(await r.json())?.hits?.[0];
+  const src=String(hit?.largeImageURL||'');
+  if(!PIXABAY_IMAGE_RE.test(src))throw new StudioAIError('Foto no disponible.','photo_search');
+  const img=await fetch(src);
+  const type=(img.headers.get('content-type')||'').split(';')[0];
+  if(!img.ok||!/^image\/(jpeg|png|webp)$/.test(type))throw new StudioAIError('No se pudo descargar la foto.','photo_search');
+  const bytes=new Uint8Array(await img.arrayBuffer());
+  if(bytes.byteLength>4_500_000)throw new StudioAIError('La foto es demasiado grande.','photo_search');
+  let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  return {image:'data:'+type+';base64,'+btoa(bin),source:'pixabay',credit:'Foto de '+String(hit.user||'Pixabay').slice(0,60)+' en Pixabay',link:String(hit.pageURL||'https://pixabay.com/').slice(0,300)};
+}
 async function studioAIImage(env,prompt){
   const clean=String(prompt||'').replace(/[<>{}\\]/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
   if(clean.length<8)throw new StudioAIError('Describe la imagen con algo más de detalle.','image_prompt');
@@ -616,7 +651,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith(STUDIO_WEB_PREFIX+'/'))return null;
   const route=path.slice(STUDIO_WEB_PREFIX.length);
-  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction','/research','/image','/review-shot','/review-fix'];
+  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction','/research','/image','/review-shot','/review-fix','/photo-search','/photo-get'];
   if(!(((route==='/status'||route==='/providers')&&request.method==='GET')||(POST_ROUTES.includes(route)&&request.method==='POST')))
     return studioWebJson({error:'Ruta WebCreator no permitida.'},405);
   if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)
@@ -655,6 +690,18 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
       await studioAIReleaseQuota(env.STUDIO_DB,owner+':review').catch(()=>{});
       const bad=error instanceof CreatorError&&error.code==='image';
       return studioWebJson({error:error instanceof StudioAIError||bad?error.message:'No se pudo completar la revisión.',code:error?.code||'unknown'},bad?400:502);
+    }
+  }
+  if(route==='/photo-search'||route==='/photo-get'){
+    // Buscar no gasta cupo de imágenes; descargar la foto elegida sí.
+    const counted=route==='/photo-get';
+    if(counted&&!(await studioAIReserveQuota(env.STUDIO_DB,owner+':images',STUDIO_IMAGE_DAILY_LIMIT)))
+      return studioWebJson({error:'Has alcanzado el límite diario de imágenes ('+STUDIO_IMAGE_DAILY_LIMIT+').',code:'quota'},429);
+    try{return studioWebJson(counted?await studioPhotoGet(env,data):await studioPhotoSearch(env,data));}
+    catch(error){
+      if(counted)await studioAIReleaseQuota(env.STUDIO_DB,owner+':images').catch(()=>{});
+      if(!(error instanceof StudioAIError))console.warn('studio-photos',route,String(error?.message||error).slice(0,120));
+      return studioWebJson({error:error instanceof StudioAIError?error.message:'No se pudo buscar la foto.',code:error?.code||'unknown'},error?.code==='photo_query'?400:error?.code==='photos_off'?503:502);
     }
   }
   if(route==='/image'){

@@ -2,11 +2,12 @@
 /** Panel «Propiedades»: controles reales sobre el elemento seleccionado del HTML.
  *  Cada control aplica estilos en línea validados (lib/element-editing) y entra en el historial. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, Italic, Link2, MousePointerClick, Shapes, Strikethrough, Type, Underline } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, ImageIcon, Italic, Link2, MousePointerClick, Shapes, Strikethrough, Type, Underline } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { ButtonStyles } from './button-styles';
 import { ButtonDialog, type ButtonChange } from './button-dialog';
 import { SymbolDialog, type SymbolChange } from './symbol-dialog';
+import { ImageDialog, type ImageApply, type ImageSource } from './image-dialog';
 import { FontPicker } from './font-picker';
 
 export type ElementInfo = {
@@ -17,6 +18,8 @@ export type ElementInfo = {
   button?: { design: string; size: string; color: string; textColor: string; inForm: boolean; iconBefore: boolean; hasIcon: boolean };
   /** Datos de símbolo/icono: nombre (si es de la biblioteca), tamaño y color visibles del SVG. */
   symbol?: { name: string; w: number; h: number; color: string; svg: string };
+  /** Imagen (<img>): caja en pantalla, encuadre, filtros y recorte guardado. */
+  image?: { w: number; h: number; position: string; positionMobile: string | null; filter: string; crop: string; credit: string };
 };
 type Props = {
   info: ElementInfo;
@@ -32,6 +35,9 @@ type Props = {
   onButton?(change: ButtonChange): void;
   /** «Cambiar símbolo»: sustituye el dibujo conservando tamaño y color. */
   onSymbol?(change: SymbolChange): void;
+  /** «Cambiar imagen»: foto nueva o ajuste de la actual (recorte, enfoque, filtros). */
+  onImage?(change: ImageApply): Promise<void> | void;
+  loadImage?(): ImageSource | null;
   /** Secciones de la web a las que puede llevar un botón. */
   anchors?: { id: string; label: string }[];
   extra?: ReactNode;
@@ -137,9 +143,10 @@ function Box({ prefix, info, onStyles }: { prefix: 'margin' | 'padding'; info: E
 const primary = (css: string) => (css.split(',')[0] || '').trim().replace(/^["']|["']$/g, '') || '—';
 const SHADOWS: [string, string][] = [['', 'Sin sombra'], ['0 1px 3px rgba(0, 0, 0, 0.12)', 'Sutil'], ['0 8px 24px rgba(0, 0, 0, 0.14)', 'Media'], ['0 20px 50px rgba(0, 0, 0, 0.22)', 'Profunda'], ['0 0 0 1px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.12)', 'Flotante']];
 
-export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, onButton, onSymbol, anchors = [], extra }: Props) {
+export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, onButton, onSymbol, onImage, loadImage, anchors = [], extra }: Props) {
   const [buttonOpen, setButtonOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
   const preview = (p: string) => (val: string) => onPreview?.({ [p]: val });
   const v = (p: string) => info.inline[p] || '';
   const c = (p: string) => info.computed[p] || '';
@@ -167,6 +174,11 @@ export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onTe
       </div>}
     </Group>
 
+    {info.image && onImage && loadImage && <div className="border-b border-stroke py-3">
+      <button type="button" onClick={() => setImageOpen(true)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2.5 text-[12px] font-semibold text-white hover:brightness-110"><ImageIcon size={14} /> Cambiar imagen</button>
+      <p className="mt-1.5 text-[10.5px] leading-4 text-faint">Sube una foto, búscala en Pixabay o recorta y encuadra la actual. Mantiene su caja ({info.image.w}×{info.image.h} px).</p>
+      {imageOpen && <ImageDialog info={info} loadCurrent={loadImage} onApply={onImage} onClose={() => setImageOpen(false)} />}
+    </div>}
     {info.symbol && onSymbol && <div className="border-b border-stroke py-3">
       <button type="button" onClick={() => setSymbolOpen(true)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2.5 text-[12px] font-semibold text-white hover:brightness-110"><Shapes size={14} /> Cambiar símbolo</button>
       <p className="mt-1.5 text-[10.5px] leading-4 text-faint">Elige otro de la galería: ocupará el mismo tamaño ({info.symbol.w}×{info.symbol.h} px) y mantendrá su color.</p>

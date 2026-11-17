@@ -18,14 +18,16 @@ import { ParkedItem, type Parked } from './parked-item';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
-import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, replaceSymbol, type EditResult } from '@/lib/element-editing';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, replaceSymbol, changeImage as editImage, type EditResult } from '@/lib/element-editing';
+import type { ImageApply, ImageSource } from './image-dialog';
+import { mimeOf } from '@/lib/image-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
 import { visualReview } from '@/lib/visual-review';
 import { buttonDesignsCss, contrastText, toHexColor } from '@/lib/button-designs';
-import { attachLocalImage, editHtmlStructure, htmlLayerOutline,
+import { attachLocalImage, detectSafeImage, selectableHtmlNode, editHtmlStructure, htmlLayerOutline,
   downloadBytes, htmlForExport, listSavedSites, livePreview, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
   type SiteBundle } from '@/lib/web-project-files';
@@ -634,7 +636,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
         button:isButton?{design:element.getAttribute('data-wc-btn')||'',size:element.getAttribute('data-wc-btn-size')||'m',color:brand,
           textColor:element.style.getPropertyValue('--wcb-t').trim()||contrastText(brand),inForm:Boolean(element.closest('form')),
           hasIcon:Boolean(iconEl),iconBefore:Boolean(iconEl&&iconEl===element.firstElementChild)}:undefined,
-        symbol:isSymbol&&svgBox?{name:element.getAttribute('data-wc-symbol')||'',w:Math.round(svgBox.width),h:Math.round(svgBox.height),color:symbolColor,svg:svgs[0].outerHTML.slice(0,20000)}:undefined});
+        symbol:isSymbol&&svgBox?{name:element.getAttribute('data-wc-symbol')||'',w:Math.round(svgBox.width),h:Math.round(svgBox.height),color:symbolColor,svg:svgs[0].outerHTML.slice(0,20000)}:undefined,
+        image:element.tagName==='IMG'?(()=>{const b=element.getBoundingClientRect();const id=element.getAttribute('data-wc-img');
+          const rule=id?element.ownerDocument.head.querySelector('style[data-wc-img-style="'+id+'"]')?.textContent||'':'';
+          return {w:Math.round(b.width),h:Math.round(b.height),position:element.style.objectPosition||cs.objectPosition||'50% 50%',
+            positionMobile:/object-position:(\d{1,3}% \d{1,3}%)/.exec(rule)?.[1]||null,filter:element.style.filter||'',
+            crop:element.getAttribute('data-wc-crop')||'',credit:element.getAttribute('data-wc-credit')||''};})():undefined});
     }catch{setElementInfo(null);}
     if(scroll)element.scrollIntoView({block:'center',behavior:'smooth'});
     if(toolRef.current==='select')drawResize(element);
@@ -786,6 +793,46 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   }
   function tryEdit(fn:()=>EditResult,message:string){
     try{applyEdit(fn(),message);}catch(error){setNotice(error instanceof Error?error.message:'No se pudo aplicar el cambio.');}
+  }
+  /** Ruta de un recurso del proyecto tal como aparece en el HTML → clave en site.assets. */
+  function assetKey(path:string):string|null{
+    if(!site||!path||/^(?:[a-z]+:|\/\/|#)/i.test(path))return null;
+    const rel=path.split(/[?#]/)[0].replace(/^\.\//,'');
+    const folder=site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'';
+    return site.assets[folder+rel]?folder+rel:site.assets[rel]?rel:null;
+  }
+  /** Imagen seleccionada para «Cambiar imagen»: su original (si se recortó antes) o el archivo actual. */
+  function loadSelectedImage():ImageSource|null{
+    if(!site||!elementInfo)return null;
+    try{
+      const node=selectableHtmlNode(new DOMParser().parseFromString(site.html,'text/html'),elementInfo.index);
+      if(!node||node.tagName!=='IMG')return null;
+      const original=assetKey(node.getAttribute('data-wc-img-original')||'');
+      const key=original||assetKey(node.getAttribute('src')||'');
+      if(!key)return null;
+      const bytes=site.assets[key];const mime=mimeOf(bytes);
+      return /^image\//.test(mime)?{bytes,mime,isOriginal:Boolean(original)}:null;
+    }catch{return null;}
+  }
+  async function applyImage(change:ImageApply){
+    if(!site||!elementInfo)return;
+    const folder=site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'';
+    const assets={...site.assets};
+    const add=(file:{bytes:Uint8Array;ext:string})=>{
+      if(!detectSafeImage(file.bytes))throw Error('Imagen no admitida o de más de 5 MB.');
+      const path='wayup-media/'+crypto.randomUUID()+'.'+file.ext;
+      assets[folder+path]=file.bytes;return path;
+    };
+    const src=change.file?add(change.file):undefined;
+    const original=change.original===null?null:change.original?add(change.original):undefined;
+    const r=editImage(site.html,elementInfo.index,{src,original,crop:change.crop,aspect:change.aspect,fit:'cover',
+      position:change.position,positionMobile:change.positionMobile,filter:change.filter,alt:change.alt,credit:change.credit});
+    const html=r.html;
+    setPast(old=>[...old.slice(-49),{html:site.html,assets:site.assets,parked:site.parked}]);setFuture([]);
+    pendingIndexRef.current=r.index;
+    setSite(old=>old?{...old,html,assets,updatedAt:Date.now()}:old);
+    setDraftHtml(html);setDirty(true);setSelected(null);selectedRef.current=null;setElementInfo(null);
+    setNotice(src?'Imagen cambiada. Queda dentro del proyecto y del ZIP.':'Imagen ajustada.');
   }
   function startTextEdit(index:number){
     const doc=previewFrame.current?.contentDocument;
@@ -1379,6 +1426,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               onPreview={styles=>{const el=selectedRef.current;if(!el)return;for(const [prop,value] of Object.entries(styles))el.style.setProperty(prop,value);}}
               anchors={anchors}
               onSymbol={change=>tryEdit(()=>replaceSymbol(site.html,elementInfo.index,change),'Símbolo cambiado.')}
+              onImage={applyImage} loadImage={loadSelectedImage}
               onButton={change=>tryEdit(()=>{
                 let r:EditResult={html:site.html,index:elementInfo.index};
                 const at=()=>r.index??elementInfo.index;
@@ -1391,7 +1439,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               onAttrs={attrs=>tryEdit(()=>setAttributes(site.html,elementInfo.index,attrs),'Atributos actualizados.')}
               onText={text=>tryEdit(()=>setInlineContent(site.html,elementInfo.index,escapeText(text)),'Texto actualizado.')}
               onEditText={()=>startTextEdit(elementInfo.index)}
-              extra={['IMG','A','HEADER','NAV','DIV','SECTION','FIGURE','ARTICLE','ASIDE','MAIN','FOOTER'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
+              extra={['A','HEADER','NAV','DIV','SECTION','FIGURE','ARTICLE','ASIDE','MAIN','FOOTER'].includes(activeLayer?.tag||'')&&<div className="mb-4 rounded-lg border border-stroke p-3">
               <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold"><ImagePlus size={15} className="text-brand"/> {activeLayer?.tag==='IMG'?'Sustituir imagen o logo':'Adjuntar logo o imagen'}</div>
               <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Adjuntar imagen para reemplazar la seleccionada"
                 className="block w-full text-[10px] text-mist" onChange={e=>{const file=e.target.files?.[0];if(file)void changeImage(file);e.currentTarget.value='';}}/>
