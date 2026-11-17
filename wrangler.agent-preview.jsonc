@@ -19,9 +19,8 @@
   "vars": {
     // Modelos de los chats publicados, en orden (claves como secretos de ESTE Worker: GROQ_API_KEY, OPENROUTER_API_KEY).
     "STUDIO_AGENT_MODELS": "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
-    // "on" mientras no estén las claves en este Worker (los chats publicados siguen funcionando con Workers AI).
-    // Cuando estén guardadas, cambiar a "off" para no usar nunca Workers AI.
-    "STUDIO_WORKERS_AI": "on"
+    // "off": los chats publicados solo usan los modelos externos (claves guardadas como secretos de este Worker).
+    "STUDIO_WORKERS_AI": "off"
   },
   "observability": { "enabled": true }
 }
