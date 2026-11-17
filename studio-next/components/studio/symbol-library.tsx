@@ -15,8 +15,10 @@ function Glyph({ entry, stroke }: { entry: SymbolEntry; stroke: number }) {
   </svg>;
 }
 
-export function SymbolLibrary({ query, onInsert, onDrag }: { query: string;
-  onInsert(name: string, html: string): void; onDrag(name: string, html: string, e: React.PointerEvent<HTMLButtonElement>): void }) {
+export function SymbolLibrary({ query, onInsert, onDrag, onPick, selected }: { query: string;
+  onInsert?(name: string, html: string): void; onDrag?(name: string, html: string, e: React.PointerEvent<HTMLButtonElement>): void;
+  /** Modo «elegir» (para Cambiar símbolo): un clic elige el símbolo, sin arrastrar. */
+  onPick?(entry: SymbolEntry, stroke: number): void; selected?: string }) {
   const [all, setAll] = useState<SymbolEntry[] | null>(null);
   const [error, setError] = useState('');
   const [cat, setCat] = useState('Destacados');
@@ -44,9 +46,11 @@ export function SymbolLibrary({ query, onInsert, onDrag }: { query: string;
     </div>
     <div className="scroll-subtle grid min-h-0 flex-1 auto-rows-[52px] grid-cols-5 gap-1 overflow-y-auto p-2.5">
       {list.slice(0, MAX).map(s => <button key={s.name} type="button" draggable={false} title={s.name.replace(/-/g, ' ') + ' · arrastra o haz clic'}
-        onPointerDown={e => { if (e.button === 0) onDrag('Símbolo ' + s.name, block(s), e); }}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert('Símbolo ' + s.name, block(s)); } }}
-        className={'flex cursor-grab items-center justify-center border border-stroke bg-elevated text-ink transition hover:border-brand/60 hover:text-brand active:cursor-grabbing ' + (frame === 'circulo' ? 'rounded-full' : 'rounded-lg')}>
+        aria-pressed={onPick ? selected === s.name : undefined}
+        onClick={onPick ? () => onPick(s, stroke) : undefined}
+        onPointerDown={onPick ? undefined : e => { if (e.button === 0) onDrag?.('Símbolo ' + s.name, block(s), e); }}
+        onKeyDown={onPick ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert?.('Símbolo ' + s.name, block(s)); } }}
+        className={'aria-pressed:border-brand aria-pressed:bg-brandsoft aria-pressed:text-brand flex cursor-grab items-center justify-center border border-stroke bg-elevated text-ink transition hover:border-brand/60 hover:text-brand active:cursor-grabbing ' + (frame === 'circulo' ? 'rounded-full' : 'rounded-lg')}>
         <Glyph entry={s} stroke={stroke} /></button>)}
       {!list.length && <p className="col-span-5 p-3 text-center text-[11px] text-faint">Sin resultados. Prueba con otra palabra (también en inglés).</p>}
     </div>

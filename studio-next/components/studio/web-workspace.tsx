@@ -18,7 +18,7 @@ import { ParkedItem, type Parked } from './parked-item';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
-import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, type EditResult } from '@/lib/element-editing';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, replaceSymbol, type EditResult } from '@/lib/element-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
@@ -618,12 +618,23 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const isButton=element.tagName==='A'||element.tagName==='BUTTON'||element.getAttribute('role')==='button';
       const brand=element.style.getPropertyValue('--wcb-c').trim()||toHexColor(cs.backgroundColor)||toHexColor(cs.color)||'#2855ee';
       const iconEl=element.querySelector('[data-wc-btn-icon]');
+      // ¿Es un símbolo? Uno de nuestra biblioteca, o un contenedor con un único SVG y sin texto (iconos de la web).
+      const svgs=element.querySelectorAll('svg');
+      const svgBox=svgs[0]?.getBoundingClientRect();
+      const isSymbol=svgs.length===1&&(element.hasAttribute('data-wc-symbol')||(!(element.textContent||'').trim()&&!!svgBox&&svgBox.width>0&&svgBox.width<=240&&svgBox.height<=240));
+      let symbolColor='';
+      if(isSymbol){
+        const shape=svgs[0].querySelector('path,circle,rect,polygon,polyline,line,ellipse')||svgs[0];
+        const scs=element.ownerDocument.defaultView!.getComputedStyle(shape);
+        symbolColor=(scs.stroke&&scs.stroke!=='none'?toHexColor(scs.stroke):null)||(scs.fill&&scs.fill!=='none'?toHexColor(scs.fill):null)||toHexColor(cs.color)||'#111111';
+      }
       setElementInfo({index,tag:element.tagName,textEditable:isTextEditable(element),text:(iconEl?Array.from(element.childNodes).filter(n=>n!==iconEl).map(n=>n.textContent).join(''):element.textContent||'').trim(),inline,computed,
         attrs:{href:element.getAttribute('href')||'',target:element.getAttribute('target')||'',alt:element.getAttribute('alt')||'',
           id:element.id||'',title:element.getAttribute('title')||'',ariaLabel:element.getAttribute('aria-label')||''},
         button:isButton?{design:element.getAttribute('data-wc-btn')||'',size:element.getAttribute('data-wc-btn-size')||'m',color:brand,
           textColor:element.style.getPropertyValue('--wcb-t').trim()||contrastText(brand),inForm:Boolean(element.closest('form')),
-          hasIcon:Boolean(iconEl),iconBefore:Boolean(iconEl&&iconEl===element.firstElementChild)}:undefined});
+          hasIcon:Boolean(iconEl),iconBefore:Boolean(iconEl&&iconEl===element.firstElementChild)}:undefined,
+        symbol:isSymbol&&svgBox?{name:element.getAttribute('data-wc-symbol')||'',w:Math.round(svgBox.width),h:Math.round(svgBox.height),color:symbolColor,svg:svgs[0].outerHTML.slice(0,20000)}:undefined});
     }catch{setElementInfo(null);}
     if(scroll)element.scrollIntoView({block:'center',behavior:'smooth'});
     if(toolRef.current==='select')drawResize(element);
@@ -1367,6 +1378,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               onFont={family=>tryEdit(()=>setFont(site.html,elementInfo.index,family),'Tipografía aplicada: '+family.split(',')[0].replace(/["']/g,'')+'.')}
               onPreview={styles=>{const el=selectedRef.current;if(!el)return;for(const [prop,value] of Object.entries(styles))el.style.setProperty(prop,value);}}
               anchors={anchors}
+              onSymbol={change=>tryEdit(()=>replaceSymbol(site.html,elementInfo.index,change),'Símbolo cambiado.')}
               onButton={change=>tryEdit(()=>{
                 let r:EditResult={html:site.html,index:elementInfo.index};
                 const at=()=>r.index??elementInfo.index;

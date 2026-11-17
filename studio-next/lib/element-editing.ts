@@ -420,3 +420,33 @@ export function buttonToLink(html:string,index:number):EditResult{
   node.replaceWith(a);
   return {html:serialize(doc),index:indexOf(doc,a)??index};
 }
+
+/* ── Símbolos: «Cambiar símbolo» ─────────────────────────────────────────── */
+/** Sustituye el dibujo SVG de un símbolo o icono conservando su tamaño en pantalla, clases y estilo.
+ *  size: tamaño renderizado del SVG original (px); color: color visible del original (si lo tenía fijado dentro del SVG). */
+export function replaceSymbol(html:string,index:number,opts:{svg:string;name:string;size?:{w:number;h:number};color?:string}):EditResult{
+  const doc=parse(html);const node=nodeAt(doc,index);
+  const old=node.tagName.toLowerCase()==='svg'?node:node.querySelector('svg');
+  if(!old)throw Error('Este elemento no contiene ningún símbolo.');
+  if(!/^<svg[\s>]/i.test(opts.svg.trim())||opts.svg.length>8000)throw Error('Símbolo no válido.');
+  const holder=doc.createElement('span');holder.innerHTML=opts.svg;
+  const svg=holder.querySelector('svg');if(!svg)throw Error('Símbolo no válido.');
+  stripActive(svg);
+  // Se conservan las clases y el estilo del SVG original (tamaño, márgenes, animaciones de la web…).
+  for(const a of ['class','style'])if(old.getAttribute(a))svg.setAttribute(a,old.getAttribute(a)!);
+  const w=opts.size?.w,h=opts.size?.h;
+  const ok=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>0&&v<2000;
+  if(ok(w)&&ok(h)){svg.setAttribute('width',String(Math.round(w!)));svg.setAttribute('height',String(Math.round(h!)));}
+  else{for(const a of ['width','height'])if(old.getAttribute(a))svg.setAttribute(a,old.getAttribute(a)!);}
+  // Los símbolos son de trazo: se fija en línea para que las reglas «fill» de la web no los rellenen.
+  svg.style.setProperty('fill','none');svg.style.setProperty('stroke','currentColor');
+  if(opts.color&&/^#[\da-f]{6}$/i.test(opts.color))svg.style.setProperty('color',opts.color);
+  svg.setAttribute('aria-hidden','true');svg.setAttribute('focusable','false');
+  old.replaceWith(svg);
+  if(node.hasAttribute('data-wc-symbol')){
+    const label=opts.name.replace(/[^a-z0-9-]/gi,'').slice(0,60);
+    node.setAttribute('data-wc-symbol',label);node.setAttribute('aria-label',label.replace(/-/g,' '));
+    node.setAttribute('data-wc-name','Símbolo · '+label.replace(/-/g,' '));
+  }
+  return {html:serialize(doc),index:indexOf(doc,node)??index};
+}
