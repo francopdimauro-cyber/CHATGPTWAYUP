@@ -1,7 +1,7 @@
 {
   "format": "wayapp-next-static-v1",
-  "bytes": 3029868,
-  "sha256": "9eeddfae72f072636c4818bf4912963344fd344dfcc24a3ee12dc70c013b885c",
+  "bytes": 3065624,
+  "sha256": "fa5458614cda7da7e6d6ac66c2a05a68e0274356abb9d30bc272215f87de3c9d",
   "count": 50,
   "chunks": [
     "assets-000.txt",
@@ -20,7 +20,8 @@
     "assets-013.txt",
     "assets-014.txt",
     "assets-015.txt",
-    "assets-016.txt"
+    "assets-016.txt",
+    "assets-017.txt"
   ],
   "generatedBy": "GitHub Actions / Next export"
 }
