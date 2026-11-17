@@ -345,7 +345,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   const selectedRef=useRef<HTMLElement|null>(null);
   siteRef.current=site;
   const preview=useMemo(()=>site?safePreview(site):null,[site]);
-  const liveHtml=useMemo(()=>{if(!live||!site)return '';try{return livePreview(site);}catch{return '';}},[live,site]);
+  const liveHtml=useMemo(()=>{if(!live||!site)return '';try{return livePreview(site,{theme:siteThemes?webTheme:undefined});}catch{return '';}},[live,site,siteThemes,webTheme]);
   useEffect(()=>{if(!live)return;const k=(e:KeyboardEvent)=>{if(e.key==='Escape')setLive(false);};window.addEventListener('keydown',k);return()=>window.removeEventListener('keydown',k);},[live]);
   const previewHead=useMemo(()=>(preview?.html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1]||''),[preview?.html]);
   useEffect(()=>{toolRef.current=tool;const doc=previewFrame.current?.contentDocument;if(doc?.body){doc.body.style.cursor=tool==='move'?'grab':'';doc.body.style.userSelect=tool==='move'?'none':'';}

@@ -223,7 +223,7 @@ export function safePreview(site:SiteBundle):{html:string;revoke():void}{
 /** Vista «En vivo»: la web tal como se publicará, con su JavaScript funcionando.
  *  Se muestra en un iframe sandbox="allow-scripts" SIN allow-same-origin (origen opaco: no ve el editor ni sus datos),
  *  con CSP sin red (connect-src 'none'), sin marcos ni recursos externos salvo Google Fonts, y sin salir de la página. */
-export function livePreview(site:SiteBundle):string{
+export function livePreview(site:SiteBundle,opts:{theme?:'light'|'dark'}={}):string{
   const folder=site.entry.includes('/')?site.entry.slice(0,site.entry.lastIndexOf('/')+1):'';
   const asset=(value:string):Uint8Array|undefined=>{
     if(!value||/^(?:[a-z]+:|\/\/|#)/i.test(value))return undefined;
@@ -269,6 +269,20 @@ export function livePreview(site:SiteBundle):string{
   const guard=doc.createElement('script');
   guard.textContent="document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a)return;var h=a.getAttribute('href')||'';if(h.charAt(0)!=='#'){e.preventDefault();}},true);document.addEventListener('submit',function(e){e.preventDefault();},true);";
   doc.head.prepend(guard);
+  // Tema elegido en el editor («Web clara / Web oscura»): la web arranca con él aunque su JavaScript
+  // consulte el modo del sistema o una preferencia guardada (en la vista aislada no hay almacenamiento).
+  if(opts.theme){
+    doc.documentElement.setAttribute('data-theme',opts.theme);
+    const themeScript=doc.createElement('script');
+    themeScript.textContent="(function(t){var mm=window.matchMedia&&window.matchMedia.bind(window);"+
+      "window.matchMedia=function(q){var m=/prefers-color-scheme:\\s*(dark|light)/.exec(String(q));"+
+      "if(!m||!mm)return mm?mm(q):{matches:false,media:q,addEventListener:function(){},removeEventListener:function(){},addListener:function(){},removeListener:function(){}};"+
+      "var r=mm(q);try{Object.defineProperty(r,'matches',{value:m[1]===t});}catch(e){}return r;};"+
+      "var mem={};var store={getItem:function(k){return Object.prototype.hasOwnProperty.call(mem,k)?mem[k]:null},setItem:function(k,v){mem[k]=String(v)},removeItem:function(k){delete mem[k]},clear:function(){mem={}},key:function(){return null},get length(){return 0}};"+
+      "try{window.localStorage.getItem('x');}catch(e){try{Object.defineProperty(window,'localStorage',{value:store,configurable:true});}catch(e2){}}"+
+      "document.documentElement.setAttribute('data-theme',t);})("+JSON.stringify(opts.theme)+");";
+    doc.head.prepend(themeScript);
+  }
   doc.head.prepend(csp);
   return '<!DOCTYPE html>\n'+doc.documentElement.outerHTML;
 }
