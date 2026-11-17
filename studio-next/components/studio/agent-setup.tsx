@@ -168,8 +168,8 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
   setBusy(true);setMessage('Guardando y activando el agente…');
   try{
    const id=await persistAgent();
-   if(option==='new')await backend('POST','/agents/'+id+'/status',{status:'active'});
-   else if(!agentList.some(a=>a.id===id&&a.status==='active'))throw Error('El agente existente debe estar activo.');
+   // Se activa siempre al vincular (también un agente existente en borrador o pausado).
+   if(option==='new'||!agentList.some(a=>a.id===id&&a.status==='active'))await backend('POST','/agents/'+id+'/status',{status:'active'});
    let chatId:string|undefined;
    // ¿Ya estaba vinculado sin dominio? Se le asigna el dominio al MISMO chat.
    const pending=site.agent&&site.agent.agentId===id&&!site.agent.origin&&isUUID(site.agent.chatId)?site.agent.chatId:undefined;
