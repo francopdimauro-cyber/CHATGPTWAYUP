@@ -2,6 +2,7 @@
 
 import {useCallback,useEffect,useState} from 'react';
 import {ArrowLeft,Bot,CheckCircle2,Globe2,LoaderCircle,LockKeyhole,ShieldCheck,Sparkles,WandSparkles,BookOpen,MessageCircle,Users} from 'lucide-react';
+import {AgentMarkdown} from './agent-markdown';
 import type {SiteBundle} from '@/lib/web-project-files';
 
 export type LinkedAgent=NonNullable<SiteBundle['agent']>;
@@ -210,7 +211,7 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
      <button className={secondary+' mt-2'} disabled={busy||!testQuestion.trim()} onClick={()=>void testAgent()}>
       {busy?<LoaderCircle size={15} className="animate-spin"/>:<Bot size={15}/>} Guardar y probar agente
      </button>
-     {testAnswer&&<div className="mt-3 rounded-lg bg-elevated p-4 text-[12px] leading-6 text-ink whitespace-pre-wrap">{testAnswer}</div>}
+     {testAnswer&&<AgentMarkdown text={testAnswer} className="mt-3 rounded-lg bg-elevated p-4 text-[12px] leading-6 text-ink"/>}
     </div>}
    <div className="mt-5 border-t border-stroke pt-4">
     <label className="mb-3 block text-[11px] text-mist"><Globe2 size={14} className="mr-1 inline text-brand"/> Dominio HTTPS donde se publicará la web
