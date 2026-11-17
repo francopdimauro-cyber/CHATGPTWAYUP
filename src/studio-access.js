@@ -31,7 +31,7 @@ export async function verifyAccessJwt(request,env,{fetcher=fetch,now=Date.now()}
   try{header=b64urlJson(parts[0]);payload=b64urlJson(parts[1]);}catch{return null;}
   if(header?.alg!=='RS256'||typeof header.kid!=='string')return null;
   const aud=Array.isArray(payload?.aud)?payload.aud:[payload?.aud];
-  if(!aud.includes(STUDIO_ACCESS_AUD))return null;
+  if(!aud.includes(String(env?.STUDIO_ACCESS_AUD||STUDIO_ACCESS_AUD)))return null;
   if(payload?.iss!==teamDomain)return null;
   const t=Math.floor(now/1000);
   if(typeof payload.exp!=='number'||payload.exp<t-30)return null;
@@ -50,12 +50,13 @@ export async function verifyAccessJwt(request,env,{fetcher=fetch,now=Date.now()}
 
 /** Contexto de Access para los puentes: usa ctx.access si la plataforma lo ofrece y, si no, el JWT verificado. */
 export async function studioAccessContext(request,env,ctx,options){
-  if(ctx?.access?.aud===STUDIO_ACCESS_AUD&&typeof ctx.access.getIdentity==='function')return ctx;
+  const expectedAud=String(env?.STUDIO_ACCESS_AUD||STUDIO_ACCESS_AUD);
+  if(ctx?.access?.aud===expectedAud&&typeof ctx.access.getIdentity==='function')return ctx;
   let identity=null;
   try{identity=await verifyAccessJwt(request,env,options);}catch(error){
     console.warn('studio-access verify failed',String(error instanceof Error?error.message:error).slice(0,120));
   }
   if(!identity)return ctx;
   return {waitUntil:ctx?.waitUntil?.bind(ctx),passThroughOnException:ctx?.passThroughOnException?.bind(ctx),
-    access:{aud:STUDIO_ACCESS_AUD,getIdentity:async()=>identity}};
+    access:{aud:expectedAud,getIdentity:async()=>identity}};
 }
