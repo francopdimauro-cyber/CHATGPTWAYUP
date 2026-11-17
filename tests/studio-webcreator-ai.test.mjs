@@ -166,3 +166,24 @@ test('Equipo de modelos: director, constructores en paralelo y revisor montan un
   assert.doesNotMatch(html,/fetch\(/,'los scripts de los constructores se descartan');
   assert.match(html,/<title>Centro ficticio<\/title>/);
 });
+
+test('Revisión visual: la captura va al modelo con visión y la corrección devuelve CSS limpio',async()=>{
+  const PNG='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+  let visionInput=null;
+  const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:{run:async(model,input)=>{
+    const c=input.messages?.[0]?.content;
+    if(Array.isArray(c)){visionInput=c;return {response:'Problema: la cabecera ocupa tres filas → Arreglo: una fila con flex.'};}
+    return sse(['===CSS===\n#inicio .site-header{flex-wrap:nowrap}\n.x{background:url(https://evil.example/a.png)}\n===FIN===']);
+  }}};
+  const call=(route,body)=>wayupStudioWebCreatorBridge(new Request(ORIGIN+'/studio-api/webcreator/'+route,{method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify(body)}),env,ctx);
+  const shot=await call('review-shot',{id:'site-header',viewport:'móvil',dataUrl:PNG});
+  assert.equal(shot.status,200);
+  assert.match((await shot.json()).notes,/tres filas/);
+  assert.match(visionInput[0].text,/MÓVIL/);assert.equal(visionInput[1].image_url.url,PNG);
+  const bad=await call('review-shot',{id:'x',viewport:'escritorio',dataUrl:'data:text/html;base64,PGI+'});
+  assert.equal(bad.status,400,'solo imágenes reales');
+  const fix=await call('review-fix',{notes:[{id:'inicio',viewport:'escritorio',notes:'cabecera en tres filas'}],css:'.a{}',structure:'<header class="site-header"></header>'});
+  const css=(await fix.json()).css;
+  assert.match(css,/flex-wrap:nowrap/);
+  assert.doesNotMatch(css,/evil\.example/,'sin recursos externos');
+});

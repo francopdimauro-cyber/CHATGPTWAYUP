@@ -1,5 +1,5 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
-import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError} from './studio-creator-research.js';
+import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError,decodeImage,VISION_MODEL} from './studio-creator-research.js';
 import {patternExample} from './studio-web-patterns.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
@@ -461,6 +461,34 @@ async function studioWebTeam(env,briefing,emit){
     '<script>',TEAM_RUNTIME_JS,'</'+'script>','</body>','</html>'].filter(Boolean).join('\n');
   return {html:studioAIExtractDocument(html),model:'equipo · '+director.model};
 }
+/* ───────────── Revisión visual (capturas hechas en el navegador del usuario) ───────────── */
+const STUDIO_REVIEW_DAILY_LIMIT=400;
+const REVIEW_SHOT_PROMPT=(id,viewport)=>['Eres el DIRECTOR DE ARTE senior de un estudio premiado revisando una web antes de entregarla al cliente.',
+  'La imagen es la captura del bloque «'+id+'» en '+(viewport==='móvil'?'MÓVIL (390 px de ancho)':'ESCRITORIO (1280 px de ancho)')+'.',
+  'Enumera SOLO problemas visuales reales y concretos que se VEN en la imagen (máximo 6), por orden de gravedad: cabecera o menú partidos en varias filas, textos cortados, solapados o que desbordan, titulares que no caben, contraste insuficiente, huecos vacíos grandes, imágenes deformadas, pendientes o mal recortadas, elementos amontonados o desalineados, botones poco visibles, jerarquía débil, falta de aire.',
+  'Para cada problema: «Problema: … → Arreglo: …» (el arreglo en términos de CSS: tamaño, rejilla, márgenes, color…).',
+  'Si el bloque se ve profesional y sin fallos, responde exactamente: SIN PROBLEMAS. Castellano, frases breves. No describas la imagen.'].join('\n');
+const REVIEW_FIX_PROMPT=['Eres un DESARROLLADOR FRONTEND senior. Recibes las notas de revisión visual de un director de arte sobre una web, su CSS actual y su estructura HTML.',
+  'Escribe SOLO el CSS adicional que corrige cada problema anotado, con selectores precisos del HTML recibido (usa el id de la sección: #id …). Las correcciones para móvil van en @media (max-width: 900px) o (max-width: 560px).',
+  'No cambies lo que está bien, no rehagas el diseño, no uses @import ni URLs externas. Usa !important solo si una regla original lo exige.',
+  'Responde EXACTAMENTE así:','===CSS===','(tus reglas)','===FIN==='].join('\n');
+async function studioReviewShot(env,data){
+  const img=decodeImage(data?.dataUrl);
+  const id=String(data?.id||'bloque').replace(/[^a-z0-9-]/gi,'').slice(0,40)||'bloque';
+  const viewport=data?.viewport==='móvil'?'móvil':'escritorio';
+  let out;
+  try{out=await env.AI.run(VISION_MODEL,{messages:[{role:'user',content:[{type:'text',text:REVIEW_SHOT_PROMPT(id,viewport)},{type:'image_url',image_url:{url:img.dataUrl}}]}],max_tokens:600,temperature:0.2});}
+  catch(error){console.warn('studio-review vision error',String(error?.message||error).slice(0,160));throw new StudioAIError('La revisión visual no está disponible ahora mismo.','provider');}
+  const text=typeof out?.response==='string'?out.response:typeof out?.choices?.[0]?.message?.content==='string'?out.choices[0].message.content:'';
+  return teamText(text).replace(/<[^>]*>/g,'').slice(0,1800)||'SIN PROBLEMAS';
+}
+async function studioReviewFix(env,data){
+  const notes=(Array.isArray(data?.notes)?data.notes:[]).slice(0,20).map(n=>'#'+String(n?.id||'').replace(/[^a-z0-9-]/gi,'').slice(0,40)+' ('+(n?.viewport==='móvil'?'móvil':'escritorio')+'):\n'+String(n?.notes||'').replace(/[<>]/g,'').slice(0,1500)).join('\n\n');
+  if(!notes.trim())return '';
+  const user='NOTAS DE REVISIÓN VISUAL:\n'+notes+'\n\nCSS ACTUAL:\n'+String(data?.css||'').slice(0,45000)+'\n\nESTRUCTURA HTML:\n'+String(data?.structure||'').replace(/<script[\s\S]*?<\/script>/gi,'').slice(0,26000);
+  const r=await teamCall(env,'reviewer',REVIEW_FIX_PROMPT,user,6000,t=>/===\s*CSS\s*===/i.test(t));
+  return teamCleanCss(teamBlock(r.text,'CSS')).slice(0,30000);
+}
 function studioAIStreamingResponse(env,owner,briefing){
   const encoder=new TextEncoder();
   const stream=new ReadableStream({
@@ -527,7 +555,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   const url=new URL(request.url),path=url.pathname;
   if(!path.startsWith(STUDIO_WEB_PREFIX+'/'))return null;
   const route=path.slice(STUDIO_WEB_PREFIX.length);
-  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction','/research','/image'];
+  const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction','/research','/image','/review-shot','/review-fix'];
   if(!((route==='/status'&&request.method==='GET')||(POST_ROUTES.includes(route)&&request.method==='POST')))
     return studioWebJson({error:'Ruta WebCreator no permitida.'},405);
   if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)
@@ -544,7 +572,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   if(!availability?.authorized)return studioWebJson({error:'El motor IA de Studio no está disponible.'},503);
   if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/json'))
     return studioWebJson({error:'Envía un JSON válido.'},415);
-  const limit=route==='/analyze-image'?2_300_000:route==='/direction'?40000:24000;
+  const limit=route==='/analyze-image'||route==='/review-shot'?2_300_000:route==='/review-fix'?140000:route==='/direction'?40000:24000;
   const declared=Number(request.headers.get('content-length')||0);
   if(declared>limit)return studioWebJson({error:'Solicitud demasiado grande.'},413);
   let raw;
@@ -552,6 +580,18 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   if(raw.length>limit)return studioWebJson({error:'Solicitud demasiado grande.'},413);
   let data;
   try{data=JSON.parse(raw)}catch{return studioWebJson({error:'JSON no válido.'},400)}
+  if(route==='/review-shot'||route==='/review-fix'){
+    // Revisión visual: cupo propio (una web genera ~15 capturas + 1 corrección).
+    if(!(await studioAIReserveQuota(env.STUDIO_DB,owner+':review',STUDIO_REVIEW_DAILY_LIMIT)))
+      return studioWebJson({error:'Has alcanzado el límite diario de revisiones visuales.',code:'quota'},429);
+    try{
+      return route==='/review-shot'?studioWebJson({notes:await studioReviewShot(env,data)}):studioWebJson({css:await studioReviewFix(env,data)});
+    }catch(error){
+      await studioAIReleaseQuota(env.STUDIO_DB,owner+':review').catch(()=>{});
+      const bad=error instanceof CreatorError&&error.code==='image';
+      return studioWebJson({error:error instanceof StudioAIError||bad?error.message:'No se pudo completar la revisión.',code:error?.code||'unknown'},bad?400:502);
+    }
+  }
   if(route==='/image'){
     // Cupo propio de imágenes: no consume generaciones de webs ni análisis.
     if(!(await studioAIReserveQuota(env.STUDIO_DB,owner+':images',STUDIO_IMAGE_DAILY_LIMIT)))

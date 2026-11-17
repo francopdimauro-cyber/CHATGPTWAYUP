@@ -23,6 +23,7 @@ import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
 import { starterHtml } from '@/lib/starter-web';
 import { strFromU8, strToU8 } from 'fflate';
+import { visualReview } from '@/lib/visual-review';
 import { attachLocalImage, editHtmlStructure, htmlLayerOutline,
   downloadBytes, htmlForExport, listSavedSites, livePreview, patchSelectedElement, safePreview,
   saveSite, siteFromHtml, siteFromZip, siteZip,
@@ -546,6 +547,12 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       let html=await streamGeneratedWeb(briefFrom(form)+photoBrief+styleBrief+cssBrief+jsBrief,onProgress,direction);
       const ai=await fillAiImages(html,onProgress);
       html=ai.html;
+      // Revisión visual: capturas de cada sección → notas del director de arte → CSS de corrección. Nunca bloquea la entrega.
+      let review={notes:0,fixed:false};
+      try{
+        const r=await visualReview(html,{...ai.assets,...Object.fromEntries(assets.map(a=>[a.path,a.bytes]))},onProgress);
+        html=r.html;review=r;
+      }catch(e){console.warn('Revisión visual omitida',e);}
       if(style.css.trim())html=appendCustomCss(html,style.css);
       if(style.js?.trim())html=setPageJs(html,style.js);
       // Si la IA se ha dejado alguna foto, se añade en una galería para no perder ninguna.
@@ -556,7 +563,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const withPhotos={...generated,assets:{...generated.assets,...ai.assets,...Object.fromEntries(assets.map(a=>[a.path,a.bytes]))}};
       changeSite({...withPhotos,source:'generated'});
       const notes=[assets.length?assets.length+' foto(s) tuyas incluidas'+(missing.length?' ('+missing.length+' en una galería)':''):'',
-        ai.made?ai.made+' fotografía(s) creadas con IA':'',ai.failed?ai.failed+' imagen(es) pendientes: sustitúyelas desde Propiedades':''].filter(Boolean);
+        ai.made?ai.made+' fotografía(s) creadas con IA':'',
+        review.fixed?'revisión visual: '+review.notes+' bloque(s) corregidos':review.notes===0?'':'revisión visual sin cambios',ai.failed?ai.failed+' imagen(es) pendientes: sustitúyelas desde Propiedades':''].filter(Boolean);
       if(notes.length)setNotice(notes.join(' · ')+'.');
     }catch(error){
       setFileError(error instanceof Error?error.message:'Error al crear la web.');
