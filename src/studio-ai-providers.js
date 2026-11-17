@@ -86,6 +86,20 @@ export async function listModels(env,name,filter=''){
   }catch(e){return {ok:false,error:scrub(e?.message||e),models:[]};}
 }
 
+/** Prueba rápida de varios modelos a la vez («proveedor:modelo», máx. 8): responde, tiempo y error exacto.
+ *  Pide algo de criterio (no solo «OK») para comparar también la calidad de la respuesta. */
+export async function probeModels(env,refs){
+  const list=[...new Set(String(refs||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter):[\w./:-]{2,120}$/.test(r)))].slice(0,8);
+  const out={};
+  await Promise.all(list.map(async ref=>{
+    const t0=Date.now();
+    try{
+      const x=await callExternal(env,ref,[{role:'user',content:'En una sola frase de máximo 25 palabras, escribe un titular publicitario original para un gimnasio de entrenamiento personal en Valladolid.'}],{maxTokens:400,temperature:0.7,timeoutMs:45000});
+      out[ref]={ok:true,ms:Date.now()-t0,respuesta:clip(x.text,220)};
+    }catch(e){out[ref]={ok:false,ms:Date.now()-t0,estado:e?.status??null,error:scrub(e?.message||e)};}
+  }));
+  return out;
+}
 /** Diagnóstico de los tres proveedores: configuración, modelos disponibles y una llamada mínima real. */
 export async function diagnoseProviders(env,filters={}){
   const out={};

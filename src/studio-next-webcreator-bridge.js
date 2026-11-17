@@ -1,7 +1,7 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
 import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError,decodeImage,VISION_MODEL} from './studio-creator-research.js';
 import {patternExample} from './studio-web-patterns.js';
-import {callExternal,diagnoseProviders,externalModels,isExternal} from './studio-ai-providers.js';
+import {callExternal,diagnoseProviders,externalModels,isExternal,probeModels} from './studio-ai-providers.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
 
@@ -609,6 +609,8 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
       studioWebJson({error:'Se requiere el acceso por correo de Studio. Vuelve a iniciar sesión.'},401);
   const availability=studioAIStatus(env);
   // Comprobación de proveedores externos: ?gemini=texto&groq=texto&openrouter=texto filtra la lista de modelos.
+  // ?probar=gemini:modelo-a,gemini:modelo-b → compara varios modelos a la vez.
+  if(route==='/providers'&&url.searchParams.get('probar'))return studioWebJson(await probeModels(env,url.searchParams.get('probar')));
   if(route==='/providers')return studioWebJson(await diagnoseProviders(env,{gemini:url.searchParams.get('gemini')||'',groq:url.searchParams.get('groq')||'',openrouter:url.searchParams.get('openrouter')||''}));
   if(route==='/status')return studioWebJson(availability||{
     configured:false,authorized:false,
