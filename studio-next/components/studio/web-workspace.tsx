@@ -141,12 +141,12 @@ async function placeholderPng(label:string):Promise<Uint8Array>{
   return new Uint8Array(await (blob||new Blob()).arrayBuffer());
 }
 /** Rellena las <img data-wc-ai-image="…"> de la web generada con fotografías creadas por IA (máx. 6, de dos en dos). */
-async function fillAiImages(html:string,onProgress:(v:string)=>void):Promise<{html:string;assets:Record<string,Uint8Array>;made:number;failed:number}>{
+async function fillAiImages(html:string,onProgress:(v:string)=>void):Promise<{html:string;assets:Record<string,Uint8Array>;made:number;failed:number;real:number}>{
   const doc=new DOMParser().parseFromString(html,'text/html');
   const imgs=Array.from(doc.querySelectorAll<HTMLImageElement>('img[data-wc-ai-image]'));
   const assets:Record<string,Uint8Array>={};
-  if(!imgs.length)return {html,assets,made:0,failed:0};
-  let made=0,failed=0,done=0;
+  if(!imgs.length)return {html,assets,made:0,failed:0,real:0};
+  let made=0,failed=0,done=0,real=0;
   const total=Math.min(imgs.length,6);
   onProgress('Creando fotografías con IA… 0/'+total);
   const one=async(img:HTMLImageElement,i:number)=>{
@@ -156,9 +156,12 @@ async function fillAiImages(html:string,onProgress:(v:string)=>void):Promise<{ht
     if(i<6&&prompt.length>=8){
       try{
         const res=await fetch('/studio-api/webcreator/image',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({prompt:prompt.slice(0,500)})});
-        const data=await res.json().catch(()=>({})) as {image?:string};
+        const data=await res.json().catch(()=>({})) as {image?:string;source?:string;credit?:string;link?:string};
         if(res.ok&&typeof data.image==='string'&&data.image.startsWith('data:image/')){
-          bytes=Uint8Array.from(atob(data.image.split(',')[1]||''),c=>c.charCodeAt(0));made++;
+          bytes=Uint8Array.from(atob(data.image.split(',')[1]||''),c=>c.charCodeAt(0));
+          // Foto real (Pixabay): se guarda su procedencia en la propia imagen.
+          if(data.source==='pixabay'){real++;img.setAttribute('data-wc-credit',String(data.credit||'Pixabay').slice(0,120));if(data.link)img.setAttribute('data-wc-credit-link',String(data.link).slice(0,300));}
+          else made++;
         }
       }catch{/* se usa la imagen de reserva */}
     }
@@ -172,7 +175,7 @@ async function fillAiImages(html:string,onProgress:(v:string)=>void):Promise<{ht
     if(i<6){done++;onProgress('Creando fotografías con IA… '+done+'/'+total);}
   };
   for(let i=0;i<imgs.length;i+=2)await Promise.all(imgs.slice(i,i+2).map((img,k)=>one(img,i+k)));
-  return {html:'<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML,assets,made,failed};
+  return {html:'<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML,assets,made,failed,real};
 }
 async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void,direction:Direction|null=null):Promise<string>{
   const res=await fetch('/studio-api/webcreator/generate-stream',{
@@ -564,6 +567,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       changeSite({...withPhotos,source:'generated'});
       const notes=[assets.length?assets.length+' foto(s) tuyas incluidas'+(missing.length?' ('+missing.length+' en una galería)':''):'',
         ai.made?ai.made+' fotografía(s) creadas con IA':'',
+        ai.real?ai.real+' foto(s) reales de Pixabay':'',
         review.fixed?'revisión visual: '+review.notes+' bloque(s) corregidos':review.notes===0?'':'revisión visual sin cambios',ai.failed?ai.failed+' imagen(es) pendientes: sustitúyelas desde Propiedades':''].filter(Boolean);
       if(notes.length)setNotice(notes.join(' · ')+'.');
     }catch(error){

@@ -252,6 +252,31 @@ async function studioAIPlan(env,model,briefing){
 // Imágenes generadas con IA (Workers AI, FLUX): fotografía editorial a medida para huecos que no cubren las fotos del cliente.
 const STUDIO_IMAGE_MODEL='@cf/black-forest-labs/flux-1-schnell';
 const STUDIO_IMAGE_DAILY_LIMIT=60;
+/* Fotos reales de Pixabay para personas y manos (donde la IA falla más). Se descargan al proyecto
+   (Pixabay no permite enlazar sus URLs de forma permanente) y se indica la procedencia. */
+const PEOPLE_RE=/\b(person|people|man|men|woman|women|girl|boy|child|children|kid|kids|couple|family|team|hands?|portrait|face|trainer|coach|athlete|runner|chef|cook|waiter|barista|doctor|nurse|student|teacher|customer|client|worker|senior|elderly|friends|group)\b/i;
+const STOP_WORDS=new Set('a an the of in on at with and or to for by from into over under near while doing very soft warm cool natural light lighting shallow depth field editorial photography photo shot close up closeup wide view angle style tones tone background minimalist modern bright dark morning evening sunset candid'.split(' '));
+async function studioPixabayPhoto(env,prompt){
+  if(!env?.PIXABAY_API_KEY||!PEOPLE_RE.test(prompt))return null;
+  const words=prompt.toLowerCase().replace(/[^a-z\s-]/g,' ').split(/\s+/).filter(w=>w.length>2&&!STOP_WORDS.has(w)).slice(0,5);
+  if(!words.length)return null;
+  const url='https://pixabay.com/api/?key='+encodeURIComponent(env.PIXABAY_API_KEY)+'&q='+encodeURIComponent(words.join(' ').slice(0,100))+
+    '&image_type=photo&orientation=horizontal&safesearch=true&per_page=8&min_width=1200';
+  try{
+    const r=await fetch(url,{headers:{Accept:'application/json'}});
+    if(!r.ok){console.warn('studio-pixabay',r.status);return null;}
+    const hits=(await r.json())?.hits||[];
+    const hit=hits.find(h=>typeof h?.largeImageURL==='string'&&/^https:\/\/pixabay\.com\//.test(h.largeImageURL));
+    if(!hit)return null;
+    const img=await fetch(hit.largeImageURL);
+    const type=(img.headers.get('content-type')||'').split(';')[0];
+    if(!img.ok||!/^image\/(jpeg|png|webp)$/.test(type))return null;
+    const bytes=new Uint8Array(await img.arrayBuffer());
+    if(bytes.byteLength>2_500_000)return null;
+    let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+    return {image:'data:'+type+';base64,'+btoa(bin),source:'pixabay',credit:'Foto de '+String(hit.user||'Pixabay').slice(0,60)+' en Pixabay',link:String(hit.pageURL||'https://pixabay.com/').slice(0,300)};
+  }catch(error){console.warn('studio-pixabay error',String(error?.message||error).slice(0,120));return null;}
+}
 async function studioAIImage(env,prompt){
   const clean=String(prompt||'').replace(/[<>{}\\]/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
   if(clean.length<8)throw new StudioAIError('Describe la imagen con algo más de detalle.','image_prompt');
@@ -596,7 +621,11 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
     // Cupo propio de imágenes: no consume generaciones de webs ni análisis.
     if(!(await studioAIReserveQuota(env.STUDIO_DB,owner+':images',STUDIO_IMAGE_DAILY_LIMIT)))
       return studioWebJson({error:'Has alcanzado el límite diario de imágenes IA ('+STUDIO_IMAGE_DAILY_LIMIT+').',code:'quota'},429);
-    try{return studioWebJson({image:await studioAIImage(env,data?.prompt)});}
+    try{
+      const real=await studioPixabayPhoto(env,String(data?.prompt||'').slice(0,500));
+      if(real)return studioWebJson(real);
+      return studioWebJson({image:await studioAIImage(env,data?.prompt),source:'ia'});
+    }
     catch(error){
       await studioAIReleaseQuota(env.STUDIO_DB,owner+':images').catch(()=>{});
       return studioWebJson({error:error instanceof StudioAIError?error.message:'No se pudo crear la imagen.',code:error?.code||'unknown'},error?.code==='image_prompt'?400:502);
