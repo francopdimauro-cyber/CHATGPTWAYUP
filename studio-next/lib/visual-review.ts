@@ -100,8 +100,10 @@ export async function captureBlocks(html: string, width: number, viewport: Shot[
 export async function visualReview(html: string, assets: Record<string, Uint8Array>, onProgress: (m: string) => void): Promise<{ html: string; notes: number; fixed: boolean }> {
   onProgress('Revisión visual: preparando capturas de cada sección…');
   const doc = await captureHtml(html, assets);
-  const shots = [...await captureBlocks(doc, 1280, 'escritorio', { scale: 0.6, maxBlocks: 13 }),
-    ...await captureBlocks(doc, 390, 'móvil', { scale: 1, maxBlocks: 3 })];
+  // Solo las 4 capturas que más pesan en la primera impresión (cabecera y portada, en escritorio y móvil):
+  // los modelos externos con visión tienen cupos diarios pequeños.
+  const shots = [...await captureBlocks(doc, 1280, 'escritorio', { scale: 0.6, maxBlocks: 2 }),
+    ...await captureBlocks(doc, 390, 'móvil', { scale: 1, maxBlocks: 2 })];
   if (!shots.length) return { html, notes: 0, fixed: false };
   const notes: { id: string; viewport: string; notes: string }[] = [];
   let done = 0;

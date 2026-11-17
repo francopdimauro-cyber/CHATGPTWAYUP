@@ -104,3 +104,31 @@ test('Gemini saturado (no empieza a responder) se corta y se informa',()=>withFe
   async()=>{
     await assert.rejects(callExternal({...KEYS},'gemini:gemini-x',[{role:'user',content:'x'}],{timeoutMs:50}),e=>{assert.match(e.message,/no empezó a responder/);return true;});
   }));
+
+test('Con STUDIO_WORKERS_AI="off" nunca se llama a Workers AI: texto, fotos y estado',()=>withFetch(
+  (url)=>{
+    if(/openrouter\.ai\/api\/v1\/chat/.test(url))return json({error:{message:'cupo'}},429);
+    if(/pixabay\.com\/api/.test(url))return json({hits:[]});
+    return json({},404);
+  },
+  async calls=>{
+    const AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
+    const ctx={access:{aud:AUD,getIdentity:async()=>({email:'owner@example.com'})}};
+    const db={prepare(){return {bind(){return {run:async()=>({meta:{changes:1}})};}};}};
+    let workersAICalls=0;
+    const env={...KEYS,PIXABAY_API_KEY:'px',STUDIO_WORKERS_AI:'off',STUDIO_OWNER_EMAIL:'owner@example.com',STUDIO_DB:db,
+      STUDIO_WEB_PLAN_MODELS:'openrouter:nvidia/x:free',STUDIO_WEB_BUILD_MODELS:'openrouter:nvidia/x:free',
+      AI:{run:async()=>{workersAICalls++;return {response:'no debería usarse'};}}};
+    const call=(route,init)=>wayupStudioWebCreatorBridge(new Request('https://studio.test/studio-api/webcreator/'+route,init),env,ctx);
+    const status=await (await call('status',{method:'GET'})).json();
+    assert.equal(status.configured,true,'el motor está disponible sin Workers AI');
+    assert.equal(status.workersAI,false);
+    const gen=await call('generate-stream',{method:'POST',headers:{Origin:'https://studio.test','Content-Type':'application/json'},
+      body:JSON.stringify({briefing:'Centro ficticio de entrenamiento personal con grupos reducidos y nutrición.'})});
+    const text=await gen.text();
+    assert.match(text,/event: error/,'si los externos fallan, informa del error');
+    const img=await call('image',{method:'POST',headers:{Origin:'https://studio.test','Content-Type':'application/json'},body:JSON.stringify({prompt:'wooden table with fresh bread in a bakery'})});
+    assert.equal(img.status,502,'sin foto en Pixabay y sin IA de imágenes → imagen pendiente');
+    assert.ok(calls.some(c=>/pixabay\.com\/api/.test(c.url)),'un objeto (no persona) también se busca en Pixabay');
+    assert.equal(workersAICalls,0,'Workers AI no se ha llamado ni una vez');
+  }));

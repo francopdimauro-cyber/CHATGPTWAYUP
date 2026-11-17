@@ -1,7 +1,7 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
 import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError,decodeImage,VISION_MODEL} from './studio-creator-research.js';
 import {patternExample} from './studio-web-patterns.js';
-import {callExternal,diagnoseProviders,isExternal,modelsFor,probeModels} from './studio-ai-providers.js';
+import {callExternal,diagnoseProviders,isExternal,modelsFor,probeModels,workersAIEnabled} from './studio-ai-providers.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
 
@@ -34,9 +34,12 @@ const STUDIO_AI_MAX_CONTINUATIONS=3;
 // Solo cuentan las generaciones que llegan a entregar una web válida (se devuelve la cuota si falla el proveedor).
 const STUDIO_AI_DAILY_LIMIT=10;
 function studioAIStatus(env){
-  return env?.AI?.run&&env?.STUDIO_DB?{
-    configured:true,authorized:true,provider:'Workers AI',mode:'studio-preview-ai',
-    model:STUDIO_AI_MODEL,reason:'Motor IA alternativo integrado en Studio. WebCreator original permanece protegido.',
+  // Sin Workers AI, el motor está disponible si hay al menos un modelo externo configurado para webs.
+  const external=modelsFor(env,'plan');
+  const ready=workersAIEnabled(env)||external.length>0;
+  return ready&&env?.STUDIO_DB?{
+    configured:true,authorized:true,provider:external.length?'Modelos externos':'Workers AI',mode:'studio-preview-ai',
+    model:external[0]||STUDIO_AI_MODEL,workersAI:workersAIEnabled(env),reason:'Motor IA alternativo integrado en Studio. WebCreator original permanece protegido.',
     research:Boolean(env?.TAVILY_API_KEY),
     dailyLimit:STUDIO_AI_DAILY_LIMIT
   }:null;
@@ -270,7 +273,8 @@ const STUDIO_IMAGE_DAILY_LIMIT=60;
 const PEOPLE_RE=/\b(person|people|man|men|woman|women|girl|boy|child|children|kid|kids|couple|family|team|hands?|portrait|face|trainer|coach|athlete|runner|chef|cook|waiter|barista|doctor|nurse|student|teacher|customer|client|worker|senior|elderly|friends|group)\b/i;
 const STOP_WORDS=new Set('a an the of in on at with and or to for by from into over under near while doing very soft warm cool natural light lighting shallow depth field editorial photography photo shot close up closeup wide view angle style tones tone background minimalist modern bright dark morning evening sunset candid'.split(' '));
 async function studioPixabayPhoto(env,prompt){
-  if(!env?.PIXABAY_API_KEY||!PEOPLE_RE.test(prompt))return null;
+  // Con Workers AI activo, Pixabay solo para personas y manos; sin él, Pixabay para todas las fotos.
+  if(!env?.PIXABAY_API_KEY||(workersAIEnabled(env)&&!PEOPLE_RE.test(prompt)))return null;
   const words=prompt.toLowerCase().replace(/[^a-z\s-]/g,' ').split(/\s+/).filter(w=>w.length>2&&!STOP_WORDS.has(w)).slice(0,5);
   if(!words.length)return null;
   const url='https://pixabay.com/api/?key='+encodeURIComponent(env.PIXABAY_API_KEY)+'&q='+encodeURIComponent(words.join(' ').slice(0,100))+
@@ -293,6 +297,7 @@ async function studioPixabayPhoto(env,prompt){
 async function studioAIImage(env,prompt){
   const clean=String(prompt||'').replace(/[<>{}\\]/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
   if(clean.length<8)throw new StudioAIError('Describe la imagen con algo más de detalle.','image_prompt');
+  if(!workersAIEnabled(env))throw new StudioAIError('Sin foto adecuada en Pixabay (la generación de imágenes con IA está desactivada).','image_off');
   let out;
   try{
     out=await env.AI.run(STUDIO_IMAGE_MODEL,{prompt:clean+'. High-end editorial photography, natural light, refined color grading, shallow depth of field, no text, no letters, no logos, no watermark.',steps:6});
@@ -325,7 +330,7 @@ function teamBlock(text,name){
 /** Modelos de un papel: primero los externos configurados para webs (Gemini solo en director/redactor/revisor por su cuota diaria), luego Workers AI. */
 function teamModels(env,role){
   const ext=modelsFor(env,role==='builder'?'build':'plan');
-  return [...ext,...TEAM_MODELS[role]];
+  return workersAIEnabled(env)?[...ext,...TEAM_MODELS[role]]:ext;
 }
 async function teamCall(env,role,system,user,maxTokens,validate){
   let last=null;
@@ -519,10 +524,20 @@ async function studioReviewShot(env,data){
   const img=decodeImage(data?.dataUrl);
   const id=String(data?.id||'bloque').replace(/[^a-z0-9-]/gi,'').slice(0,40)||'bloque';
   const viewport=data?.viewport==='móvil'?'móvil':'escritorio';
-  let out;
-  try{out=await env.AI.run(VISION_MODEL,{messages:[{role:'user',content:[{type:'text',text:REVIEW_SHOT_PROMPT(id,viewport)},{type:'image_url',image_url:{url:img.dataUrl}}]}],max_tokens:600,temperature:0.2});}
-  catch(error){console.warn('studio-review vision error',String(error?.message||error).slice(0,160));throw new StudioAIError('La revisión visual no está disponible ahora mismo.','provider');}
-  const text=typeof out?.response==='string'?out.response:typeof out?.choices?.[0]?.message?.content==='string'?out.choices[0].message.content:'';
+  const messages=[{role:'user',content:[{type:'text',text:REVIEW_SHOT_PROMPT(id,viewport)},{type:'image_url',image_url:{url:img.dataUrl}}]}];
+  // Primero los modelos externos con visión (STUDIO_VISION_MODELS); Workers AI solo si está activado.
+  let text='';
+  for(const ref of modelsFor(env,'vision')){
+    try{text=(await callExternal(env,ref,messages,{maxTokens:1500,temperature:0.2,timeoutMs:60000})).text;if(text)break;}
+    catch(error){console.warn('studio-review vision external error',ref,String(error?.message||error).slice(0,200));}
+  }
+  if(!text){
+    if(!workersAIEnabled(env))throw new StudioAIError('Ningún modelo con visión respondió.','provider');
+    let out;
+    try{out=await env.AI.run(VISION_MODEL,{messages,max_tokens:600,temperature:0.2});}
+    catch(error){console.warn('studio-review vision error',String(error?.message||error).slice(0,160));throw new StudioAIError('La revisión visual no está disponible ahora mismo.','provider');}
+    text=typeof out?.response==='string'?out.response:typeof out?.choices?.[0]?.message?.content==='string'?out.choices[0].message.content:'';
+  }
   return teamText(text).replace(/<[^>]*>/g,'').slice(0,1800)||'SIN PROBLEMAS';
 }
 async function studioReviewFix(env,data){
@@ -561,13 +576,16 @@ function studioAIStreamingResponse(env,owner,briefing){
         }
         // Vía de reserva: plan + generación de una pasada. Si el plan falla, se genera sin plan.
         emit('status',{message:'Diseñando el sistema visual y el plan de secciones…'});
-        const plan=await studioAIPlan(env,STUDIO_AI_MODEL,briefing).catch(()=>'');
+        // Sin Workers AI, la vía de una pasada usa los modelos externos de planificación.
+        const singlePass=workersAIEnabled(env)?[STUDIO_AI_MODEL,STUDIO_AI_FALLBACK_MODEL]:modelsFor(env,'plan');
+        if(!singlePass.length)throw new StudioAIError('No hay ningún modelo configurado para generar webs.','provider');
+        const plan=await studioAIPlan(env,singlePass[0],briefing).catch(()=>'');
         const fullBriefing=plan?briefing+'\n\nPLAN DE DISEÑO APROBADO (síguelo fielmente, mejorándolo en la ejecución):\n'+plan:briefing;
         let html='',model=STUDIO_AI_MODEL,lastError=null;
-        for(const candidate of [STUDIO_AI_MODEL,STUDIO_AI_FALLBACK_MODEL]){
+        for(const candidate of singlePass){
           model=candidate;
-          emit('status',{message:candidate===STUDIO_AI_MODEL?(plan?'Plan listo. Construyendo la web sección a sección…':'Generando la web con el motor IA propio de Studio…'):
-            'Reintentando con el modelo alternativo de Workers AI…'});
+          emit('status',{message:candidate===singlePass[0]?(plan?'Plan listo. Construyendo la web sección a sección…':'Generando la web con el motor IA de Studio…'):
+            'Reintentando con el siguiente modelo…'});
           try{
             html=studioAIExtractDocument(await studioAIGenerate(env,candidate,sys,fullBriefing,progress));
             break;
@@ -610,7 +628,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   const availability=studioAIStatus(env);
   // Comprobación de proveedores externos: ?gemini=texto&groq=texto&openrouter=texto filtra la lista de modelos.
   // ?probar=gemini:modelo-a,gemini:modelo-b → compara varios modelos a la vez.
-  if(route==='/providers'&&url.searchParams.get('probar'))return studioWebJson(await probeModels(env,url.searchParams.get('probar')));
+  if(route==='/providers'&&url.searchParams.get('probar'))return studioWebJson(await probeModels(env,url.searchParams.get('probar'),{vision:url.searchParams.get('vision')==='1'}));
   if(route==='/providers')return studioWebJson(await diagnoseProviders(env,{gemini:url.searchParams.get('gemini')||'',groq:url.searchParams.get('groq')||'',openrouter:url.searchParams.get('openrouter')||''}));
   if(route==='/status')return studioWebJson(availability||{
     configured:false,authorized:false,

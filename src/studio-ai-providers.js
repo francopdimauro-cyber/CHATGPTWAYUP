@@ -30,11 +30,13 @@ export const isExternal=ref=>/^(gemini|groq|openrouter):/.test(String(ref||''));
  *  build → STUDIO_WEB_BUILD_MODELS (constructores de secciones)
  *  agent → STUDIO_AGENT_MODELS     (propuesta y prueba de agentes)
  *  Solo se devuelven los de proveedores con clave. Si la lista está vacía, se usa la configuración anterior por proveedor. */
+/** ¿Se puede usar Workers AI? STUDIO_WORKERS_AI="off" lo desactiva por completo (solo modelos externos). */
+export const workersAIEnabled=env=>String(env?.STUDIO_WORKERS_AI??'on').trim().toLowerCase()!=='off'&&Boolean(env?.AI?.run);
 export function modelsFor(env,use){
-  const raw=use==='agent'?env?.STUDIO_AGENT_MODELS:use==='build'?env?.STUDIO_WEB_BUILD_MODELS:env?.STUDIO_WEB_PLAN_MODELS;
+  const raw=use==='agent'?env?.STUDIO_AGENT_MODELS:use==='build'?env?.STUDIO_WEB_BUILD_MODELS:use==='vision'?env?.STUDIO_VISION_MODELS:env?.STUDIO_WEB_PLAN_MODELS;
   const list=String(raw||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter):[\w./:-]{2,120}$/.test(r))
     .filter(r=>Boolean(env?.[PROVIDERS[r.split(':')[0]].secret]));
-  if(list.length)return [...new Set(list)];
+  if(list.length||use==='vision')return [...new Set(list)];
   const legacy=externalModels(env,use==='agent'?'agent':'web');
   return use==='build'?legacy.filter(r=>!r.startsWith('gemini:')):legacy;
 }
@@ -59,7 +61,11 @@ export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=
   if(!p||!key||!model)throw new ProviderError(name,0,(p?.label||name)+' no está configurado');
   if(name==='gemini'){
     const system=messages.filter(m=>m.role==='system').map(m=>m.content).join('\n\n');
-    const contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:String(m.content)}]}));
+    const toParts=c=>Array.isArray(c)?c.map(x=>{
+        if(x?.type==='image_url'){const m=/^data:([^;]+);base64,(.+)$/.exec(String(x.image_url?.url||''));return m?{inline_data:{mime_type:m[1],data:m[2]}}:null;}
+        return {text:String(x?.text??'')};
+      }).filter(Boolean):[{text:String(c)}];
+    const contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:toParts(m.content)}));
     // En streaming: si no llega nada en 15 s (modelo saturado) se corta; si ya está escribiendo, se le deja terminar.
     const ctl=new AbortController();let started=false;
     const firstTimer=setTimeout(()=>{if(!started)ctl.abort();},Math.min(GEMINI_FIRST_TOKEN_MS,timeoutMs));
@@ -125,15 +131,34 @@ export async function listModels(env,name,filter=''){
   }catch(e){return {ok:false,error:scrub(e?.message||e),models:[]};}
 }
 
+// Imagen de prueba (PNG 64×64: círculo rojo sobre fondo blanco) para comprobar que un modelo «ve».
+export const PROBE_IMAGE='data:image/png;base64,'+PROBE_PNG_B64();
+function PROBE_PNG_B64(){
+  // PNG generado en el arranque: sin dependencias. Escala de grises no, RGB sin compresión (stored deflate).
+  const W=64,H=64,raw=new Uint8Array((W*3+1)*H);
+  for(let y=0;y<H;y++){raw[y*(W*3+1)]=0;for(let x=0;x<W;x++){const i=y*(W*3+1)+1+x*3;const inside=(x-32)**2+(y-32)**2<20*20;raw[i]=inside?220:255;raw[i+1]=inside?30:255;raw[i+2]=inside?30:255;}}
+  const crcT=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xedb88320^(c>>>1):c>>>1;crcT[n]=c>>>0;}
+  const crc=b=>{let c=0xffffffff;for(const v of b)c=crcT[(c^v)&255]^(c>>>8);return (c^0xffffffff)>>>0;};
+  const u32=v=>[v>>>24&255,v>>>16&255,v>>>8&255,v&255];
+  const chunk=(t,d)=>{const td=[...t].map(c=>c.charCodeAt(0)).concat([...d]);return [...u32(d.length),...td,...u32(crc(td))];};
+  let a=1,b2=0;for(const v of raw){a=(a+v)%65521;b2=(b2+a)%65521;}
+  const blocks=[];for(let i=0;i<raw.length;i+=65535){const part=raw.subarray(i,i+65535),last=i+65535>=raw.length;blocks.push(last?1:0,part.length&255,part.length>>8,~part.length&255,(~part.length>>8)&255,...part);}
+  const idat=[0x78,0x01,...blocks,...u32(((b2<<16)|a)>>>0)];
+  const ihdr=[...u32(W),...u32(H),8,2,0,0,0];
+  const png=[137,80,78,71,13,10,26,10,...chunk('IHDR',ihdr),...chunk('IDAT',idat),...chunk('IEND',[])];
+  let s='';for(const v of png)s+=String.fromCharCode(v);return btoa(s);
+}
 /** Prueba rápida de varios modelos a la vez («proveedor:modelo», máx. 8): responde, tiempo y error exacto.
  *  Pide algo de criterio (no solo «OK») para comparar también la calidad de la respuesta. */
-export async function probeModels(env,refs){
+export async function probeModels(env,refs,{vision=false}={}){
   const list=[...new Set(String(refs||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter):[\w./:-]{2,120}$/.test(r)))].slice(0,8);
   const out={};
   await Promise.all(list.map(async ref=>{
     const t0=Date.now();
     try{
-      const x=await callExternal(env,ref,[{role:'user',content:'En una sola frase de máximo 25 palabras, escribe un titular publicitario original para un gimnasio de entrenamiento personal en Valladolid.'}],{maxTokens:400,temperature:0.7,timeoutMs:45000});
+      const content=vision?[{type:'text',text:'Describe esta imagen en una frase: qué forma y qué color ves.'},{type:'image_url',image_url:{url:PROBE_IMAGE}}]:
+        'En una sola frase de máximo 25 palabras, escribe un titular publicitario original para un gimnasio de entrenamiento personal en Valladolid.';
+      const x=await callExternal(env,ref,[{role:'user',content}],{maxTokens:vision?1500:400,temperature:0.7,timeoutMs:45000});
       out[ref]={ok:true,ms:Date.now()-t0,respuesta:clip(x.text,220)};
     }catch(e){out[ref]={ok:false,ms:Date.now()-t0,estado:e?.status??null,error:scrub(e?.message||e)};}
   }));
@@ -158,7 +183,7 @@ export async function diagnoseProviders(env,filters={}){
     }
     out[name]=r;
   }));
-  out.uso={webs_director_redactor_revisor:modelsFor(env,'plan'),webs_constructores:modelsFor(env,'build'),agentes:modelsFor(env,'agent'),
+  out.uso={workers_ai:workersAIEnabled(env)?'activado':'desactivado',webs_director_redactor_revisor:modelsFor(env,'plan'),webs_constructores:modelsFor(env,'build'),agentes:modelsFor(env,'agent'),vision:modelsFor(env,'vision'),
     nota:'Listas en STUDIO_WEB_PLAN_MODELS, STUDIO_WEB_BUILD_MODELS y STUDIO_AGENT_MODELS. Si un modelo falla, se pasa al siguiente y por último a Workers AI.'};
   return out;
 }
