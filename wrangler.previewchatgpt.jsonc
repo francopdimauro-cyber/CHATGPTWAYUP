@@ -1,0 +1,51 @@
+// Copia aislada CHATGPTWAYUP; no ejecutar contra los Workers originales.
+// Despliegue reproducible de la preview autorizada de WAY UP Studio.
+// Uso: npm run deploy:motor-preview  (compila studio-next y despliega SOLO este Worker).
+// No apunta a producción ni a los Workers originales de WebCreator / Agent Builder.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "previewchatgpt",
+  "main": "src/studio-motor-preview-worker.js",
+  "compatibility_date": "2026-11-14",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "studio-next/out",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/studio-api/*"]
+  },
+  "ai": { "binding": "AI" },
+  "d1_databases": [
+    {
+      "binding": "STUDIO_DB",
+      "database_name": "previewchatgpt-studio-db",
+      "database_id": "6ca13112-072e-456a-a7f2-e526d9d47a4a",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "STUDIO_FILES", "bucket_name": "previewchatgpt-studio-files" }
+  ],
+  "vars": {
+    "STUDIO_OWNER_EMAIL": "francopdimauro@gmail.com",
+    "STUDIO_ACCESS_TEAM_DOMAIN": "https://proud-shape-7dee.cloudflareaccess.com",
+    // Proveedores externos (claves como secretos). Un proveedor solo se usa si tiene clave Y modelo.
+    // Los nombres exactos se comprueban en /studio-api/webcreator/providers.
+    "STUDIO_WEB_PROVIDERS": "gemini,openrouter",
+    "STUDIO_AGENT_PROVIDERS": "groq,openrouter",
+    "GEMINI_MODEL": "gemini-4-hydrogen",
+    "GROQ_MODEL": "openai/gpt-oss-120b",
+    "OPENROUTER_MODEL": "nvidia/nemotron-3-ultra-550b-a55b:free",
+    // Dos (o más) modelos potentes por tarea, en orden de preferencia. Si uno falla o agota su cupo, se usa el siguiente
+    // y, al final, Workers AI. Gemini 4 Hydrogen va delante solo en la planificación (cupo gratuito de ~20/día).
+    "STUDIO_WEB_PLAN_MODELS": "gemini:gemini-4-hydrogen,openrouter:nvidia/nemotron-3-ultra-550b-a55b:free,groq:openai/gpt-oss-120b",
+    "STUDIO_WEB_BUILD_MODELS": "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free,openrouter:cohere/north-mini-code:free,groq:openai/gpt-oss-120b",
+    "STUDIO_AGENT_MODELS": "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,openrouter:nvidia/nemotron-3-ultra-550b-a55b:free",
+    // Modelos con visión (revisión visual y análisis de imágenes de referencia), en orden de preferencia.
+    "STUDIO_VISION_MODELS": "gemini:gemma-4-31b-it,openrouter:nvidia/nemotron-3.5-super-vl:free,groq:qwen/qwen3.8-27b",
+    // "off": nunca se usa Workers AI (ni como reserva ni para fotos). Cambiar a "on" para volver a tenerlo de reserva.
+    "STUDIO_WORKERS_AI": "on"
+  },
+  "observability": { "enabled": true }
+}
