@@ -138,8 +138,10 @@ export async function wayupStudioOwnAgentBridge(request,env,ctx){
  }
  if(path==='/public-chats'&&request.method==='POST'){
   const data=await saBody(request),origins=data?.allowedOrigins;
-  if(!Array.isArray(origins)||origins.length!==1)return saJson({error:'Autoriza exactamente un dominio por chat.'},400);
-  const origin=saOrigin(origins[0]),id=saText(data.agentId,36);
+  // Un dominio por chat, o ninguno todavía (origin ''): el chat existe —y la web ya puede descargarse con su código—
+  // pero no responde desde ningún sitio hasta que se le asigne el dominio con PUT.
+  if(!Array.isArray(origins)||origins.length>1)return saJson({error:'Autoriza un único dominio por chat.'},400);
+  const origin=origins.length?saOrigin(origins[0]):'',id=saText(data.agentId,36);
   if(!SA_UUID.test(id))return saJson({error:'Identificador de agente inválido.'},400);
   const a=await saGetAgent(db,user.id,id);
   if(!a||a.status!=='active')return saJson({error:'Activa primero el agente.'},400);
@@ -153,11 +155,21 @@ export async function wayupStudioOwnAgentBridge(request,env,ctx){
   return saJson({id:chatId,enabled:true},201);
  }
  if(/^\/public-chats\/[0-9a-f-]{36}$/i.test(path)&&request.method==='PUT'){
-  const chat=path.split('/').pop(),q=await db.prepare('SELECT c.id FROM studio_public_chats c JOIN studio_agents a ON a.id=c.agent_id WHERE c.id=? AND a.owner_id=?').bind(chat,user.id).first();
+  const chat=path.split('/').pop(),q=await db.prepare('SELECT c.id,c.agent_id,c.origin FROM studio_public_chats c JOIN studio_agents a ON a.id=c.agent_id WHERE c.id=? AND a.owner_id=?').bind(chat,user.id).first();
   if(!q)return saJson({error:'Chat no encontrado.'},404);
-  const data=await saBody(request);if(typeof data.enabled!=='boolean')return saJson({error:'Se requiere enabled.'},400);
-  await db.prepare('UPDATE studio_public_chats SET enabled=? WHERE id=?').bind(data.enabled?1:0,chat).run();
-  return saJson({id:chat,enabled:data.enabled});
+  const data=await saBody(request);
+  if(typeof data.enabled!=='boolean'&&typeof data.origin!=='string')return saJson({error:'Se requiere enabled u origin.'},400);
+  // Asignar el dominio a un chat creado sin él: el mismo chat (y la web ya descargada) pasa a funcionar en ese dominio.
+  if(typeof data.origin==='string'){
+   const origin=saOrigin(data.origin);
+   if(origin!==q.origin){
+    const taken=await db.prepare('SELECT id FROM studio_public_chats WHERE agent_id=? AND origin=? AND id<>?').bind(q.agent_id,origin,chat).first();
+    if(taken)return saJson({error:'Este agente ya tiene otro chat para ese dominio.'},409);
+    await db.prepare('UPDATE studio_public_chats SET origin=? WHERE id=?').bind(origin,chat).run();
+   }
+  }
+  if(typeof data.enabled==='boolean')await db.prepare('UPDATE studio_public_chats SET enabled=? WHERE id=?').bind(data.enabled?1:0,chat).run();
+  return saJson({id:chat,enabled:typeof data.enabled==='boolean'?data.enabled:undefined,origin:typeof data.origin==='string'?saOrigin(data.origin):undefined});
  }
  return saJson({error:'Ruta no encontrada.'},404);
  }catch(e){const message=e instanceof Error?e.message:'Error inesperado';

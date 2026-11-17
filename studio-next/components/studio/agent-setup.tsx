@@ -158,28 +158,38 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
   }catch(e){setMessage(e instanceof Error?e.message:'No se pudo añadir el agente a la web.');}
   finally{setBusy(false);}
  }
- async function publish(){
-  let domain:string;try{domain=safeOrigin(origin);}catch(e){setMessage(e instanceof Error?e.message:'Dominio no válido.');return;}
-  if(!window.confirm('Vas a habilitar un chat público solo para '+domain+'. ¿Quieres continuar?'))return;
+ /** Activa el agente y lo vincula a la web. Sin dominio, el chat se crea «pendiente»: la web se descarga ya con su
+  *  código y el chat empieza a responder cuando se le asigna el dominio (mismo chat, no hay que volver a descargar). */
+ async function publish(withoutDomain=false){
+  let domain='';
+  if(!withoutDomain){try{domain=safeOrigin(origin);}catch(e){setMessage(e instanceof Error?e.message:'Dominio no válido.');return;}}
+  if(!window.confirm(domain?'Vas a habilitar un chat público solo para '+domain+'. ¿Quieres continuar?':
+   'Vas a vincular el agente sin dominio: podrás descargar la web con el chat ya incluido, pero no responderá hasta que añadas el dominio aquí. ¿Continuar?'))return;
   setBusy(true);setMessage('Guardando y activando el agente…');
   try{
    const id=await persistAgent();
    if(option==='new')await backend('POST','/agents/'+id+'/status',{status:'active'});
    else if(!agentList.some(a=>a.id===id&&a.status==='active'))throw Error('El agente existente debe estar activo.');
-   const list=await backend('GET','/public-chats');
-   const match=(Array.isArray(list.chats)?list.chats:[]).find((c:any)=>
-    c.agentId===id&&c.enabled&&Array.isArray(c.allowedOrigins)&&c.allowedOrigins.includes(domain));
-   let chatId=match?.id;
-   if(!isUUID(chatId)){
-    const result=await backend('POST','/public-chats',{agentId:id,title:proposal?.name||site.name,
-     greeting:'¡Hola! ¿En qué puedo ayudarte?',allowedOrigins:[domain],enabled:true,
-     dailyLimit:200,perVisitorLimit:12});
-    chatId=result.id;
+   let chatId:string|undefined;
+   // ¿Ya estaba vinculado sin dominio? Se le asigna el dominio al MISMO chat.
+   const pending=site.agent&&site.agent.agentId===id&&!site.agent.origin&&isUUID(site.agent.chatId)?site.agent.chatId:undefined;
+   if(pending&&domain){await backend('PUT','/public-chats/'+pending,{origin:domain,enabled:true});chatId=pending;}
+   else{
+    const list=await backend('GET','/public-chats');
+    const match=(Array.isArray(list.chats)?list.chats:[]).find((c:any)=>
+     c.agentId===id&&c.enabled&&Array.isArray(c.allowedOrigins)&&c.allowedOrigins.includes(domain));
+    chatId=match?.id;
+    if(!isUUID(chatId)){
+     const result=await backend('POST','/public-chats',{agentId:id,title:proposal?.name||site.name,
+      greeting:'¡Hola! ¿En qué puedo ayudarte?',allowedOrigins:domain?[domain]:[],enabled:true,
+      dailyLimit:200,perVisitorLimit:12});
+     chatId=result.id;
+    }
    }
    if(!isUUID(chatId))throw Error('No se pudo crear el chat público.');
-   setSavedAgent({agentId:id,chatId});
-   onLinked({agentId:id,chatId,origin:domain,title:proposal?.name||site.name,linkedAt:Date.now()});
-   setMessage('El agente ya está vinculado a la web y listo para exportar.');
+   setSavedAgent({agentId:id,chatId:chatId!});
+   onLinked({agentId:id,chatId:chatId!,origin:domain,title:proposal?.name||site.name,linkedAt:Date.now()});
+   setMessage(domain?'El agente ya está vinculado a la web y listo para exportar.':'Agente vinculado sin dominio: ya puedes descargar la web con el chat. Responderá cuando añadas el dominio aquí (no hará falta volver a descargarla).');
   }catch(e){setMessage(e instanceof Error?e.message:'No se pudo publicar el agente.');}
   finally{setBusy(false);}
  }
@@ -260,9 +270,15 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
      <input className={field+' mt-1'} type="url" placeholder="https://www.tunegocio.es" value={origin} onChange={e=>setOrigin(e.target.value)}/>
     </label>
     <p className="mb-3 text-[10px] leading-5 text-faint">Puedes crear y probar el agente sin dominio. Al publicarlo, solo responderá desde el origen HTTPS autorizado.</p>
-    <button disabled={busy||(option==='new'&&(!proposal||proposal.requiresApproval))||(option==='existing'&&!existingId)} className={primary} onClick={()=>void publish()}>
-     {busy?<LoaderCircle size={15} className="animate-spin"/>:<Bot size={15}/>} Activar agente y vincularlo a la web
-    </button>
+    <div className="flex flex-wrap gap-2">
+     <button disabled={busy||!origin.trim()||(option==='new'&&(!proposal||proposal.requiresApproval))||(option==='existing'&&!existingId)} className={primary} onClick={()=>void publish()}>
+      {busy?<LoaderCircle size={15} className="animate-spin"/>:<Bot size={15}/>} {site.agent&&!site.agent.origin?'Añadir el dominio al chat':'Activar agente y vincularlo a la web'}
+     </button>
+     {!(site.agent&&!site.agent.origin)&&<button disabled={busy||(option==='new'&&(!proposal||proposal.requiresApproval))||(option==='existing'&&!existingId)} className={secondary} onClick={()=>void publish(true)}>
+      <Download size={14}/> Vincular sin dominio y descargar
+     </button>}
+    </div>
+    {site.agent&&!site.agent.origin&&<p className="mt-2 text-[10.5px] leading-5 text-amber-600">El chat está vinculado pero sin dominio: aparece en la web descargada y empezará a responder en cuanto añadas aquí el dominio. No hace falta volver a descargar la web.</p>}
    </div>
    {(savedAgent?.agentId||(option==='existing'&&existingId))&&<div className="mt-5 border-t border-stroke pt-4">
     <h3 className="flex items-center gap-2 text-[12px] font-semibold"><Package size={15} className="text-brand"/> Exportar el agente</h3>

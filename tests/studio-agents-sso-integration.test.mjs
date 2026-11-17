@@ -16,12 +16,12 @@ const context={access:{aud:AUD,getIdentity:async()=>({email:'owner@example.com'}
 function request(path,{method='GET',data,host=origin,siteOrigin=host}={}){
  return new Request(host+path,{method,headers:{...(method!=='GET'?{'Origin':siteOrigin}:{}),...(data!==undefined?{'Content-Type':'application/json'}:{})},body:data===undefined?undefined:JSON.stringify(data)});
 }
-function fakeDb({agentStatus='active',withLeads=true}={}){
+function fakeDb({agentStatus='active',withLeads=true,chatOrigin=customerOrigin}={}){
  const agent={id:agentId,owner_id:'fake',name:'Agente Prueba',role:'Informador',
  objective:'Informar visitantes',instructions:'Responder solo sobre servicios reales.',
  knowledge:'Se ofrece diseño y mantenimiento web.',tools_json:JSON.stringify(['text_generation','knowledge_lookup',...(withLeads?['lead_capture']:[])]),
  status:agentStatus};
- const chat={id:chatId,agent_id:agentId,origin:customerOrigin,title:'Chat de prueba',
+ const chat={id:chatId,agent_id:agentId,origin:chatOrigin,title:'Chat de prueba',
  greeting:'Hola, ¿en qué puedo ayudarte?',enabled:1,daily_limit:50,per_visitor_limit:10};
  const statements=[];
  return {statements,prepare(sql){
@@ -92,4 +92,19 @@ test('Contact lead requires explicit consent and enabled permission',async()=>{
  assert.equal(no.status,400);
  const yes=await publicMod.default.fetch(request(p,{method:'POST',host:'https://worker.example',siteOrigin:customerOrigin,data:{...data,consent:true}}),env);
  assert.equal(yes.status,201);assert.equal((await yes.json()).saved,true);
+});
+test('Chat sin dominio: se crea, no responde desde ningún sitio y luego se le asigna el dominio',async()=>{
+ const db=fakeDb(),env={STUDIO_DB:db,STUDIO_OWNER_EMAIL:'owner@example.com',AI:fakeAI()};
+ const created=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/public-chats',{method:'POST',data:{agentId,allowedOrigins:[],title:'Chat',greeting:'Hola'}}),env,context);
+ assert.equal(created.status,201);
+ assert.ok(db.statements.some(x=>x.op==='run'&&x.sql.includes('INSERT INTO studio_public_chats')&&x.params[2]===''),'se guarda con el dominio vacío');
+ const two=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/public-chats',{method:'POST',data:{agentId,allowedOrigins:[customerOrigin,'https://otro.example']}}),env,context);
+ assert.equal(two.status,400);
+ const pendingEnv={STUDIO_DB:fakeDb({chatOrigin:''}),AI:fakeAI()};
+ const blocked=await publicMod.default.fetch(request('/api/chats/'+chatId+'/message',{method:'POST',host:'https://worker.example',siteOrigin:customerOrigin,data:{message:'Hola'}}),pendingEnv);
+ assert.equal(blocked.status,403,'sin dominio no responde a nadie');
+ const put=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/public-chats/'+chatId,{method:'PUT',data:{origin:'https://nuevo-negocio.example',enabled:true}}),{...env,STUDIO_DB:fakeDb({chatOrigin:''})},context);
+ assert.equal(put.status,200);assert.equal((await put.json()).origin,'https://nuevo-negocio.example');
+ const bad=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/public-chats/'+chatId,{method:'PUT',data:{origin:'http://inseguro.example'}}),env,context);
+ assert.equal(bad.status,400);
 });

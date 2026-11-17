@@ -1494,7 +1494,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       <div className="mb-2 text-[11px] font-bold uppercase tracking-[.16em] text-brand">04 / ENTREGA</div>
       <h1 className="text-[30px] font-bold tracking-[-.04em]">Tu web, lista para llevar.</h1>
       <p className="mt-3 text-[13px] leading-6 text-mist">Descarga el HTML o el ZIP con la web real y sus recursos. {site.agent?'El asistente está vinculado y se incluye automáticamente.':'Puedes asociar un agente en cualquier momento.'}</p>
-      {site.agent&&<div className="mt-5 rounded-xl border border-brand/30 bg-brandsoft p-4 text-[12px] leading-6 text-ink"><Bot size={16} className="mr-2 inline text-brand"/>Agente: <strong>{site.agent.title}</strong><div className="text-[10px] text-mist">Dominio autorizado: {site.agent.origin}</div></div>}
+      {site.agent&&<div className="mt-5 rounded-xl border border-brand/30 bg-brandsoft p-4 text-[12px] leading-6 text-ink"><Bot size={16} className="mr-2 inline text-brand"/>Agente: <strong>{site.agent.title}</strong><div className="text-[10px] text-mist">{site.agent.origin?'Dominio autorizado: '+site.agent.origin:'Dominio pendiente: el chat va incluido en la descarga y responderá cuando añadas el dominio en «Agente IA» (sin volver a descargar).'}</div></div>}
       <div className="mt-7 flex flex-col gap-3">
         <button onClick={exportZip} className={primary+' w-full justify-start py-4 text-[13px]'}><FileArchive size={19}/> Descargar {site.agent?'web + agente':'proyecto ZIP completo'}</button>
         <button onClick={exportHtml} className={btn+' w-full justify-start py-4 text-[13px]'}><FileCode2 size={19}/> Descargar HTML {site.agent?'con widget':'actualizado'}</button>
