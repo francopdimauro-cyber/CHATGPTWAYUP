@@ -30,6 +30,7 @@
   "vars": {
     "STUDIO_OWNER_EMAIL": "francopdimauro@gmail.com",
     "STUDIO_ACCESS_TEAM_DOMAIN": "https://proud-shape-7dee.cloudflareaccess.com",
+    "STUDIO_ACCESS_AUD": "598ffd116edadb50342393e86c8a7453a4e0065994c62d9512f822e585ed81f0",
     // Proveedores externos (claves como secretos). Un proveedor solo se usa si tiene clave Y modelo.
     // Los nombres exactos se comprueban en /studio-api/webcreator/providers.
     "STUDIO_WEB_PROVIDERS": "gemini,openrouter",
