@@ -2,7 +2,7 @@
 /** Panel «Propiedades»: controles reales sobre el elemento seleccionado del HTML.
  *  Cada control aplica estilos en línea validados (lib/element-editing) y entra en el historial. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, ChevronDown, ImageIcon, Italic, Link2, MousePointerClick, Shapes, Strikethrough, Type, Underline } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Bold, Braces, ChevronDown, ImageIcon, Italic, Link2, MousePointerClick, Shapes, Strikethrough, Type, Underline } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import { ButtonStyles } from './button-styles';
 import { ButtonDialog, type ButtonChange } from './button-dialog';
@@ -38,6 +38,8 @@ type Props = {
   /** «Cambiar imagen»: foto nueva o ajuste de la actual (recorte, enfoque, filtros). */
   onImage?(change: ImageApply): Promise<void> | void;
   loadImage?(): ImageSource | null;
+  /** Abre el Editor CSS con este elemento. */
+  onOpenCss?(): void;
   /** Secciones de la web a las que puede llevar un botón. */
   anchors?: { id: string; label: string }[];
   extra?: ReactNode;
@@ -143,7 +145,7 @@ function Box({ prefix, info, onStyles }: { prefix: 'margin' | 'padding'; info: E
 const primary = (css: string) => (css.split(',')[0] || '').trim().replace(/^["']|["']$/g, '') || '—';
 const SHADOWS: [string, string][] = [['', 'Sin sombra'], ['0 1px 3px rgba(0, 0, 0, 0.12)', 'Sutil'], ['0 8px 24px rgba(0, 0, 0, 0.14)', 'Media'], ['0 20px 50px rgba(0, 0, 0, 0.22)', 'Profunda'], ['0 0 0 1px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.12)', 'Flotante']];
 
-export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, onButton, onSymbol, onImage, loadImage, anchors = [], extra }: Props) {
+export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onText, onEditText, onButton, onSymbol, onImage, loadImage, onOpenCss, anchors = [], extra }: Props) {
   const [buttonOpen, setButtonOpen] = useState(false);
   const [symbolOpen, setSymbolOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
@@ -174,6 +176,7 @@ export function PropertyPanel({ info, onStyles, onFont, onPreview, onAttrs, onTe
       </div>}
     </Group>
 
+    {onOpenCss && <div className="border-b border-stroke py-2"><button type="button" onClick={onOpenCss} className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-stroke px-3 py-2 text-[11.5px] font-medium text-ink hover:border-brand hover:text-brand"><Braces size={13} /> Editar CSS (elemento, sección o global)</button></div>}
     {info.image && onImage && loadImage && <div className="border-b border-stroke py-3">
       <button type="button" onClick={() => setImageOpen(true)} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand px-3 py-2.5 text-[12px] font-semibold text-white hover:brightness-110"><ImageIcon size={14} /> Cambiar imagen</button>
       <p className="mt-1.5 text-[10.5px] leading-4 text-faint">Sube una foto, búscala en Pixabay o recorta y encuadra la actual. Mantiene su caja ({info.image.w}×{info.image.h} px).</p>

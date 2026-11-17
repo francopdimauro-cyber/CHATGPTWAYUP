@@ -508,3 +508,80 @@ export function mobilePosition(html:string,index:number):string|null{
   const m=/object-position:(\d{1,3}% \d{1,3}%)/.exec(doc.head.querySelector('style[data-wc-img-style="'+id+'"]')?.textContent||'');
   return m?m[1]:null;
 }
+
+/* ───────────── Editor CSS: Elemento (estilo en línea), Sección y Global (hojas propias en el <head>) ───────────── */
+export type CssScope = 'elemento' | 'seccion' | 'global';
+const CSS_FORBIDDEN = /<\/?\s*style|@import\b|url\(\s*['"]?\s*(?:https?:|\/\/|javascript:|data:text)|expression\s*\(|-moz-binding|behavior\s*:/i;
+function assertCss(text:string){if(CSS_FORBIDDEN.test(text))throw Error('Ese CSS contiene algo no permitido (@import, direcciones externas o </style>).');if(text.length>60000)throw Error('El CSS es demasiado largo.');}
+/** Sección que contiene al elemento (o él mismo): su selector estable para el CSS de sección. */
+function sectionOf(node:HTMLElement):HTMLElement|null{return node.closest<HTMLElement>('[data-wc-section],section,header,footer');}
+function sectionSelector(sec:HTMLElement):string{
+  const key=sec.getAttribute('data-wc-section');
+  if(key&&/^[\w-]+$/.test(key))return '[data-wc-section="'+key+'"]';
+  if(sec.id&&/^[A-Za-z][\w-]*$/.test(sec.id))return '#'+sec.id;
+  return '';
+}
+export function cssSectionInfo(html:string,index:number):{selector:string;label:string}|null{
+  const doc=parse(html);const sec=sectionOf(nodeAt(doc,index));if(!sec)return null;
+  const selector=sectionSelector(sec);
+  return {selector:selector||'(se asignará un id)',label:sec.getAttribute('data-wc-name')||sec.getAttribute('data-wc-section')||sec.id||sec.tagName.toLowerCase()};
+}
+function scopeSheet(doc:Document,scope:'global'|'seccion',selector=''):HTMLStyleElement|null{
+  const key=scope==='global'?'global':'seccion:'+selector;
+  return Array.from(doc.head.querySelectorAll<HTMLStyleElement>('style[data-wc-css]')).find(s=>s.getAttribute('data-wc-css')===key)||null;
+}
+/** Texto actual de un nivel tal como lo escribió el usuario. */
+export function readCss(html:string,index:number|null,scope:CssScope):string{
+  const doc=parse(html);
+  if(scope==='global')return scopeSheet(doc,'global')?.textContent?.replace(/^\n|\n$/g,'')||'';
+  if(index===null)return '';
+  const node=nodeAt(doc,index);
+  if(scope==='elemento'){
+    // Tal como está escrito (sin desglosar atajos como «padding»): se separa por «;» fuera de paréntesis y comillas.
+    const raw=node.getAttribute('style')||'';const out:string[]=[];let cur='',depth=0,q='';
+    for(const c of raw){
+      if(q){cur+=c;if(c===q)q='';continue;}
+      if(c==='"'||c==="'"){q=c;cur+=c;continue;}
+      if(c==='(')depth++;else if(c===')')depth=Math.max(0,depth-1);
+      if(c===';'&&!depth){if(cur.trim())out.push(cur.trim()+';');cur='';}else cur+=c;
+    }
+    if(cur.trim())out.push(cur.trim()+';');
+    return out.join('\n');
+  }
+  const sec=sectionOf(node);const sel=sec?sectionSelector(sec):'';
+  const raw=sel?scopeSheet(doc,'seccion',sel)?.textContent||'':'';
+  // Se guarda como «selector {\n…\n}»: se devuelve solo el interior, sin sangría añadida.
+  const m=/^[^{]*\{\n([\s\S]*)\n\}\s*$/.exec(raw);
+  return m?m[1].split('\n').map(l=>l.replace(/^ {2}/,'')).join('\n'):'';
+}
+/** Guarda el CSS de un nivel (texto vacío = lo quita). Un solo paso de deshacer. */
+export function writeCss(html:string,index:number|null,scope:CssScope,text:string):EditResult{
+  assertCss(text);
+  const doc=parse(html);const body=text.trim();
+  if(scope==='elemento'){
+    if(index===null)throw Error('Selecciona un elemento.');
+    const node=nodeAt(doc,index);
+    if(/[{}]/.test(body))throw Error('En «Elemento» solo van propiedades, sin llaves ni selectores.');
+    if(body)node.setAttribute('style',body.replace(/\s*\n\s*/g,' '));else node.removeAttribute('style');
+    return {html:serialize(doc),index:indexOf(doc,node)??index};
+  }
+  let sheet:HTMLStyleElement|null,content:string,key:string,node:HTMLElement|null=null;
+  if(scope==='global'){sheet=scopeSheet(doc,'global');content=body;key='global';}
+  else{
+    if(index===null)throw Error('Selecciona un elemento de la sección.');
+    node=nodeAt(doc,index);const sec=sectionOf(node);if(!sec)throw Error('Este elemento no está dentro de una sección.');
+    let sel=sectionSelector(sec);
+    if(!sel){sec.id='wc-'+shortId();sel='#'+sec.id;}
+    sheet=scopeSheet(doc,'seccion',sel);key='seccion:'+sel;
+    content=body?sel+' {\n'+body.split('\n').map(l=>l?'  '+l:l).join('\n')+'\n}':'';
+  }
+  if(!content){sheet?.remove();}
+  else{
+    if(!sheet){sheet=doc.createElement('style');sheet.setAttribute('data-wc-css',key);}
+    sheet.textContent='\n'+content+'\n';
+    // Siempre al final del <head> (gana a los estilos de la web): primero el global y después las secciones.
+    if(scope==='global'){const firstSec=doc.head.querySelector('style[data-wc-css^="seccion:"]');if(firstSec)doc.head.insertBefore(sheet,firstSec);else doc.head.append(sheet);}
+    else doc.head.append(sheet);
+  }
+  return {html:serialize(doc),index:node?indexOf(doc,node)??index:index};
+}

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Bot, Check, ChevronRight, CodeXml, Download, FileArchive, FileCode2,
   FilePlus2, FileUp, FolderOpen, Globe, LoaderCircle, Monitor, Paintbrush, Redo2, Tablet,
-  Save, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search, MousePointer2, SquarePlus, Play, RotateCcw } from 'lucide-react';
+  Save, Braces, Smartphone, Sparkles, Undo2, X, Copy, Trash2, ArrowUp, ArrowDown, ImagePlus, Link2, Layers3, Move, SlidersHorizontal, Search, MousePointer2, SquarePlus, Play, RotateCcw } from 'lucide-react';
 import { parseColorCode } from '@/lib/color-codes';
 import {cloudListSites,cloudLoadSite,cloudSaveSite,type CloudSiteSummary} from '@/lib/studio-cloud';
 import { AgentSetup, type LinkedAgent } from './agent-setup';
@@ -18,8 +18,9 @@ import { ParkedItem, type Parked } from './parked-item';
 import { InsertPanel, BLOCK_MIME, SECTION_MIME } from './insert-panel';
 import { computeDrop, showIndicator, hideIndicator, drawHandles, clearHandles } from './canvas-interactions';
 import { blockById, isSectionBlock, instantiateBlock } from '@/lib/canvas-blocks';
-import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, replaceSymbol, changeImage as editImage, type EditResult } from '@/lib/element-editing';
+import { EDITABLE_STYLE_PROPS, copyElement, duplicateElement, isTextEditable, moveElement, parentIndex, pasteElement, removeElement, setAttributes, setFont, setInlineContent, setStyles, toggleHidden, groupElements, ungroupElement, insertSnippet, moveElementTo, canContain, writeSeo, changeButton, buttonToLink, replaceSymbol, changeImage as editImage, readCss, writeCss, cssSectionInfo, type CssScope, type EditResult } from '@/lib/element-editing';
 import type { ImageApply, ImageSource } from './image-dialog';
+import { CssEditor } from './css-editor';
 import { mimeOf } from '@/lib/image-editing';
 import { ThemeToggle } from './theme-toggle';
 import { addSection, duplicateSection, ensureSectionKeys, listSections, moveSection, removeSection, renameSection, sectionForIndex } from '@/lib/html-sections';
@@ -794,6 +795,40 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   function tryEdit(fn:()=>EditResult,message:string){
     try{applyEdit(fn(),message);}catch(error){setNotice(error instanceof Error?error.message:'No se pudo aplicar el cambio.');}
   }
+  /* ───── Editor CSS ───── */
+  const [cssOpen,setCssOpen]=useState(false);
+  const [cssIndex,setCssIndex]=useState<number|null>(null);
+  useEffect(()=>{if(elementInfo)setCssIndex(elementInfo.index);},[elementInfo]);
+  const siteHtml=site?.html||'';
+  const cssSection=useMemo(()=>{if(!siteHtml||cssIndex===null)return null;try{return cssSectionInfo(siteHtml,cssIndex);}catch{return null;}},[siteHtml,cssIndex]);
+  const cssRead=useCallback((scope:CssScope)=>{try{return siteHtml?readCss(siteHtml,cssIndex,scope):'';}catch{return '';}},[siteHtml,cssIndex]);
+  const cssLiveOrig=useRef<{el?:HTMLElement;css?:string}>({});
+  /** Vista en vivo: se toca solo el documento del lienzo (no el HTML de la web) hasta pulsar «Aplicar». */
+  const cssLive=useCallback((scope:CssScope,text:string|null)=>{
+    const doc=previewFrame.current?.contentDocument;if(!doc)return;
+    const target=cssIndex===null?null:doc.querySelector<HTMLElement>('[data-wayup-edit="'+cssIndex+'"]');
+    if(scope==='elemento'){
+      const o=cssLiveOrig.current;
+      if(text===null){if(o.el&&o.css!==undefined&&o.el.isConnected)o.el.style.cssText=o.css;cssLiveOrig.current={};return;}
+      if(!target)return;
+      if(o.el!==target){if(o.el&&o.css!==undefined&&o.el.isConnected)o.el.style.cssText=o.css;cssLiveOrig.current={el:target,css:target.style.cssText};}
+      target.style.cssText=text.replace(/\s*\n\s*/g,' ');return;
+    }
+    doc.getElementById('wc-css-live-'+scope)?.remove();
+    const key=scope==='global'?'global':'seccion:'+(cssSection?.selector||'');
+    const existing=Array.from(doc.head.querySelectorAll<HTMLStyleElement>('style[data-wc-css]')).find(s=>s.getAttribute('data-wc-css')===key);
+    if(scope==='seccion')doc.querySelectorAll('[data-wc-css-live]').forEach(n=>n.removeAttribute('data-wc-css-live'));
+    if(text===null){if(existing)existing.media='';return;}
+    let css=text;
+    if(scope==='seccion'){const sec=target?.closest('[data-wc-section],section,header,footer');if(!sec)return;sec.setAttribute('data-wc-css-live','');css='[data-wc-css-live]{'+text+'}';}
+    if(existing)existing.media='not all';
+    const st=doc.createElement('style');st.id='wc-css-live-'+scope;st.textContent=css;doc.head.append(st);
+  },[cssIndex,cssSection]);
+  const cssApply=(scope:CssScope,text:string)=>{
+    if(!site)return false;
+    try{applyEdit(writeCss(site.html,scope==='global'?null:cssIndex,scope,text),scope==='global'?'CSS global aplicado.':scope==='seccion'?'CSS de la sección aplicado.':'CSS del elemento aplicado.');return true;}
+    catch(error){setNotice(error instanceof Error?error.message:'No se pudo aplicar el CSS.');return false;}
+  };
   /** Ruta de un recurso del proyecto tal como aparece en el HTML → clave en site.assets. */
   function assetKey(path:string):string|null{
     if(!site||!path||/^(?:[a-z]+:|\/\/|#)/i.test(path))return null;
@@ -1311,6 +1346,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
+          <button onClick={()=>setCssOpen(true)} className={btn} title="Editor CSS: elemento, sección o toda la web"><Braces size={14}/> CSS</button>
           <button onClick={()=>setSeoOpen(true)} className={btn} title="Título, descripción y metadatos para buscadores"><Search size={14}/> SEO</button>
           <button onClick={()=>void onSave()} disabled={busy} className={btn} title="Guardar en este dispositivo (Ctrl+S)"><Save size={14}/> Guardar</button>
           <button onClick={()=>void onCloudSave()} disabled={busy} className={btn} title="Guardar una versión privada en la nube"><Globe size={14}/> Guardar en la nube</button>
@@ -1426,7 +1462,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               onPreview={styles=>{const el=selectedRef.current;if(!el)return;for(const [prop,value] of Object.entries(styles))el.style.setProperty(prop,value);}}
               anchors={anchors}
               onSymbol={change=>tryEdit(()=>replaceSymbol(site.html,elementInfo.index,change),'Símbolo cambiado.')}
-              onImage={applyImage} loadImage={loadSelectedImage}
+              onImage={applyImage} loadImage={loadSelectedImage} onOpenCss={()=>setCssOpen(true)}
               onButton={change=>tryEdit(()=>{
                 let r:EditResult={html:site.html,index:elementInfo.index};
                 const at=()=>r.index??elementInfo.index;
@@ -1469,6 +1505,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     {canvasMenu&&elementInfo&&<CanvasMenu x={canvasMenu.x} y={canvasMenu.y} tag={elementInfo.tag} canEditText={elementInfo.textEditable}
       canPaste={hasClip} hidden={false} multiCount={multi.length+1} inGroup={!!previewFrame.current?.contentDocument?.querySelector('[data-wayup-edit="'+selected+'"]')?.closest('[data-wc-group]')} hasParent={selected!==null&&!!site&&parentIndex(site.html,selected)!==null}
       onCommand={runCanvasCommand} onClose={()=>setCanvasMenu(null)}/>}
+    {cssOpen&&site&&stage==='editor'&&<CssEditor index={cssIndex} sectionLabel={cssSection?.label||null} read={cssRead} onLive={cssLive} onApply={cssApply} onClose={()=>setCssOpen(false)}/>}
     {seoOpen&&site&&<SeoPanel html={site.html} onClose={()=>setSeoOpen(false)} onSave={seo=>{
       try{changeHtml(writeSeo(site.html,seo));setSeoOpen(false);setNotice('SEO actualizado en el documento.');}
       catch(error){setNotice(error instanceof Error?error.message:'No se pudo guardar el SEO.');}
