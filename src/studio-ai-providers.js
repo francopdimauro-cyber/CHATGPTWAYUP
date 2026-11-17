@@ -38,7 +38,7 @@ async function failure(name,res){
 }
 
 /** Llamada de chat a un proveedor externo. messages: [{role:'system'|'user'|'assistant',content:string}]. Devuelve {text,finish}. */
-export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=0.6}={}){
+export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=0.6,timeoutMs=TIMEOUT_MS}={}){
   const i=String(ref).indexOf(':');const name=ref.slice(0,i),model=ref.slice(i+1);
   const p=PROVIDERS[name];const key=p&&env?.[p.secret];
   if(!p||!key||!model)throw new ProviderError(name,0,(p?.label||name)+' no está configurado');
@@ -47,7 +47,7 @@ export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=
     const contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:String(m.content)}]}));
     const res=await timedFetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
       method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},
-      body:JSON.stringify({...(system?{systemInstruction:{parts:[{text:system}]}}:{}),contents,generationConfig:{maxOutputTokens:maxTokens,temperature}})});
+      body:JSON.stringify({...(system?{systemInstruction:{parts:[{text:system}]}}:{}),contents,generationConfig:{maxOutputTokens:maxTokens,temperature}})},timeoutMs);
     if(!res.ok)throw await failure(name,res);
     const j=await res.json();
     const cand=j?.candidates?.[0];
@@ -58,7 +58,7 @@ export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=
   const url=name==='groq'?'https://api.groq.com/openai/v1/chat/completions':'https://openrouter.ai/api/v1/chat/completions';
   const headers={'Content-Type':'application/json',Authorization:'Bearer '+key};
   if(name==='openrouter')headers['X-Title']='WayUp Studio';
-  const res=await timedFetch(url,{method:'POST',headers,body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature})});
+  const res=await timedFetch(url,{method:'POST',headers,body:JSON.stringify({model,messages,max_tokens:maxTokens,temperature})},timeoutMs);
   if(!res.ok)throw await failure(name,res);
   const j=await res.json();
   const text=String(j?.choices?.[0]?.message?.content||'');
@@ -89,7 +89,8 @@ export async function listModels(env,name,filter=''){
 /** Diagnóstico de los tres proveedores: configuración, modelos disponibles y una llamada mínima real. */
 export async function diagnoseProviders(env,filters={}){
   const out={};
-  for(const name of Object.keys(PROVIDERS)){
+  // Los tres proveedores se comprueban a la vez para que la página responda rápido.
+  await Promise.all(Object.keys(PROVIDERS).map(async name=>{
     const p=PROVIDERS[name];const model=providerModel(env,name);
     const r={proveedor:p.label,secreto:env?.[p.secret]?'presente':'FALTA ('+p.secret+')',modelo:model||'sin configurar ('+p.modelVar+')'};
     const listed=await listModels(env,name,filters[name]||'');
@@ -97,13 +98,13 @@ export async function diagnoseProviders(env,filters={}){
     if(!listed.ok)r.error_lista=listed.error;
     if(model&&env?.[p.secret]){
       const t0=Date.now();
-      try{const x=await callExternal(env,name+':'+model,[{role:'user',content:'Responde solo con la palabra: OK'}],{maxTokens:20,temperature:0});
+      try{const x=await callExternal(env,name+':'+model,[{role:'user',content:'Responde solo con la palabra: OK'}],{maxTokens:200,temperature:0,timeoutMs:40000});
         r.prueba={ok:true,ms:Date.now()-t0,respuesta:clip(x.text,40)};}
       catch(e){r.prueba={ok:false,ms:Date.now()-t0,estado:e?.status??null,error:scrub(e?.message||e)};}
       if(listed.ok&&listed.models.length&&!filters[name]&&!listed.models.includes(model))r.aviso='El modelo configurado no aparece en la lista del proveedor: revisa el nombre.';
     }
     out[name]=r;
-  }
+  }));
   out.uso={webs:externalModels(env,'web'),agentes:externalModels(env,'agent'),
     nota:'Orden configurado en STUDIO_WEB_PROVIDERS y STUDIO_AGENT_PROVIDERS. Si un proveedor falla, se pasa al siguiente y por último a Workers AI.'};
   return out;
