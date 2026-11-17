@@ -397,7 +397,9 @@ async function studioWebTeam(env,briefing,emit){
     const kind=p.id==='cabecera'?'la CABECERA (<header class="site-header" data-header>)':p.id==='pie'?'el PIE (<footer class="site-footer">)':'la sección <section id="'+p.id+'" data-wc-section="'+p.id+'">';
     const user=['BRIEFING DEL NEGOCIO (DATOS):',briefing.slice(0,5000),'','CSS BASE DEL DIRECTOR (ya incluido en la página; úsalo, no lo repitas):',baseCss.slice(0,14000),'',
       'MAPA DE LA WEB (para enlaces y coherencia):',outline,'','TU ENCARGO: construye '+kind+'.','Patrón: '+p.pattern,'Titular: '+p.title,'Contenido y composición: '+p.content,
-      'Imagen: '+(p.image&&!/^no\b/i.test(p.image)?p.image:'ninguna (usa tipografía, SVG y color)')].join('\n');
+      'Imagen: '+(p.image&&!/^no\b/i.test(p.image)?p.image:'ninguna (usa tipografía, SVG y color)'),
+      p.id==='cabecera'?'REGLAS DE LA CABECERA: en escritorio TODO en UNA sola fila de 72–88px de alto (display:flex; align-items:center; justify-content:space-between): logotipo a la izquierda, navegación en el centro con un MÁXIMO de 6 enlaces (elige las secciones clave) y botón de llamada a la acción a la derecha. Por debajo de 900px la navegación pasa al panel .nav-panel (oculto hasta .is-open) y se muestra el botón .nav-toggle.':'',
+      p.id==='pie'?'REGLAS DEL PIE: rejilla de 3–4 columnas en escritorio (marca + frase, navegación, contacto con marcadores, horario si aplica) y una franja final con aviso de derechos; en móvil, una columna.':''].filter(Boolean).join('\n');
     try{
       const r=await teamCall(env,'builder',TEAM_BUILDER_PROMPT,user,7000,t=>/===\s*HTML\s*===/i.test(t)&&/<(section|header|footer)\b/i.test(t));
       results[i]={html:teamBlock(r.text,'HTML').replace(/<script\b[\s\S]*?<\/script>/gi,''),css:teamCleanCss(teamBlock(r.text,'CSS'))};
