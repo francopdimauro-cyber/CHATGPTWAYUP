@@ -142,6 +142,13 @@ test('Equipo de modelos: director, constructores en paralelo y revisor montan un
     if(!sys.startsWith('Eres el REVISOR'))builderInputs.push(user);
     if(sys.startsWith('Eres el REVISOR')){calls.reviewer++;return sse(['===CSS===\n.hero h1{letter-spacing:-.03em}\n.btn:focus-visible{outline:2px solid red}\n===FIN===']);}
     calls.builder++;
+    const order=/en este orden: ([a-z0-9, -]+)\)/.exec(user);
+    if(order){
+      // Lote: un bloque por id, en el formato ===HTML id=== / ===CSS id===.
+      const block=id=>id==='cabecera'?'<header class="site-header" data-header><a href="#inicio">Marca</a></header>':id==='pie'?'<footer class="site-footer">© Marca</footer>':
+        '<section id="'+id+'" data-wc-section="'+id+'"><h2 data-reveal>'+id+'</h2>'+(id==='inicio'?'<img data-wc-ai-image="athlete stretching at dawn" alt="Atleta">':'')+'<script>fetch("/x")</script></section>';
+      return sse([order[1].split(',').map(s=>s.trim()).map(id=>'===HTML '+id+'===\n'+block(id)+'\n===CSS '+id+'===\n#'+id+'{padding:80px 0}').join('\n')+'\n===FIN===']);
+    }
     const id=/id="([a-z0-9-]+)"/.exec(user.split('TU ENCARGO')[1])?.[1];
     const html=/CABECERA/.test(user)?'<header class="site-header" data-header><a href="#inicio">Marca</a></header>':
       /el PIE/.test(user)?'<footer class="site-footer">© Marca</footer>':
@@ -151,8 +158,8 @@ test('Equipo de modelos: director, constructores en paralelo y revisor montan un
   const {final}=await generate({run:async()=>{throw Error('no debe usarse la vía de una pasada')}},{team});
   assert.equal(final.event,'complete');
   assert.equal(final.data.mode,'studio-team');
-  assert.equal(calls.director,1);assert.equal(calls.builder,5);assert.equal(calls.reviewer,1);assert.equal(calls.copy,1);
-  const heroInput=builderInputs.find(u=>/data-wc-section="inicio"/.test(u.split('TU ENCARGO')[1]||''));
+  assert.equal(calls.director,1);assert.equal(calls.builder,2,'cabecera+pie en un lote y las 3 secciones en otro');assert.equal(calls.reviewer,1);assert.equal(calls.copy,1);
+  const heroInput=builderInputs.find(u=>/data-wc-section="inicio"/.test(u.split('TUS ENCARGOS')[1]||''));
   assert.match(heroInput,/TEXTOS DEFINITIVOS DEL REDACTOR[\s\S]*Muévete con \*criterio\*/,'el constructor recibe los textos del redactor');
   assert.match(heroInput,/EJEMPLO DE REFERENCIA del patrón «hero»/,'y el ejemplo de su patrón');
   assert.match(builderInputs.find(u=>/CABECERA/.test(u)),/EJEMPLO DE REFERENCIA del patrón «cabecera»/);

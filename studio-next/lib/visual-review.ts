@@ -3,6 +3,7 @@
  *  Las capturas se hacen con el propio motor del navegador (SVG foreignObject): sin servicios externos.
  *  Si cualquier paso falla, la web se entrega sin revisión. */
 import { assetMime } from './web-project-files';
+import { auditLayout, OVERFLOW_SAFETY_CSS } from './layout-audit';
 
 export type Shot = { id: string; viewport: 'escritorio' | 'móvil'; dataUrl: string };
 
@@ -102,21 +103,31 @@ export async function visualReview(html: string, assets: Record<string, Uint8Arr
   const doc = await captureHtml(html, assets);
   // Solo las 4 capturas que más pesan en la primera impresión (cabecera y portada, en escritorio y móvil):
   // los modelos externos con visión tienen cupos diarios pequeños.
-  const shots = [...await captureBlocks(doc, 1280, 'escritorio', { scale: 0.6, maxBlocks: 2 }),
-    ...await captureBlocks(doc, 390, 'móvil', { scale: 1, maxBlocks: 2 })];
-  if (!shots.length) return { html, notes: 0, fixed: false };
-  const notes: { id: string; viewport: string; notes: string }[] = [];
+  // 1) Auditoría medida (sin IA, toda la página) en escritorio y móvil.
+  onProgress('Revisión: midiendo desbordes, contraste y cabecera en escritorio y móvil…');
+  const [auditDesk, auditMob] = await Promise.all([auditLayout(doc, 1280, 'escritorio'), auditLayout(doc, 390, 'móvil')]);
+  const notes: { id: string; viewport: string; notes: string }[] = [...auditDesk.notes, ...auditMob.notes];
+  // 2) Capturas de lo que más pesa en la primera impresión, revisadas por el modelo con visión.
+  let shots: Shot[] = [];
+  try {
+    shots = [...await captureBlocks(doc, 1280, 'escritorio', { scale: 0.6, maxBlocks: 2 }),
+      ...await captureBlocks(doc, 390, 'móvil', { scale: 1, maxBlocks: 2 })];
+  } catch { shots = []; }
   let done = 0;
   const one = async (s: Shot) => {
     try {
       const r = await fetch('/studio-api/webcreator/review-shot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', cache: 'no-store', body: JSON.stringify(s) });
       const d = await r.json().catch(() => ({})) as { notes?: string };
-      if (r.ok && d.notes && !/^SIN PROBLEMAS/i.test(d.notes.trim())) notes.push({ id: s.id, viewport: s.viewport, notes: d.notes });
+      if (r.ok && d.notes && !/^SIN PROBLEMAS/i.test(d.notes.trim())) {
+        const same = notes.find(n => n.id === s.id && n.viewport === s.viewport);
+        if (same) same.notes = (same.notes + '\n' + d.notes).slice(0, 1500); else notes.push({ id: s.id, viewport: s.viewport, notes: d.notes });
+      }
     } catch { /* una captura sin revisar no detiene el resto */ }
     done++; onProgress('Revisión visual: el director de arte revisa ' + done + '/' + shots.length + ' capturas…');
   };
   for (let i = 0; i < shots.length; i += 3) await Promise.all(shots.slice(i, i + 3).map(one));
   if (!notes.length) return { html, notes: 0, fixed: false };
+  const withSafety = (h: string) => { const o = new DOMParser().parseFromString(h, 'text/html'); const st = o.createElement('style'); st.setAttribute('data-wc-review', 'seguridad'); st.textContent = OVERFLOW_SAFETY_CSS; o.head.append(st); return '<!DOCTYPE html>\n' + o.documentElement.outerHTML; };
   onProgress('Revisión visual: corrigiendo ' + notes.length + ' bloque(s) con problemas…');
   const parsed = new DOMParser().parseFromString(html, 'text/html');
   const css = Array.from(parsed.querySelectorAll('style')).map(s => s.textContent || '').join('\n').slice(0, 45000);
@@ -124,10 +135,13 @@ export async function visualReview(html: string, assets: Record<string, Uint8Arr
   const structure = parsed.body.innerHTML.replace(/>\s*([^<]{60,})</g, (_, t: string) => '>' + t.slice(0, 50) + '…<').replace(/\s(?:alt|data-wc-ai-prompt|src)="[^"]*"/g, '').slice(0, 26000);
   const r = await fetch('/studio-api/webcreator/review-fix', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', cache: 'no-store', body: JSON.stringify({ notes, css, structure }) });
   const d = await r.json().catch(() => ({})) as { css?: string };
-  if (!r.ok || !d.css || d.css.length < 20) return { html, notes: notes.length, fixed: false };
+  if (!r.ok || !d.css || d.css.length < 20) return auditMob.overflow ? { html: withSafety(html), notes: notes.length, fixed: true } : { html, notes: notes.length, fixed: false };
   const out = new DOMParser().parseFromString(html, 'text/html');
   const style = out.createElement('style'); style.setAttribute('data-wc-review', 'true');
   style.textContent = '/* Revisión visual automática */\n' + d.css;
   out.head.append(style);
-  return { html: '<!DOCTYPE html>\n' + out.documentElement.outerHTML, notes: notes.length, fixed: true };
+  let fixed = '<!DOCTYPE html>\n' + out.documentElement.outerHTML;
+  // 3) Se vuelve a medir el móvil: si aún hay scroll horizontal, red de seguridad sin IA.
+  try { if ((await auditLayout(await captureHtml(fixed, assets), 390, 'móvil')).overflow) fixed = withSafety(fixed); } catch { /* se entrega la corrección */ }
+  return { html: fixed, notes: notes.length, fixed: true };
 }

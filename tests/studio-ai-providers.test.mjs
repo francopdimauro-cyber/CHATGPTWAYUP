@@ -132,3 +132,28 @@ test('Con STUDIO_WORKERS_AI="off" nunca se llama a Workers AI: texto, fotos y es
     assert.ok(calls.some(c=>/pixabay\.com\/api/.test(c.url)),'un objeto (no persona) también se busca en Pixabay');
     assert.equal(workersAICalls,0,'Workers AI no se ha llamado ni una vez');
   }));
+
+test('Claude: SDK oficial, system con caché, imágenes en base64, sin temperature y reserva en Opus 5.5',()=>{
+  const sse=ev=>ev.map(e=>'event: '+e.type+'\ndata: '+JSON.stringify(e)+'\n\n').join('');
+  const events=[
+    {type:'message_start',message:{id:'m1',type:'message',role:'assistant',model:'claude-opus-5-5',content:[],stop_reason:null,usage:{input_tokens:10,output_tokens:0}}},
+    {type:'content_block_start',index:0,content_block:{type:'text',text:''}},
+    {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'Hola '}},
+    {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'mundo'}},
+    {type:'content_block_stop',index:0},
+    {type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:2}},
+    {type:'message_stop'}];
+  return withFetch(()=>new Response(sse(events),{status:200,headers:{'content-type':'text/event-stream'}}),async calls=>{
+    const env={ANTHROPIC_API_KEY:'sk-ant-prueba'};
+    const r=await callExternal(env,'anthropic:claude-opus-5-5',[{role:'system',content:'Eres director.'},
+      {role:'user',content:[{type:'text',text:'Mira'},{type:'image_url',image_url:{url:'data:image/png;base64,AAAA'}}]}],{maxTokens:900,temperature:0.6,effort:'high'});
+    assert.equal(r.text,'Hola mundo');
+    const body=JSON.parse(calls[0].init.body);
+    assert.match(calls[0].url,/api\.anthropic\.com\/v1\/messages/);
+    assert.equal(body.model,'claude-opus-5-5');assert.equal(body.max_tokens,900);assert.equal(body.temperature,undefined);
+    assert.deepEqual(body.system[0].cache_control,{type:'ephemeral'});
+    assert.equal(body.messages[0].content[1].source.media_type,'image/png');
+    assert.equal(body.output_config.effort,'high');assert.equal(body.fallbacks,'default');
+    assert.equal(modelsFor({...env,STUDIO_WEB_PLAN_MODELS:'anthropic:claude-opus-5-5,groq:x'},'plan')[0],'anthropic:claude-opus-5-5');
+  });
+});

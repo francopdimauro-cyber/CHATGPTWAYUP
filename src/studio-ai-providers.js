@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 /* WAY UP Studio · Proveedores de IA externos (Gemini, Groq, OpenRouter).
    Los modelos se configuran en variables del Worker (sin adivinar nombres en el código):
      GEMINI_MODEL, GROQ_MODEL, OPENROUTER_MODEL   → modelos por proveedor
@@ -15,7 +16,8 @@ const scrub=v=>clip(v,400).replace(/(key=|Bearer\s+)[A-Za-z0-9._-]+/gi,'$1••
 export const PROVIDERS={
   gemini:{label:'Google Gemini',secret:'GEMINI_API_KEY',modelVar:'GEMINI_MODEL'},
   groq:{label:'Groq',secret:'GROQ_API_KEY',modelVar:'GROQ_MODEL'},
-  openrouter:{label:'OpenRouter',secret:'OPENROUTER_API_KEY',modelVar:'OPENROUTER_MODEL'}
+  openrouter:{label:'OpenRouter',secret:'OPENROUTER_API_KEY',modelVar:'OPENROUTER_MODEL'},
+  anthropic:{label:'Anthropic Claude',secret:'ANTHROPIC_API_KEY',modelVar:'ANTHROPIC_MODEL'}
 };
 export const providerModel=(env,name)=>clip(env?.[PROVIDERS[name]?.modelVar],120);
 export const providerReady=(env,name)=>Boolean(PROVIDERS[name]&&env?.[PROVIDERS[name].secret]&&providerModel(env,name));
@@ -24,7 +26,7 @@ export function externalModels(env,use){
   const list=String((use==='agent'?env?.STUDIO_AGENT_PROVIDERS:env?.STUDIO_WEB_PROVIDERS)||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
   return [...new Set(list)].filter(n=>providerReady(env,n)).map(n=>n+':'+providerModel(env,n));
 }
-export const isExternal=ref=>/^(gemini|groq|openrouter):/.test(String(ref||''));
+export const isExternal=ref=>/^(gemini|groq|openrouter|anthropic):/.test(String(ref||''));
 /** Listas de modelos por tarea (variables del Worker, en orden de preferencia, «proveedor:modelo» separados por comas):
  *  plan  → STUDIO_WEB_PLAN_MODELS  (director, redactor, revisor y dirección creativa)
  *  build → STUDIO_WEB_BUILD_MODELS (constructores de secciones)
@@ -34,7 +36,7 @@ export const isExternal=ref=>/^(gemini|groq|openrouter):/.test(String(ref||''));
 export const workersAIEnabled=env=>String(env?.STUDIO_WORKERS_AI??'on').trim().toLowerCase()!=='off'&&Boolean(env?.AI?.run);
 export function modelsFor(env,use){
   const raw=use==='agent'?env?.STUDIO_AGENT_MODELS:use==='build'?env?.STUDIO_WEB_BUILD_MODELS:use==='vision'?env?.STUDIO_VISION_MODELS:env?.STUDIO_WEB_PLAN_MODELS;
-  const list=String(raw||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter):[\w./:-]{2,120}$/.test(r))
+  const list=String(raw||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter|anthropic):[\w./:-]{2,120}$/.test(r))
     .filter(r=>Boolean(env?.[PROVIDERS[r.split(':')[0]].secret]));
   if(list.length||use==='vision')return [...new Set(list)];
   const legacy=externalModels(env,use==='agent'?'agent':'web');
@@ -55,7 +57,7 @@ async function failure(name,res){
 }
 
 /** Llamada de chat a un proveedor externo. messages: [{role:'system'|'user'|'assistant',content:string}]. Devuelve {text,finish}. */
-export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=0.6,timeoutMs=TIMEOUT_MS}={}){
+export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=0.6,timeoutMs=TIMEOUT_MS,effort}={}){
   const i=String(ref).indexOf(':');const name=ref.slice(0,i),model=ref.slice(i+1);
   const p=PROVIDERS[name];const key=p&&env?.[p.secret];
   if(!p||!key||!model)throw new ProviderError(name,0,(p?.label||name)+' no está configurado');
@@ -100,6 +102,7 @@ export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=
     if(!text)throw new ProviderError(name,200,'Gemini no devolvió texto'+(blocked?' (bloqueado: '+blocked+')':finish?' ('+finish+')':''));
     return {text,finish:finish==='MAX_TOKENS'?'length':finish};
   }
+  if(name==='anthropic')return callClaude(key,model,messages,{maxTokens,timeoutMs,effort});
   const url=name==='groq'?'https://api.groq.com/openai/v1/chat/completions':'https://openrouter.ai/api/v1/chat/completions';
   const headers={'Content-Type':'application/json',Authorization:'Bearer '+key};
   if(name==='openrouter')headers['X-Title']='WayUp Studio';
@@ -111,13 +114,41 @@ export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=
   return {text,finish:String(j?.choices?.[0]?.finish_reason||'')};
 }
 
+/** Claude (API de Anthropic, SDK oficial). Mensajes con formato OpenAI → formato Claude (imágenes en base64).
+ *  Sin temperature (la API actual la rechaza); profundidad con «effort». El system va con caché de prompt
+ *  para que los constructores (mismo system) lo reutilicen. Opus/Sonnet 5.5 con reserva automática si rechazan. */
+async function callClaude(key,model,messages,{maxTokens,timeoutMs,effort}){
+  const client=new Anthropic({apiKey:key,timeout:timeoutMs,maxRetries:1});
+  const system=messages.filter(m=>m.role==='system').map(m=>m.content).join('\n\n');
+  const toBlocks=c=>Array.isArray(c)?c.map(x=>{
+      if(x?.type==='image_url'){const m=/^data:(image\/(?:png|jpeg|webp|gif));base64,(.+)$/.exec(String(x.image_url?.url||''));return m?{type:'image',source:{type:'base64',media_type:m[1],data:m[2]}}:null;}
+      return {type:'text',text:String(x?.text??'')};
+    }).filter(Boolean):String(c);
+  const params={model,max_tokens:maxTokens,
+    ...(system?{system:[{type:'text',text:system,cache_control:{type:'ephemeral'}}]}:{}),
+    messages:messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'assistant':'user',content:toBlocks(m.content)})),
+    ...(effort?{output_config:{effort}}:{})};
+  let msg;
+  try{
+    msg=/^claude-(opus|sonnet)-5-5$/.test(model)
+      ?await client.beta.messages.stream({...params,betas:['server-side-fallback-2026-07-01'],fallbacks:'default'}).finalMessage()
+      :await client.messages.stream(params).finalMessage();
+  }catch(e){throw new ProviderError('anthropic',Number(e?.status)||0,'Anthropic Claude: '+scrub(e?.message||e));}
+  if(msg.stop_reason==='refusal')throw new ProviderError('anthropic',200,'Claude rechazó la petición'+(msg.stop_details?.category?' ('+msg.stop_details.category+')':''));
+  const text=(msg.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  if(!text)throw new ProviderError('anthropic',200,'Claude no devolvió texto');
+  return {text,finish:msg.stop_reason==='max_tokens'?'length':String(msg.stop_reason||'')};
+}
+
 /** Modelos que ofrece cada proveedor con tu clave (para saber el nombre exacto). filter: texto a buscar. */
 export async function listModels(env,name,filter=''){
   const p=PROVIDERS[name];const key=p&&env?.[p.secret];
   if(!key)return {ok:false,error:'Falta el secreto '+p.secret,models:[]};
   try{
     let res,ids=[];
-    if(name==='gemini'){
+    if(name==='anthropic'){
+      for await(const m of new Anthropic({apiKey:key,timeout:20000}).models.list())ids.push(String(m?.id||''));
+    }else if(name==='gemini'){
       res=await timedFetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':key}},20000);
       if(!res.ok)throw await failure(name,res);
       ids=((await res.json())?.models||[]).filter(m=>(m?.supportedGenerationMethods||[]).includes('generateContent')).map(m=>String(m.name||'').replace(/^models\//,''));
@@ -151,7 +182,7 @@ function PROBE_PNG_B64(){
 /** Prueba rápida de varios modelos a la vez («proveedor:modelo», máx. 8): responde, tiempo y error exacto.
  *  Pide algo de criterio (no solo «OK») para comparar también la calidad de la respuesta. */
 export async function probeModels(env,refs,{vision=false}={}){
-  const list=[...new Set(String(refs||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter):[\w./:-]{2,120}$/.test(r)))].slice(0,8);
+  const list=[...new Set(String(refs||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter|anthropic):[\w./:-]{2,120}$/.test(r)))].slice(0,8);
   const out={};
   await Promise.all(list.map(async ref=>{
     const t0=Date.now();
