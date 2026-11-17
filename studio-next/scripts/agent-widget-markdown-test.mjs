@@ -9,7 +9,7 @@ const html = await page.evaluate(([code]) => {
   const fn = new Function(code + ';return markdown;');
   const markdown = fn();
   window.__xss = false;
-  markdown(document.getElementById('t'), '¡Hola! En **El Refugio** ofrecemos:\n\n- **Comidas** de 13:00 a 16:00\n- Teléfono: **920 380 635**\n\nTexto <img src=x onerror="window.__xss=true"> final');
+  markdown(document.getElementById('t'), '¡Hola! En **Casa Ficticia** ofrecemos:\n\n- **Comidas** de 13:00 a 16:00\n- Teléfono: **[Teléfono]**\n\nTexto <img src=x onerror="window.__xss=true"> final');
   return { html: document.getElementById('t').innerHTML, xss: window.__xss };
 }, [fns]);
 await page.waitForTimeout(300);
