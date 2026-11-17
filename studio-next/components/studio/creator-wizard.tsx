@@ -300,7 +300,9 @@ function GenerationProgress({ progress }: { progress: { message: string; started
   const secs = Math.max(0, Math.floor((now - progress.startedAt) / 1000));
   const time = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
   const writing = /caracteres/.test(progress.message);
-  const hint = writing ? 'La web se está escribiendo; al terminar se abre sola en el editor.'
+  const hint = /fotograf/i.test(progress.message) ? 'Cada fotografía tarda unos segundos; se guardan en tu proyecto y van incluidas en el ZIP.'
+    : /plan/i.test(progress.message) ? 'Primero se define la idea, la tipografía, la paleta y una composición distinta para cada sección.'
+    : writing ? 'La web se está escribiendo; al terminar se crean las fotografías y se abre sola en el editor.'
     : secs < 20 ? 'Preparando el diseño a partir de tu dirección creativa…'
     : 'El modelo está pensando la estructura antes de escribir; puede tardar 1–3 minutos. No cierres esta pestaña.';
   return (

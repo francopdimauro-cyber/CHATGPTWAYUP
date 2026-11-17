@@ -47,7 +47,7 @@ test('Dirección creativa: se normaliza y nunca acepta valores peligrosos',()=>{
   assert.equal(d.tipografia.titulares,'Serif editorial','Solo pilas disponibles');
   assert.equal(d.tipografia.texto,'Sans neutra');
   const brief=C.directionBrief(d);
-  assert.match(brief,/font-family: system-ui/);
+  assert.match(brief,/Google Fonts.*Inter Tight.*respaldo: system-ui/);
   assert.match(brief,/Inicio/);
 });
 test('Propuesta de dirección con IA (respuesta simulada del modelo) y conservación pedida',async()=>{

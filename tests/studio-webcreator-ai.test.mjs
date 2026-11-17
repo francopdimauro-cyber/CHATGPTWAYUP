@@ -23,8 +23,12 @@ function fakeDb(){
     return {meta:{changes:0}};
   }};}};}};
 }
-async function generate(ai){
-  const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:ai};
+const PLAN='IDEA: movimiento con criterio. '+'SECCIONES: hero, marquee, lista numerada, bento, cifras, FAQ, CTA. '.repeat(4);
+const isPlan=input=>String(input?.messages?.[0]?.content||'').startsWith('Eres director de arte');
+// La pasada de planificación responde siempre un plan fijo; las pruebas controlan solo la generación del HTML.
+async function generate(ai,{planFails=false}={}){
+  const wrapped={run:async(model,input)=>{if(isPlan(input)){if(planFails)throw Error('plan caído');return sse([PLAN]);}return ai.run(model,input);}};
+  const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:wrapped};
   const res=await wayupStudioWebCreatorBridge(new Request(ORIGIN+'/studio-api/webcreator/generate-stream',{
     method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify({briefing:BRIEFING})}),env,ctx);
   const text=await res.text();
@@ -90,4 +94,31 @@ test('Razonamiento <think> previo se descarta',async()=>{
   const {final}=await generate({run:async()=>sse(['<think>plan interno</think>\n'+FULL])});
   assert.equal(final.event,'complete');
   assert.doesNotMatch(final.data.html,/plan interno/);
+});
+test('El plan de diseño se pasa al generador; si falla, se genera igualmente',async()=>{
+  let user='';
+  const {final}=await generate({run:async(model,input)=>{user=input.messages[1].content;return sse([FULL]);}});
+  assert.equal(final.event,'complete');
+  assert.match(user,/PLAN DE DISEÑO APROBADO/);
+  const again=await generate({run:async(model,input)=>{user=input.messages[1].content;return sse([FULL]);}},{planFails:true});
+  assert.equal(again.final.event,'complete');
+  assert.doesNotMatch(user,/PLAN DE DISEÑO/);
+});
+test('Solo se conservan los enlaces a Google Fonts; las imágenes remotas pierden su src',async()=>{
+  const head='<link rel="preconnect" href="https://fonts.gstatic.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces&display=swap"><link rel="stylesheet" href="https://evil.example/x.css">';
+  const body='<img data-wc-ai-image="runner at dawn" alt="Corredora"><img src="https://evil.example/a.jpg" alt="x">';
+  const {final}=await generate({run:async()=>sse([FULL.replace('</head>',head+'</head>').replace('</body>',body+'</body>')])});
+  assert.equal(final.event,'complete');
+  assert.match(final.data.html,/fonts\.googleapis\.com\/css2\?family=Fraunces/);
+  assert.match(final.data.html,/fonts\.gstatic\.com/);
+  assert.match(final.data.html,/data-wc-ai-image="runner at dawn"/);
+  assert.doesNotMatch(final.data.html,/evil\.example/);
+});
+test('Ruta de imágenes IA: devuelve una imagen JPEG y respeta el origen',async()=>{
+  const env={STUDIO_DB:fakeDb(),STUDIO_OWNER_EMAIL:EMAIL,AI:{run:async(model,input)=>{assert.match(model,/flux/);assert.match(input.prompt,/runner/);return {image:'A'.repeat(2000)};}}};
+  const call=origin=>wayupStudioWebCreatorBridge(new Request(ORIGIN+'/studio-api/webcreator/image',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({prompt:'runner at dawn by the river'})}),env,ctx);
+  const ok=await call(ORIGIN);
+  assert.equal(ok.status,200);
+  assert.match((await ok.json()).image,/^data:image\/jpeg;base64,/);
+  assert.equal((await call('https://otro.test')).status,403);
 });

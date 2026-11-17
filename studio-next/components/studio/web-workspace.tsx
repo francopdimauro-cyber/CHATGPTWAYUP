@@ -120,8 +120,55 @@ function briefFrom(form:Record<string,string>):string{
     'Marca y colores de referencia: '+form.palette,
     'REQUISITOS DEL EDITOR WAYUP: utiliza secciones semánticas con data-wc-section estable,',
     'títulos reales, navegación y botones funcionales con anclas válidas.',
-    'Entrega HTML5 completo y responsivo, con JavaScript propio para las interacciones (sin librerías externas) y sin imágenes externas inventadas.'
+    'Entrega HTML5 completo y responsivo, con JavaScript propio para las interacciones (sin librerías externas), tipografías de Google Fonts y fotografías pedidas con data-wc-ai-image.'
   ].join('\n');
+}
+/** Imagen de reserva (PNG) si una foto IA no se pudo generar: mantiene la composición y se sustituye desde Propiedades. */
+async function placeholderPng(label:string):Promise<Uint8Array>{
+  const c=document.createElement('canvas');c.width=1600;c.height=1000;
+  const g=c.getContext('2d');
+  if(g){
+    const grad=g.createLinearGradient(0,0,1600,1000);grad.addColorStop(0,'#d9d6cf');grad.addColorStop(1,'#b9b5ac');
+    g.fillStyle=grad;g.fillRect(0,0,1600,1000);
+    g.fillStyle='rgba(0,0,0,.45)';g.font='600 44px system-ui,sans-serif';g.textAlign='center';
+    g.fillText('Imagen pendiente',800,480);g.font='28px system-ui,sans-serif';g.fillText(label.slice(0,70),800,540);
+  }
+  const blob=await new Promise<Blob|null>(r=>c.toBlob(r,'image/png'));
+  return new Uint8Array(await (blob||new Blob()).arrayBuffer());
+}
+/** Rellena las <img data-wc-ai-image="…"> de la web generada con fotografías creadas por IA (máx. 6, de dos en dos). */
+async function fillAiImages(html:string,onProgress:(v:string)=>void):Promise<{html:string;assets:Record<string,Uint8Array>;made:number;failed:number}>{
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const imgs=Array.from(doc.querySelectorAll<HTMLImageElement>('img[data-wc-ai-image]'));
+  const assets:Record<string,Uint8Array>={};
+  if(!imgs.length)return {html,assets,made:0,failed:0};
+  let made=0,failed=0,done=0;
+  const total=Math.min(imgs.length,6);
+  onProgress('Creando fotografías con IA… 0/'+total);
+  const one=async(img:HTMLImageElement,i:number)=>{
+    const prompt=(img.getAttribute('data-wc-ai-image')||'').trim();
+    const id=crypto.randomUUID().slice(0,6);
+    let bytes:Uint8Array|null=null,ext='jpg';
+    if(i<6&&prompt.length>=8){
+      try{
+        const res=await fetch('/studio-api/webcreator/image',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({prompt:prompt.slice(0,500)})});
+        const data=await res.json().catch(()=>({})) as {image?:string};
+        if(res.ok&&typeof data.image==='string'&&data.image.startsWith('data:image/')){
+          bytes=Uint8Array.from(atob(data.image.split(',')[1]||''),c=>c.charCodeAt(0));made++;
+        }
+      }catch{/* se usa la imagen de reserva */}
+    }
+    if(!bytes){bytes=await placeholderPng(img.alt||prompt);ext='png';failed++;}
+    const path='wayup-media/ia-'+(i+1)+'-'+id+'.'+ext;
+    assets[path]=bytes;
+    img.setAttribute('src',path);
+    img.setAttribute('data-wc-ai-prompt',prompt.slice(0,500));
+    img.removeAttribute('data-wc-ai-image');
+    if(!img.getAttribute('style')?.includes('object-fit'))img.style.objectFit='cover';
+    if(i<6){done++;onProgress('Creando fotografías con IA… '+done+'/'+total);}
+  };
+  for(let i=0;i<imgs.length;i+=2)await Promise.all(imgs.slice(i,i+2).map((img,k)=>one(img,i+k)));
+  return {html:'<!DOCTYPE html>'+String.fromCharCode(10)+doc.documentElement.outerHTML,assets,made,failed};
 }
 async function streamGeneratedWeb(briefing:string,onProgress:(v:string)=>void,direction:Direction|null=null):Promise<string>{
   const res=await fetch('/studio-api/webcreator/generate-stream',{
@@ -494,6 +541,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       const cssBrief=style.css.trim()?'\n\nEl cliente aportará su propio CSS, que se añadirá al final: no lo contradigas ni lo dupliques.':'';
       const jsBrief=style.js?.trim()?'\n\nEl cliente aportará su propio JavaScript, que se añadirá al final del <body>: no dupliques lo que ya hace. Su código empieza así:\n'+style.js.trim().slice(0,600):'';
       let html=await streamGeneratedWeb(briefFrom(form)+photoBrief+styleBrief+cssBrief+jsBrief,onProgress,direction);
+      const ai=await fillAiImages(html,onProgress);
+      html=ai.html;
       if(style.css.trim())html=appendCustomCss(html,style.css);
       if(style.js?.trim())html=setPageJs(html,style.js);
       // Si la IA se ha dejado alguna foto, se añade en una galería para no perder ninguna.
@@ -501,9 +550,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
       if(missing.length)html=insertSnippet(html,null,'<section data-wc-section="galeria-fotos" data-wc-name="Galería" id="galeria-fotos" style="padding:72px 6%;max-width:1200px;margin:0 auto"><h2 style="margin:0 0 24px">Galería</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">'+
         missing.map(a=>'<img src="'+a.path+'" alt="'+a.alt+'" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px">').join('')+'</div></section>','after').html;
       const generated=siteFromHtml(html,form.name.trim());
-      const withPhotos={...generated,assets:{...generated.assets,...Object.fromEntries(assets.map(a=>[a.path,a.bytes]))}};
+      const withPhotos={...generated,assets:{...generated.assets,...ai.assets,...Object.fromEntries(assets.map(a=>[a.path,a.bytes]))}};
       changeSite({...withPhotos,source:'generated'});
-      if(assets.length)setNotice(assets.length+' foto(s) tuyas incluidas en la web'+(missing.length?' ('+missing.length+' añadidas en una galería)':'')+'.');
+      const notes=[assets.length?assets.length+' foto(s) tuyas incluidas'+(missing.length?' ('+missing.length+' en una galería)':''):'',
+        ai.made?ai.made+' fotografía(s) creadas con IA':'',ai.failed?ai.failed+' imagen(es) pendientes: sustitúyelas desde Propiedades':''].filter(Boolean);
+      if(notes.length)setNotice(notes.join(' · ')+'.');
     }catch(error){
       setFileError(error instanceof Error?error.message:'Error al crear la web.');
       setNotice('El editor local sigue disponible. Comprueba el estado del motor IA y reintenta.');
