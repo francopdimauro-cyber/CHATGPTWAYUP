@@ -612,7 +612,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
       if(route==='/analyze-image')return studioWebJson({reference:await analyzeReferenceImage(env,{image:data?.image,role:data?.role,note:data?.note})});
       return studioWebJson({direction:await proposeDirection(env,{brief:String(data?.brief||'').slice(0,8000),analysis:data?.analysis,
         images:Array.isArray(data?.images)?data.images.slice(0,4):[],freedom:data?.freedom,preserve:data?.preserve,mode:data?.mode,
-        research:Array.isArray(data?.research)?data.research.slice(0,6):[]})});
+        research:Array.isArray(data?.research)?data.research.slice(0,6):[],variant:data?.variant==='A'||data?.variant==='B'?data.variant:undefined})});
     }catch(error){
       await studioAIReleaseQuota(env.STUDIO_DB,owner+':creator').catch(()=>{});
       if(error instanceof CreatorError)return studioWebJson({error:error.message,code:error.code},error.code==='url'||error.code==='image'?400:error.code==='not_configured'?503:502);

@@ -286,7 +286,12 @@ export function sanitizeDirection(d){
     composicion:clean(d?.composicion,400),secciones:sections.length?sections:[{titulo:'Inicio',objetivo:'Presentar el negocio y su propuesta'},{titulo:'Servicios',objetivo:'Explicar la oferta real'},{titulo:'Contacto',objetivo:'Facilitar el contacto'}],
     cta:clean(d?.cta,80),imagenes:clean(d?.imagenes,240)};
 }
-export async function proposeDirection(env,{brief,analysis,images,freedom,preserve,mode,research}){
+/** Dos interpretaciones claramente distintas para que el usuario elija antes de construir. */
+const VARIANTS={
+  A:'VARIANTE A — interpretación SOBRIA Y EDITORIAL: elegancia, mucho aire, contraste tipográfico refinado, paleta contenida (claro o neutro), composición calmada.',
+  B:'VARIANTE B — interpretación EXPRESIVA Y CONTRASTADA: energía, color protagonista o fondo oscuro, tipografía display potente, composición dinámica y asimétrica. Debe ser claramente distinta de una propuesta sobria.'
+};
+export async function proposeDirection(env,{brief,analysis,images,freedom,preserve,mode,research,variant}){
   const level={conservador:'conservadora: mejora sin sorprender',equilibrado:'equilibrada: moderna con personalidad',atrevido:'atrevida: rompedora pero profesional'}[freedom]||'equilibrada';
   const keep=Array.isArray(preserve)?preserve.filter(x=>['colores','logo','fotografias','textos','estructura','estilo'].includes(x)):[];
   const facts=[
@@ -301,6 +306,7 @@ export async function proposeDirection(env,{brief,analysis,images,freedom,preser
     keep.length?'EL USUARIO QUIERE CONSERVAR: '+keep.join(', ')+'. Estas restricciones mandan sobre cualquier referencia.':''
   ].filter(Boolean).join('\n\n');
   const sys='Eres director creativo de una agencia web premium. Define una dirección de arte ORIGINAL y específica para este negocio (nada genérico, no copies referencias). '+
+    (VARIANTS[variant]?VARIANTS[variant]+' (Las restricciones de conservar del usuario siguen mandando). ':'')+
     'Creatividad '+level+'. Prioridad: instrucciones explícitas del usuario > identidad conservada > referencias > principios generales. '+
     'Tipografías: elige SOLO entre estas pilas: '+Object.keys(FONT_STACKS).join(', ')+'. '+
     'Responde SOLO un JSON con: resumen, estilo, tono, paleta{fondo,superficie,texto,acento,secundario} en HEX, tipografia{titulares,texto,razon}, composicion, secciones[{titulo,objetivo}] (tantas como pida el contenido, normalmente 8-12, cada una con un patrón de composición distinto en el objetivo), cta, imagenes (qué fotografías editoriales necesita y dónde: se generarán con IA). '+

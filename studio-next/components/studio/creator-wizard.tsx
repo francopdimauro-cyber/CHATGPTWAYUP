@@ -105,14 +105,19 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
     const r = await api('analyze-url', { url: ref.url });
     setWebRefs(l => l.map(x => x.url === ref.url ? { ...x, colors: r.analysis.colors.slice(0, 6).map((c: { hex: string }) => c.hex), fonts: r.analysis.fonts, status: 'Analizada' } : x));
   });
-  const propose = () => run('Creando la dirección creativa…', async () => {
-    const r = await api('direction', {
+  // Dos direcciones a la vez (A sobria/editorial, B expresiva/contrastada) para elegir antes de construir.
+  const [options, setOptions] = useState<Direction[]>([]);
+  const propose = () => run('Creando dos direcciones creativas…', async () => {
+    const body = {
       brief, mode, freedom, preserve,
       analysis: analysis ? { title: analysis.title, description: analysis.description, colors: analysis.colors, fonts: analysis.fonts, nav: analysis.nav, headings: analysis.headings } : null,
       images: images.filter(i => i.analysis || i.note).map(i => ({ rol: i.role, nota: i.note, analisis: i.analysis || null })),
       research: webRefs.filter(r => r.selected).map(({ title, host, snippet, colors, fonts }) => ({ title, host, snippet, colors, fonts })),
-    });
-    setDirection(r.direction);
+    };
+    const got = await Promise.allSettled([api('direction', { ...body, variant: 'A' }), api('direction', { ...body, variant: 'B' })]);
+    const ok = got.flatMap(g => g.status === 'fulfilled' && g.value?.direction ? [g.value.direction as Direction] : []);
+    if (!ok.length) throw (got[0] as PromiseRejectedResult).reason || Error('No se pudo crear la dirección.');
+    setOptions(ok); setDirection(ok.length === 1 ? ok[0] : null);
   });
   const steps = ['Tu negocio', 'Referencias', 'Dirección creativa', 'Generar'];
   const canNext = step !== 0 || (form.name?.trim().length >= 2 && (form.services?.trim().length || 0) >= 20);
@@ -223,8 +228,23 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
             <button key={v} type="button" aria-pressed={freedom === v} onClick={() => setFreedom(v)} className={'rounded-md px-3 py-1.5 text-[11.5px] ' + (freedom === v ? 'bg-panel text-ink shadow-sm' : 'text-mist')}>{l}</button>)}
         </div>
         <button type="button" className={primary} disabled={!aiReady || !!working} onClick={() => void propose()}>
-          {working.startsWith('Creando') ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />} {direction ? 'Proponer otra' : 'Proponer dirección'}</button>
+          {working.startsWith('Creando') ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />} {options.length ? 'Proponer otras dos' : 'Proponer dos direcciones'}</button>
       </div>
+      {options.length > 1 && <div className="mt-4 grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="Elige una dirección creativa">
+        {options.map((o, i) => { const chosen = direction?.resumen === o.resumen && direction?.paleta.acento === o.paleta.acento;
+          return <button key={i} type="button" role="radio" aria-checked={chosen} onClick={() => setDirection(o)}
+            className={'flex flex-col gap-3 rounded-xl border p-4 text-left transition ' + (chosen ? 'border-brand bg-brandsoft ring-2 ring-brand/30' : 'border-stroke bg-elevated hover:border-brand/50')}>
+            <span className="flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-[.14em] text-brand">{i === 0 ? 'A · Sobria y editorial' : 'B · Expresiva y contrastada'}{chosen && <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] normal-case tracking-normal text-white">Elegida</span>}</span>
+            <span className="overflow-hidden rounded-lg border border-stroke" style={{ background: o.paleta.fondo, color: o.paleta.texto }}>
+              <span className="block px-4 pb-3 pt-4 text-[22px] leading-tight" style={{ fontFamily: FONT_PREVIEW[o.tipografia.titulares] }}>{form.name || 'Tu negocio'}</span>
+              <span className="block px-4 pb-4 text-[12px] opacity-80" style={{ fontFamily: FONT_PREVIEW[o.tipografia.texto] }}>{o.estilo || o.tono}</span>
+              <span className="flex h-2">{(['fondo', 'superficie', 'texto', 'acento', 'secundario'] as const).map(k => <span key={k} className="flex-1" style={{ background: o.paleta[k] }} />)}</span>
+            </span>
+            <span className="line-clamp-3 text-[11.5px] leading-5 text-mist">{o.resumen}</span>
+            <span className="text-[10.5px] text-faint">{o.tipografia.titulares} + {o.tipografia.texto} · {o.secciones.length} secciones</span>
+          </button>; })}
+      </div>}
+      {options.length > 1 && !direction && <p className="mt-2 text-[11px] text-faint">Elige una de las dos para verla en detalle y retocarla.</p>}
       {!aiReady && <p className="mt-2 text-[11px] text-amber-600">{aiReason || 'Motor IA no disponible.'} <button type="button" className="underline" onClick={onCheckAI}>Comprobar</button></p>}
       {direction && <div className="mt-5 space-y-4">
         <textarea aria-label="Concepto" className={input + ' min-h-[70px] resize-y'} value={direction.resumen} onChange={e => setDirection({ ...direction, resumen: e.target.value })} />
