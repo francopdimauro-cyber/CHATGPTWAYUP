@@ -66,6 +66,17 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
   }catch(e){setUser(null);setAuthMessage(e instanceof Error?e.message:'No se pudo comprobar tu sesión.');}
  },[]);
  useEffect(()=>{void inspect()},[inspect]);
+ /** Formulario del agente para rellenar a mano, con lo básico de la web ya puesto. */
+ function startManual(){
+  let context='';try{context=agentContext(site.html);}catch{context='';}
+  setProposal({name:(site.name+' · Asistente').slice(0,80),description:('Asistente de la web de '+site.name).slice(0,500),
+   role:'Asistente de atención al cliente',objective:'Resolver dudas de los visitantes sobre los servicios y facilitar el contacto.',
+   instructions:'Responde en castellano, con frases breves y amables. Usa solo la información del negocio que tienes en tu conocimiento. '+
+    'Si no sabes algo (precios, horarios, disponibilidad), dilo con claridad y ofrece los datos de contacto. No inventes datos ni prometas reservas.',
+   capabilities:[],requiresApproval:false});
+  setKnowledge(context.slice(0,11000));setEnableKnowledge(Boolean(context));setSavedAgent(null);setTestAnswer('');
+  setMessage('Formulario listo: ajusta los campos o pulsa «Rellenar con IA».');
+ }
  async function generateProposal(){
   setBusy(true);setMessage('Analizando la web para proponer un agente…');setTestAnswer('');
   try{
@@ -153,15 +164,18 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
   </div>
   {user&&<div className="mt-4 rounded-xl border border-stroke bg-panel p-4 sm:p-5">
    <div className="mb-4 flex flex-wrap gap-2">
-    <button className={option==='new'?primary:secondary} onClick={()=>setOption('new')}>Crear nuevo</button>
+    <button className={option==='new'?primary:secondary} onClick={()=>{setOption('new');if(!proposal)startManual();}}>Crear nuevo</button>
     <button className={option==='existing'?primary:secondary} onClick={()=>setOption('existing')}>Vincular existente</button>
    </div>
    {option==='new'?<>
     {!proposal?<div className="rounded-lg bg-elevated p-4">
-     <p className="mb-3 text-[12px] leading-6 text-mist">A partir de los textos de esta web, la IA propondrá nombre, rol, objetivos e instrucciones específicos.</p>
-     <button disabled={busy} className={primary} onClick={()=>void generateProposal()}><Sparkles size={15}/> Proponer agente con IA</button>
+     <p className="mb-3 text-[12px] leading-6 text-mist">Rellena tú el agente o deja que la IA proponga nombre, rol, objetivos e instrucciones a partir de los textos de esta web.</p>
+     <div className="flex flex-wrap gap-2">
+      <button disabled={busy} className={primary} onClick={()=>void generateProposal()}>{busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} {busy?'Proponiendo…':'Proponer agente con IA'}</button>
+      <button disabled={busy} className={secondary} onClick={startManual}>Rellenar a mano</button>
+     </div>
     </div>:<>
-     <div className="mb-3 flex items-center justify-between gap-2"><strong className="text-[12px]">Configuración editable</strong><button className={secondary} disabled={busy} onClick={()=>void generateProposal()}>Regenerar</button></div>
+     <div className="mb-3 flex items-center justify-between gap-2"><strong className="text-[12px]">Configuración editable</strong><button className={secondary} disabled={busy} onClick={()=>void generateProposal()}>{busy?<LoaderCircle size={15} className="animate-spin"/>:<Sparkles size={15}/>} {busy?'Proponiendo…':'Rellenar con IA'}</button></div>
      {(['name','description','role','objective'] as const).map(key=>
       <label key={key} className="mb-3 block text-[11px] text-mist">
        {{name:'Nombre',description:'Descripción',role:'Rol',objective:'Objetivo'}[key]}
