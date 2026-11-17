@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {callExternal,externalModels,diagnoseProviders,listModels} from '../src/studio-ai-providers.js';
+import {callExternal,externalModels,diagnoseProviders,listModels,modelsFor} from '../src/studio-ai-providers.js';
 import {wayupStudioWebCreatorBridge} from '../src/studio-next-webcreator-bridge.js';
 
 const KEYS={GEMINI_API_KEY:'AIzaFAKEKEY1234567890',GROQ_API_KEY:'gsk_FAKEKEY1234567890',OPENROUTER_API_KEY:'sk-or-FAKEKEY1234567890'};
@@ -18,15 +18,17 @@ test('Solo se usan los proveedores con clave y modelo, en el orden configurado',
   assert.deepEqual(externalModels({},'web'),[]);
 });
 
+const sseRes=chunks=>new Response(chunks.map(c=>'data: '+JSON.stringify(c)+'\n\n').join(''),{status:200,headers:{'Content-Type':'text/event-stream'}});
 test('Gemini: formato de petición correcto, clave en cabecera y texto de respuesta',()=>withFetch(
-  (url)=>json({candidates:[{content:{parts:[{text:'Hola',thought:false},{text:' mundo'}]},finishReason:'STOP'}]}),
+  (url)=>sseRes([{candidates:[{content:{parts:[{text:'pensando…',thought:true},{text:'Hola'}]}}]},{candidates:[{content:{parts:[{text:' mundo'}]},finishReason:'STOP'}]}]),
   async calls=>{
     const r=await callExternal({...KEYS},'gemini:gemini-x',[{role:'system',content:'Sistema'},{role:'user',content:'Pregunta'}],{maxTokens:100});
     assert.equal(r.text,'Hola mundo');
     const c=calls[0];const body=JSON.parse(c.init.body);
-    assert.match(c.url,/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-x:generateContent$/);
+    assert.match(c.url,/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-x:streamGenerateContent\?alt=sse$/);
     assert.equal(c.init.headers['x-goog-api-key'],KEYS.GEMINI_API_KEY);
     assert.doesNotMatch(c.url,/key=/,'la clave no viaja en la URL');
+    assert.doesNotMatch(r.text,/pensando/,'el razonamiento interno no se cuela en el texto');
     assert.equal(body.systemInstruction.parts[0].text,'Sistema');
     assert.equal(body.contents[0].parts[0].text,'Pregunta');
     assert.equal(body.generationConfig.maxOutputTokens,100);
@@ -59,7 +61,7 @@ test('La lista de modelos de Gemini devuelve solo los que generan texto y filtra
 
 test('Diagnóstico: avisa si el modelo configurado no existe y si falta un secreto',()=>withFetch(
   (url)=>/models\?/.test(url)?json({models:[{name:'models/gemini-real',supportedGenerationMethods:['generateContent']}]}):
-    /generateContent/.test(url)?json({error:{message:'not found'}},404):json({data:[]}),
+    /[gG]enerateContent/.test(url)?json({error:{message:'not found'}},404):json({data:[]}),
   async()=>{
     const d=await diagnoseProviders({GEMINI_API_KEY:KEYS.GEMINI_API_KEY,GEMINI_MODEL:'gemini-inventado'});
     assert.equal(d.gemini.prueba.ok,false);assert.equal(d.gemini.prueba.estado,404);
@@ -83,4 +85,22 @@ test('El equipo de webs usa primero el proveedor externo y, si falla, sigue con 
     await res.text();
     assert.ok(calls.some(c=>/generativelanguage/.test(c.url)),'se intentó Gemini');
     assert.ok(workersAICalls>0,'tras el 429 se pasó a Workers AI');
+  }));
+
+test('Listas por tarea: orden configurado, solo proveedores con clave y respaldo a la configuración anterior',()=>{
+  const env={GROQ_API_KEY:KEYS.GROQ_API_KEY,OPENROUTER_API_KEY:KEYS.OPENROUTER_API_KEY,
+    STUDIO_WEB_PLAN_MODELS:'gemini:gemini-4-hydrogen, openrouter:nvidia/nemotron-x:free ,groq:openai/gpt-oss-120b',
+    STUDIO_WEB_BUILD_MODELS:'openrouter:nvidia/nemotron-x:free,openrouter:cohere/north-mini-code:free',
+    STUDIO_AGENT_MODELS:'groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,nada:raro'};
+  assert.deepEqual(modelsFor(env,'plan'),['openrouter:nvidia/nemotron-x:free','groq:openai/gpt-oss-120b'],'sin clave de Gemini se omite');
+  assert.deepEqual(modelsFor(env,'build'),['openrouter:nvidia/nemotron-x:free','openrouter:cohere/north-mini-code:free']);
+  assert.deepEqual(modelsFor(env,'agent'),['groq:openai/gpt-oss-120b','groq:qwen/qwen3.8-27b']);
+  const legacy={...KEYS,GEMINI_MODEL:'g',OPENROUTER_MODEL:'o',STUDIO_WEB_PROVIDERS:'gemini,openrouter'};
+  assert.deepEqual(modelsFor(legacy,'plan'),['gemini:g','openrouter:o']);
+  assert.deepEqual(modelsFor(legacy,'build'),['openrouter:o'],'Gemini no construye secciones');
+});
+test('Gemini saturado (no empieza a responder) se corta y se informa',()=>withFetch(
+  (url,init)=>new Promise((_,reject)=>init.signal.addEventListener('abort',()=>{const e=new Error('abort');e.name='AbortError';reject(e);})),
+  async()=>{
+    await assert.rejects(callExternal({...KEYS},'gemini:gemini-x',[{role:'user',content:'x'}],{timeoutMs:50}),e=>{assert.match(e.message,/no empezó a responder/);return true;});
   }));

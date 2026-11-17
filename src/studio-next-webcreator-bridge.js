@@ -1,7 +1,7 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
 import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError,decodeImage,VISION_MODEL} from './studio-creator-research.js';
 import {patternExample} from './studio-web-patterns.js';
-import {callExternal,diagnoseProviders,externalModels,isExternal,probeModels} from './studio-ai-providers.js';
+import {callExternal,diagnoseProviders,isExternal,modelsFor,probeModels} from './studio-ai-providers.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
 
@@ -324,7 +324,7 @@ function teamBlock(text,name){
 }
 /** Modelos de un papel: primero los externos configurados para webs (Gemini solo en director/redactor/revisor por su cuota diaria), luego Workers AI. */
 function teamModels(env,role){
-  const ext=externalModels(env,'web').filter(ref=>role!=='builder'||!ref.startsWith('gemini:'));
+  const ext=modelsFor(env,role==='builder'?'build':'plan');
   return [...ext,...TEAM_MODELS[role]];
 }
 async function teamCall(env,role,system,user,maxTokens,validate){

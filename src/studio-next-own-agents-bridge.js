@@ -1,5 +1,5 @@
 /* WAY UP Studio: agentes propios en preview, autenticación OTP en el edge */
-import {callExternal,externalModels} from './studio-ai-providers.js';
+import {callExternal,modelsFor} from './studio-ai-providers.js';
 const SA_PREFIX='/studio-api/agents',SA_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const SA_MODEL='@cf/google/gemma-4-26b-a4b-it',SA_UUID=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i;
 const SA_TOOLS=['text_generation','knowledge_lookup','lead_capture'];
@@ -36,7 +36,7 @@ async function saQuota(db,owner,kind,max){
 }
 /** Ejecuta el modelo de agentes: primero los proveedores externos configurados (STUDIO_AGENT_PROVIDERS), luego Workers AI. */
 async function saRun(env,messages,maxTokens,temperature){
- for(const ref of externalModels(env,'agent')){
+ for(const ref of modelsFor(env,'agent')){
   try{const r=await callExternal(env,ref,messages,{maxTokens,temperature});if(r.text)return {text:r.text,model:ref};}
   catch(e){console.warn('studio-agents external error',ref,String(e?.message||e).slice(0,200));}
  }

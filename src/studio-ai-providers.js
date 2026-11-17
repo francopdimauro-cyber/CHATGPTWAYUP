@@ -25,6 +25,21 @@ export function externalModels(env,use){
   return [...new Set(list)].filter(n=>providerReady(env,n)).map(n=>n+':'+providerModel(env,n));
 }
 export const isExternal=ref=>/^(gemini|groq|openrouter):/.test(String(ref||''));
+/** Listas de modelos por tarea (variables del Worker, en orden de preferencia, «proveedor:modelo» separados por comas):
+ *  plan  → STUDIO_WEB_PLAN_MODELS  (director, redactor, revisor y dirección creativa)
+ *  build → STUDIO_WEB_BUILD_MODELS (constructores de secciones)
+ *  agent → STUDIO_AGENT_MODELS     (propuesta y prueba de agentes)
+ *  Solo se devuelven los de proveedores con clave. Si la lista está vacía, se usa la configuración anterior por proveedor. */
+export function modelsFor(env,use){
+  const raw=use==='agent'?env?.STUDIO_AGENT_MODELS:use==='build'?env?.STUDIO_WEB_BUILD_MODELS:env?.STUDIO_WEB_PLAN_MODELS;
+  const list=String(raw||'').split(',').map(s=>s.trim()).filter(r=>/^(gemini|groq|openrouter):[\w./:-]{2,120}$/.test(r))
+    .filter(r=>Boolean(env?.[PROVIDERS[r.split(':')[0]].secret]));
+  if(list.length)return [...new Set(list)];
+  const legacy=externalModels(env,use==='agent'?'agent':'web');
+  return use==='build'?legacy.filter(r=>!r.startsWith('gemini:')):legacy;
+}
+// Gemini: si en este tiempo no ha empezado a responder (saturado), se pasa al siguiente modelo.
+const GEMINI_FIRST_TOKEN_MS=15000;
 
 async function timedFetch(url,init,ms=TIMEOUT_MS){
   const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),ms);
@@ -45,15 +60,39 @@ export async function callExternal(env,ref,messages,{maxTokens=8000,temperature=
   if(name==='gemini'){
     const system=messages.filter(m=>m.role==='system').map(m=>m.content).join('\n\n');
     const contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:String(m.content)}]}));
-    const res=await timedFetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
-      method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},
-      body:JSON.stringify({...(system?{systemInstruction:{parts:[{text:system}]}}:{}),contents,generationConfig:{maxOutputTokens:maxTokens,temperature}})},timeoutMs);
-    if(!res.ok)throw await failure(name,res);
-    const j=await res.json();
-    const cand=j?.candidates?.[0];
-    const text=(cand?.content?.parts||[]).filter(x=>!x?.thought).map(x=>x?.text||'').join('');
-    if(!text)throw new ProviderError(name,200,'Gemini no devolvió texto'+(j?.promptFeedback?.blockReason?' (bloqueado: '+j.promptFeedback.blockReason+')':cand?.finishReason?' ('+cand.finishReason+')':''));
-    return {text,finish:cand?.finishReason==='MAX_TOKENS'?'length':String(cand?.finishReason||'')};
+    // En streaming: si no llega nada en 15 s (modelo saturado) se corta; si ya está escribiendo, se le deja terminar.
+    const ctl=new AbortController();let started=false;
+    const firstTimer=setTimeout(()=>{if(!started)ctl.abort();},Math.min(GEMINI_FIRST_TOKEN_MS,timeoutMs));
+    const totalTimer=setTimeout(()=>ctl.abort(),timeoutMs);
+    let text='',finish='',blocked='';
+    try{
+      let res;
+      try{res=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':streamGenerateContent?alt=sse',{
+        method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},signal:ctl.signal,
+        body:JSON.stringify({...(system?{systemInstruction:{parts:[{text:system}]}}:{}),contents,generationConfig:{maxOutputTokens:maxTokens,temperature}})});}
+      catch(e){throw new ProviderError(name,0,e?.name==='AbortError'?'Gemini no empezó a responder en '+Math.round(GEMINI_FIRST_TOKEN_MS/1000)+' s (saturado)':'Error de red: '+clip(e?.message,120));}
+      if(!res.ok)throw await failure(name,res);
+      const reader=res.body.getReader(),decoder=new TextDecoder();let carry='';
+      const take=line=>{
+        if(!line.startsWith('data:'))return;
+        let j;try{j=JSON.parse(line.slice(5).trim());}catch{return;}
+        const cand=j?.candidates?.[0];
+        const piece=(cand?.content?.parts||[]).filter(x=>!x?.thought).map(x=>x?.text||'').join('');
+        if(piece){started=true;text+=piece;}
+        if(cand?.finishReason)finish=String(cand.finishReason);
+        if(j?.promptFeedback?.blockReason)blocked=String(j.promptFeedback.blockReason);
+      };
+      try{
+        while(true){
+          const {value,done}=await reader.read();if(done)break;
+          carry+=decoder.decode(value,{stream:true});
+          const lines=carry.split(/\r?\n/);carry=lines.pop()||'';lines.forEach(take);
+        }
+        if(carry)take(carry);
+      }catch(e){throw new ProviderError(name,0,started?'Gemini cortó la respuesta (tiempo total agotado)':'Gemini no empezó a responder en '+Math.round(GEMINI_FIRST_TOKEN_MS/1000)+' s (saturado)');}
+    }finally{clearTimeout(firstTimer);clearTimeout(totalTimer);}
+    if(!text)throw new ProviderError(name,200,'Gemini no devolvió texto'+(blocked?' (bloqueado: '+blocked+')':finish?' ('+finish+')':''));
+    return {text,finish:finish==='MAX_TOKENS'?'length':finish};
   }
   const url=name==='groq'?'https://api.groq.com/openai/v1/chat/completions':'https://openrouter.ai/api/v1/chat/completions';
   const headers={'Content-Type':'application/json',Authorization:'Bearer '+key};
@@ -119,7 +158,7 @@ export async function diagnoseProviders(env,filters={}){
     }
     out[name]=r;
   }));
-  out.uso={webs:externalModels(env,'web'),agentes:externalModels(env,'agent'),
-    nota:'Orden configurado en STUDIO_WEB_PROVIDERS y STUDIO_AGENT_PROVIDERS. Si un proveedor falla, se pasa al siguiente y por último a Workers AI.'};
+  out.uso={webs_director_redactor_revisor:modelsFor(env,'plan'),webs_constructores:modelsFor(env,'build'),agentes:modelsFor(env,'agent'),
+    nota:'Listas en STUDIO_WEB_PLAN_MODELS, STUDIO_WEB_BUILD_MODELS y STUDIO_AGENT_MODELS. Si un modelo falla, se pasa al siguiente y por último a Workers AI.'};
   return out;
 }
