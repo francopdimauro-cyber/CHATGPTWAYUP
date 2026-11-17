@@ -63,7 +63,7 @@ const esc = (v: string) => v.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;
 /** SVG en línea del símbolo: usa currentColor (cambia con «Color del texto») y ocupa el 100 % de su caja. */
 export function symbolSvg(entry: SymbolEntry, stroke = 2): string {
   const inner = entry.node.map(([tag, attrs]) => '<' + tag + Object.entries(attrs).map(([k, v]) => ' ' + k + '="' + esc(String(v)) + '"').join('') + '/>').join('');
-  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="' + stroke +
+  return '<svg viewBox="0 0 24 24" width="100%" height="100%" fill="none" stroke="currentColor" stroke-width="' + stroke +
     '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + inner + '</svg>';
 }
 /** HTML que se inserta en la web: un contenedor seleccionable, redimensionable y con color propio. */
