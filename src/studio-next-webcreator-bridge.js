@@ -1,6 +1,7 @@
 /* WAY UP Studio · generación IA privada basada en Workers AI, independiente de WebCreator. */
 import {analyzeWebsite,analyzeReferenceImage,proposeDirection,researchReferences,directionBrief,sanitizeDirection,CreatorError,decodeImage,VISION_MODEL} from './studio-creator-research.js';
 import {patternExample} from './studio-web-patterns.js';
+import {callExternal,diagnoseProviders,externalModels,isExternal} from './studio-ai-providers.js';
 const STUDIO_ACCESS_AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
 const STUDIO_WEB_PREFIX='/studio-api/webcreator';
 
@@ -150,6 +151,18 @@ async function studioAIReadStream(stream,onChunk){
   return {text,finish};
 }
 async function studioAIRun(env,model,messages,onChunk,maxTokens=STUDIO_AI_MAX_TOKENS){
+  // Proveedores externos (Gemini, Groq, OpenRouter): respuesta completa, sin streaming.
+  if(isExternal(model)){
+    try{
+      const r=await callExternal(env,model,messages,{maxTokens,temperature:0.65});
+      onChunk(r.text.length);return r;
+    }catch(error){
+      console.warn('studio-ai external error',model,String(error?.message||error).slice(0,220));
+      // Configuración o cuota (clave, modelo inexistente, 429…): no se reintenta en esta instancia. Lo demás puede ser pasajero.
+      const permanent=[400,401,403,404,429].includes(error?.status);
+      throw new StudioAIError('El proveedor '+model.split(':')[0]+' no respondió correctamente.',permanent?'provider':'provider_transient');
+    }
+  }
   let out;
   try{
     out=await env.AI.run(model,{messages,stream:true,max_completion_tokens:maxTokens,max_tokens:maxTokens,temperature:0.65});
@@ -309,9 +322,14 @@ function teamBlock(text,name){
   const m=new RegExp('===\\s*'+name+'\\s*===\\s*([\\s\\S]*?)(?=\\n?===\\s*[A-ZÁÉÍÓÚ]+\\s*===|$)','i').exec(text);
   return m?m[1].trim():'';
 }
+/** Modelos de un papel: primero los externos configurados para webs (Gemini solo en director/redactor/revisor por su cuota diaria), luego Workers AI. */
+function teamModels(env,role){
+  const ext=externalModels(env,'web').filter(ref=>role!=='builder'||!ref.startsWith('gemini:'));
+  return [...ext,...TEAM_MODELS[role]];
+}
 async function teamCall(env,role,system,user,maxTokens,validate){
   let last=null;
-  for(const model of TEAM_MODELS[role]){
+  for(const model of teamModels(env,role)){
     if(TEAM_UNAVAILABLE.has(model))continue;
     try{
       const out=await studioAIRun(env,model,[{role:'system',content:system},{role:'user',content:user}],()=>{},maxTokens);
@@ -581,7 +599,7 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
   if(!path.startsWith(STUDIO_WEB_PREFIX+'/'))return null;
   const route=path.slice(STUDIO_WEB_PREFIX.length);
   const POST_ROUTES=['/generate-stream','/analyze-url','/analyze-image','/direction','/research','/image','/review-shot','/review-fix'];
-  if(!((route==='/status'&&request.method==='GET')||(POST_ROUTES.includes(route)&&request.method==='POST')))
+  if(!(((route==='/status'||route==='/providers')&&request.method==='GET')||(POST_ROUTES.includes(route)&&request.method==='POST')))
     return studioWebJson({error:'Ruta WebCreator no permitida.'},405);
   if(request.method==='POST'&&request.headers.get('Origin')!==url.origin)
     return studioWebJson({error:'Origen no autorizado.'},403);
@@ -590,6 +608,8 @@ export async function wayupStudioWebCreatorBridge(request,env,ctx){
     return route==='/status'?studioWebJson({configured:Boolean(env?.AI?.run),authorized:false,reason:'Tu sesión por correo no está disponible. Vuelve a entrar mediante Cloudflare Access.'},401):
       studioWebJson({error:'Se requiere el acceso por correo de Studio. Vuelve a iniciar sesión.'},401);
   const availability=studioAIStatus(env);
+  // Comprobación de proveedores externos: ?gemini=texto&groq=texto&openrouter=texto filtra la lista de modelos.
+  if(route==='/providers')return studioWebJson(await diagnoseProviders(env,{gemini:url.searchParams.get('gemini')||'',groq:url.searchParams.get('groq')||'',openrouter:url.searchParams.get('openrouter')||''}));
   if(route==='/status')return studioWebJson(availability||{
     configured:false,authorized:false,
     reason:'Workers AI todavía no está configurado en Studio.'

@@ -28,7 +28,14 @@
   ],
   "vars": {
     "STUDIO_OWNER_EMAIL": "francopdimauro@gmail.com",
-    "STUDIO_ACCESS_TEAM_DOMAIN": "https://proud-shape-7dee.cloudflareaccess.com"
+    "STUDIO_ACCESS_TEAM_DOMAIN": "https://proud-shape-7dee.cloudflareaccess.com",
+    // Proveedores externos (claves como secretos). Un proveedor solo se usa si tiene clave Y modelo.
+    // Los nombres exactos se comprueban en /studio-api/webcreator/providers.
+    "STUDIO_WEB_PROVIDERS": "gemini,openrouter",
+    "STUDIO_AGENT_PROVIDERS": "groq,openrouter",
+    "GEMINI_MODEL": "",
+    "GROQ_MODEL": "",
+    "OPENROUTER_MODEL": ""
   },
   "observability": { "enabled": true }
 }

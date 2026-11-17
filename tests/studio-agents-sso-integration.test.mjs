@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 const cwd=resolve(import.meta.dirname,'..');
-async function load(path){const source=readFileSync(resolve(cwd,path),'utf8');return import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));}
+// Se importa por su ruta real: los módulos importan a su vez otros archivos (p. ej. studio-ai-providers.js).
+async function load(path){readFileSync(resolve(cwd,path),'utf8');return import(pathToFileURL(resolve(cwd,path)).href);}
 const privateMod=await load('src/studio-next-own-agents-bridge.js');
 const publicMod=await load('src/studio-public-agent-worker.js');
 const AUD='78890161c85752fcd44d08bde44510aac74aa51d9ee12371327fa6875ac6d8a6';
