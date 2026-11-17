@@ -603,9 +603,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   function drawResize(element:HTMLElement){
     const doc=element.ownerDocument;
     const index=Number(element.dataset.wayupEdit);
-    drawHandles(doc,element,size=>{
+    drawHandles(doc,element,styles=>{
       if(!siteRef.current)return;
-      tryEdit(()=>setStyles(siteRef.current!.html,index,size),'Tamaño actualizado: '+Object.values(size).join(' × ')+'.');
+      const dims=[styles.width,styles.height].filter(Boolean).join(' × ');
+      tryEdit(()=>setStyles(siteRef.current!.html,index,styles),
+        (styles['font-size']?'Escalado: letra '+styles['font-size']+(dims?' · '+dims:''):'Tamaño actualizado: '+dims)+'.');
     });
   }
   type DragItem={name:string;html:()=>string;section:boolean;parkedId?:string};
