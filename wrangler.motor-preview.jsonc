@@ -33,9 +33,9 @@
     // Los nombres exactos se comprueban en /studio-api/webcreator/providers.
     "STUDIO_WEB_PROVIDERS": "gemini,openrouter",
     "STUDIO_AGENT_PROVIDERS": "groq,openrouter",
-    "GEMINI_MODEL": "",
-    "GROQ_MODEL": "",
-    "OPENROUTER_MODEL": ""
+    "GEMINI_MODEL": "gemini-4-hydrogen",
+    "GROQ_MODEL": "openai/gpt-oss-120b",
+    "OPENROUTER_MODEL": "nvidia/nemotron-3-ultra-550b-a55b:free"
   },
   "observability": { "enabled": true }
 }
