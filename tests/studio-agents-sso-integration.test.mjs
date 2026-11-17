@@ -102,7 +102,11 @@ test('Chat sin dominio: se crea, no responde desde ningún sitio y luego se le a
  assert.equal(two.status,400);
  const pendingEnv={STUDIO_DB:fakeDb({chatOrigin:''}),AI:fakeAI()};
  const blocked=await publicMod.default.fetch(request('/api/chats/'+chatId+'/message',{method:'POST',host:'https://worker.example',siteOrigin:customerOrigin,data:{message:'Hola'}}),pendingEnv);
- assert.equal(blocked.status,403,'sin dominio no responde a nadie');
+ assert.equal(blocked.status,403,'sin dominio no responde desde webs ajenas');
+ const local=await publicMod.default.fetch(request('/api/chats/'+chatId+'/message',{method:'POST',host:'https://worker.example',siteOrigin:'null',data:{message:'Hola'}}),pendingEnv);
+ assert.equal(local.status,200,'pero sí desde la web descargada abierta en el ordenador (Origin null)');
+ const lh=await publicMod.default.fetch(request('/api/chats/'+chatId+'/message',{method:'POST',host:'https://worker.example',siteOrigin:'http://localhost:5500',data:{message:'Hola'}}),pendingEnv);
+ assert.equal(lh.status,200,'y desde localhost');
  const put=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/public-chats/'+chatId,{method:'PUT',data:{origin:'https://nuevo-negocio.example',enabled:true}}),{...env,STUDIO_DB:fakeDb({chatOrigin:''})},context);
  assert.equal(put.status,200);assert.equal((await put.json()).origin,'https://nuevo-negocio.example');
  const bad=await privateMod.wayupStudioOwnAgentBridge(request('/studio-api/agents/public-chats/'+chatId,{method:'PUT',data:{origin:'http://inseguro.example'}}),env,context);

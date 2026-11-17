@@ -33,7 +33,7 @@ async function agentVisitorHash(req,chat,day){
 }
 async function agentCheckAndCharge(db,req,row,limitType){
  const day=new Date().toISOString().slice(0,10),hash=await agentVisitorHash(req,row.id,day);
- const visitorMax=Number(row.per_visitor_limit)||12,globalMax=Number(row.daily_limit)||200;
+ const visitorMax=Number(row.per_visitor_limit)||12,globalMax=row.origin?(Number(row.daily_limit)||200):Math.min(40,Number(row.daily_limit)||200);
  await db.prepare('INSERT OR IGNORE INTO studio_chat_usage(chat_id,day,visitor_hash,used) VALUES (?,?,?,0)').bind(row.id,day,hash).run();
  const r=await db.prepare('UPDATE studio_chat_usage SET used=used+1 WHERE chat_id=? AND day=? AND visitor_hash=? AND used<?')
  .bind(row.id,day,hash,visitorMax).run();
@@ -52,7 +52,9 @@ async function publicChat(req,env,url){
  if(!row||!row.enabled||row.status!=='active')return agentJson({error:'Chat no disponible.'},404);
  // Los datos del widget no son privados, pero los visitantes no pueden usarlo desde otros dominios.
  const origin=req.headers.get('Origin')||'';
- if(!origin||origin!==row.origin)return agentJson({error:'Origen no autorizado.'},403);
+ // Sin dominio todavía: solo para PROBAR la web descargada en el propio ordenador (archivo local = Origin «null», o localhost).
+ const testing=!row.origin&&(origin==='null'||/^http:\/\/(localhost|127\.0\.0\.1)(:[0-9]{1,5})?$/.test(origin));
+ if(!origin||(origin!==row.origin&&!testing))return agentJson({error:row.origin?'Origen no autorizado.':'Este chat aún no tiene dominio: ábrelo desde la web descargada en tu ordenador o añade el dominio en WAY UP Studio.'},403);
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:agentHeaders(origin)});
  if(match[2]==='config'&&req.method==='GET')return agentJson({title:row.title,greeting:row.greeting,
   leadCapture:JSON.parse(row.tools_json||'[]').includes('lead_capture')},200,origin);
