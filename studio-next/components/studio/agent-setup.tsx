@@ -1,9 +1,10 @@
 'use client';
 
 import {useCallback,useEffect,useState} from 'react';
-import {ArrowLeft,Bot,CheckCircle2,Globe2,LoaderCircle,LockKeyhole,ShieldCheck,Sparkles,WandSparkles,BookOpen,MessageCircle,Users} from 'lucide-react';
+import {ArrowLeft,Bot,CheckCircle2,Download,FileArchive,Globe2,LoaderCircle,LockKeyhole,Package,ShieldCheck,Sparkles,WandSparkles,BookOpen,MessageCircle,Users} from 'lucide-react';
 import {AgentMarkdown} from './agent-markdown';
-import type {SiteBundle} from '@/lib/web-project-files';
+import {downloadBytes,type SiteBundle} from '@/lib/web-project-files';
+import {agentZip,agentZipName,injectAgentIntoWebZip,type ExportableAgent} from '@/lib/agent-export';
 
 export type LinkedAgent=NonNullable<SiteBundle['agent']>;
 type Proposal={name:string;description:string;role:string;objective:string;instructions:string;capabilities:string[];requiresApproval:boolean};
@@ -124,6 +125,36 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
   }catch(e){setMessage(e instanceof Error?e.message:'No se pudo probar el agente.');}
   finally{setBusy(false);}
  }
+ /** Datos actuales del agente guardado (la base de datos es la fuente de verdad). */
+ async function loadAgent():Promise<ExportableAgent>{
+  const id=savedAgent?.agentId||existingId;
+  if(!isUUID(id))throw Error('Guarda primero el agente.');
+  const data=await backend('GET','/agents/'+id);
+  const a=data.agent;if(!a?.id)throw Error('No se encontró el agente.');
+  return {id:a.id,name:String(a.name||'Asistente'),description:a.description||'',role:a.role||'',objective:a.objective||'',
+   instructions:a.instructions||'',knowledge:a.knowledge||'',tools:Array.isArray(a.tools)?a.tools:[],status:a.status||''};
+ }
+ const chatInfo=()=>savedAgent?.chatId&&isUUID(savedAgent.chatId)?{chatId:savedAgent.chatId,origin:site.agent?.origin||(()=>{try{return safeOrigin(origin);}catch{return '';}})()}:null;
+ async function downloadAgent(){
+  setBusy(true);setMessage('Preparando el ZIP del agente…');
+  try{
+   const agent=await loadAgent();
+   downloadBytes(agentZip(agent,chatInfo()),agentZipName(agent),'application/zip');
+   setMessage('ZIP del agente descargado: configuración'+(savedAgent?.chatId?', código para insertar, demo':'')+' y LÉEME.');
+  }catch(e){setMessage(e instanceof Error?e.message:'No se pudo exportar el agente.');}
+  finally{setBusy(false);}
+ }
+ async function addToWebZip(file:File){
+  const chat=chatInfo();if(!chat)return;
+  setBusy(true);setMessage('Añadiendo el chat a las páginas de «'+file.name+'»…');
+  try{
+   const agent=await loadAgent();
+   const r=injectAgentIntoWebZip(new Uint8Array(await file.arrayBuffer()),chat.chatId,agent.name);
+   downloadBytes(r.zip,file.name.replace(/\.zip$/i,'')+'-con-agente.zip','application/zip');
+   setMessage('Listo: chat añadido a '+r.pages+' página(s)'+(r.already?' ('+r.already+' ya lo tenían)':'')+'. Recuerda publicarla en '+chat.origin+'.');
+  }catch(e){setMessage(e instanceof Error?e.message:'No se pudo añadir el agente a la web.');}
+  finally{setBusy(false);}
+ }
  async function publish(){
   let domain:string;try{domain=safeOrigin(origin);}catch(e){setMessage(e instanceof Error?e.message:'Dominio no válido.');return;}
   if(!window.confirm('Vas a habilitar un chat público solo para '+domain+'. ¿Quieres continuar?'))return;
@@ -222,6 +253,17 @@ export function AgentSetup({site,onBack,onSkip,onLinked}:{
      {busy?<LoaderCircle size={15} className="animate-spin"/>:<Bot size={15}/>} Activar agente y vincularlo a la web
     </button>
    </div>
+   {(savedAgent?.agentId||(option==='existing'&&existingId))&&<div className="mt-5 border-t border-stroke pt-4">
+    <h3 className="flex items-center gap-2 text-[12px] font-semibold"><Package size={15} className="text-brand"/> Exportar el agente</h3>
+    <p className="mt-1 text-[11px] leading-5 text-mist">{savedAgent?.chatId
+      ?'Descárgalo para guardarlo o insertarlo en cualquier web o app, o añade su chat a todas las páginas de una web en ZIP.'
+      :'Puedes descargar su configuración ya. Al activarlo con un dominio, el ZIP incluirá también el código para insertar el chat.'}</p>
+    <div className="mt-3 flex flex-wrap gap-2">
+     <button type="button" disabled={busy} className={secondary} onClick={()=>void downloadAgent()}><Download size={14}/> Descargar agente (ZIP)</button>
+     {savedAgent?.chatId&&<label className={secondary+' cursor-pointer'+(busy?' pointer-events-none opacity-40':'')}><FileArchive size={14}/> Añadir a una web (ZIP)
+      <input type="file" accept=".zip" hidden onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void addToWebZip(f);}}/></label>}
+    </div>
+   </div>}
   </div>}
   {message&&<p className="mt-4 rounded-lg border border-stroke bg-elevated p-3 text-[11px] leading-5 text-mist" role="status">{message}</p>}
  </div>;
