@@ -276,8 +276,10 @@ export function livePreview(site:SiteBundle):string{
 /** Índices DOM estables para vista protegida, árbol y operaciones reales. */
 const BLOCKED_EDITOR_TAGS = new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','SVG','TEMPLATE','LINK','META']);
 export function editableHtmlNodes(doc:Document):HTMLElement[]{
+  // Las etiquetas SVG llegan en minúsculas («svg», «path»): se comparan en mayúsculas y se excluye todo lo que hay
+  // dentro de un dibujo, para que el clic seleccione su contenedor (símbolos, adornos, logotipos en SVG).
   return Array.from(doc.body.querySelectorAll<HTMLElement>('*'))
-    .filter(node=>!BLOCKED_EDITOR_TAGS.has(node.tagName));
+    .filter(node=>!BLOCKED_EDITOR_TAGS.has(node.tagName.toUpperCase())&&!node.parentElement?.closest('svg'));
 }
 export const selectableHtmlNode=(doc:Document,index:number):HTMLElement|null=>{
   if(!Number.isSafeInteger(index)||index<0)return null;

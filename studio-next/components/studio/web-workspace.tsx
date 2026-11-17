@@ -1280,6 +1280,8 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
               </div>
             </div>}
             {tool==='insert'&&<InsertPanel onInsert={id=>insertBlock(id)} onDragBlock={dragBlockStart} onClose={()=>setTool('select')}
+              onInsertHtml={(name,html)=>insertItem({name,html:()=>html,section:false})}
+              onDragHtml={(name,html,e)=>dragItemStart({name,html:()=>html,section:false},e)}
               target={selected!==null?'después del elemento seleccionado (o dentro, si es un contenedor vacío)':'al final de la página'}/>}
             <div ref={canvasScrollRef} className="scroll-subtle absolute inset-0 overflow-auto py-3 sm:py-6" style={{backgroundImage:'radial-gradient(circle at 1px 1px, var(--wu-stroke) 1px, transparent 0)',backgroundSize:'22px 22px'}}>
               <div ref={boardRef} className="relative mx-auto h-full min-h-[480px]" aria-label="Mesa de trabajo"

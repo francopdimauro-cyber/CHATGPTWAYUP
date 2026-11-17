@@ -225,7 +225,6 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
         <button type="button" className={primary} disabled={!aiReady || !!working} onClick={() => void propose()}>
           {working.startsWith('Creando') ? <LoaderCircle size={14} className="animate-spin" /> : <Sparkles size={14} />} {direction ? 'Proponer otra' : 'Proponer dirección'}</button>
       </div>
-      {progress && <GenerationProgress progress={progress} />}
       {!aiReady && <p className="mt-2 text-[11px] text-amber-600">{aiReason || 'Motor IA no disponible.'} <button type="button" className="underline" onClick={onCheckAI}>Comprobar</button></p>}
       {direction && <div className="mt-5 space-y-4">
         <textarea aria-label="Concepto" className={input + ' min-h-[70px] resize-y'} value={direction.resumen} onChange={e => setDirection({ ...direction, resumen: e.target.value })} />
@@ -282,6 +281,7 @@ export function CreatorWizard({ form, setForm, brief, busy, aiReady, aiReason, o
         <button type="button" className={primary} disabled={!aiReady || busy} onClick={() => onGenerate(direction, images.filter(i => i.useInWeb).map(i => ({ name: i.name, dataUrl: i.dataUrl, note: i.note, description: String(i.analysis?.composicion || i.analysis?.estilo || '') })), { notes: styleNotes, css: customCss, js: customJs })}>{busy ? <LoaderCircle size={15} className="animate-spin" /> : <Sparkles size={15} />} Generar mi web con IA</button>
         <button type="button" className={btn} disabled={busy} onClick={onLocal}><FilePlus2 size={14} /> Crear sin IA (plantilla editable)</button>
       </div>
+      {progress && <GenerationProgress progress={progress} />}
       {!aiReady && <p className="mt-2 text-[11px] text-amber-600">{aiReason || 'Motor IA no disponible.'} <button type="button" className="underline" onClick={onCheckAI}>Comprobar</button></p>}
     </Card>}
 
