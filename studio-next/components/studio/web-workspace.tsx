@@ -193,6 +193,34 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
   // Zoom solo del lienzo (página + mesa de trabajo), independiente del zoom del navegador.
   const [zoom,setZoom]=useState(1);
   const zoomRef=useRef(1);zoomRef.current=zoom;
+  // Desplazamiento con la mano (como Figma/Adobe): rueda pulsada, o barra espaciadora + clic izquierdo.
+  const spaceHeldRef=useRef(false);
+  const panRef=useRef<{x:number;y:number}|null>(null);
+  /** Empieza a desplazar: usa coordenadas de pantalla para que funcione igual sobre la web y sobre la mesa. */
+  function startPan(e:PointerEvent){
+    panRef.current={x:e.screenX,y:e.screenY};
+    e.preventDefault();e.stopPropagation();
+    const setCursor=(c:string)=>{document.body.style.cursor=c;const d=previewFrame.current?.contentDocument;if(d?.body)d.body.style.cursor=c;};
+    setCursor('grabbing');
+    const docs=[document,previewFrame.current?.contentDocument].filter(Boolean) as Document[];
+    const move=(ev:PointerEvent)=>{
+      const last=panRef.current;if(!last)return;
+      ev.preventDefault();
+      const dx=ev.screenX-last.x,dy=ev.screenY-last.y;
+      panRef.current={x:ev.screenX,y:ev.screenY};
+      const c=canvasScrollRef.current;if(c){c.scrollLeft-=dx;c.scrollTop-=dy;}
+      // Lo vertical recorre la propia web (su scroll interno), en píxeles de la página según el zoom.
+      previewFrame.current?.contentWindow?.scrollBy({left:0,top:-dy/zoomRef.current,behavior:'instant' as ScrollBehavior});
+    };
+    const up=()=>{
+      panRef.current=null;
+      for(const d of docs){d.removeEventListener('pointermove',move,true);d.removeEventListener('pointerup',up,true);d.removeEventListener('pointercancel',up,true);}
+      setCursor(spaceHeldRef.current?'grab':(toolRef.current==='move'?'grab':''));
+    };
+    for(const d of docs){d.addEventListener('pointermove',move,true);d.addEventListener('pointerup',up,true);d.addEventListener('pointercancel',up,true);}
+  }
+  /** ¿Este clic empieza un desplazamiento? Rueda (botón central) o espacio + botón izquierdo. */
+  const isPanStart=(e:PointerEvent|MouseEvent)=>e.button===1||(e.button===0&&spaceHeldRef.current);
   const clampZoom=(z:number)=>Math.min(2,Math.max(0.2,Math.round(z*100)/100));
   const zoomBy=(f:number)=>setZoom(z=>clampZoom(z*f));
   const fitZoom=()=>{const c=canvasScrollRef.current;if(!c)return;const pageW=(device==='mobile'?390:device==='tablet'?820:1280);setZoom(clampZoom((c.clientWidth-48)/pageW));};
@@ -213,7 +241,10 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     const c=canvasScrollRef.current;if(!c)return;
     const onWheel=(e:WheelEvent)=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();zoomBy(e.deltaY<0?1.1:1/1.1);};
     c.addEventListener('wheel',onWheel,{passive:false});
-    return()=>c.removeEventListener('wheel',onWheel);
+    const onDown=(e:PointerEvent)=>{if(isPanStart(e))startPan(e);};
+    const noAuto=(e:MouseEvent)=>{if(e.button===1)e.preventDefault();}; // sin el desplazamiento automático de Firefox/Windows
+    c.addEventListener('pointerdown',onDown,true);c.addEventListener('auxclick',noAuto,true);
+    return()=>{c.removeEventListener('wheel',onWheel);c.removeEventListener('pointerdown',onDown,true);c.removeEventListener('auxclick',noAuto,true);};
   },[stage,view,site?.id]);
   const [webTheme,setWebTheme]=useState<'light'|'dark'>(()=>typeof window!=='undefined'&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
   const webThemeRef=useRef(webTheme);webThemeRef.current=webTheme;
@@ -686,7 +717,19 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     if(command==='up'||command==='down')tryEdit(()=>moveElement(site.html,index,command),'Orden actualizado.');
   }
   // Atajos de teclado del editor (no se activan mientras escribes en un campo o editas un texto).
+  useEffect(()=>{
+    const up=(e:KeyboardEvent)=>{if(e.code==='Space'){spaceHeldRef.current=false;if(!panRef.current){document.body.style.cursor='';const d=previewFrame.current?.contentDocument;if(d?.body)d.body.style.cursor=toolRef.current==='move'?'grab':'';}}};
+    window.addEventListener('keyup',up);return()=>window.removeEventListener('keyup',up);
+  },[]);
   keyRef.current=(e:KeyboardEvent)=>{
+    if(e.code==='Space'&&stage==='editor'&&view==='preview'&&!editingRef.current){
+      const t=e.target as HTMLElement|null;
+      if(!(t&&(t.isContentEditable||['INPUT','TEXTAREA','SELECT','BUTTON'].includes(t.tagName)))){
+        e.preventDefault();
+        if(!spaceHeldRef.current){spaceHeldRef.current=true;document.body.style.cursor='grab';const d=previewFrame.current?.contentDocument;if(d?.body)d.body.style.cursor='grab';}
+        return;
+      }
+    }
     if(stage!=='editor'||view!=='preview'||seoOpen)return;
     const t=e.target as HTMLElement|null;
     if(editingRef.current){
@@ -736,6 +779,7 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     }
     if(doc.body){doc.body.style.cursor=moveModeRef.current?'grab':'';doc.body.style.userSelect=moveModeRef.current?'none':'';}
     doc.addEventListener('click',event=>{
+      if(spaceHeldRef.current){event.preventDefault();event.stopPropagation();return;} // estaba desplazándose con la mano
       if(editingRef.current&&editingRef.current.el.contains(event.target as Node))return;
       // Las pestañas (solo CSS) se pueden cambiar en el editor para editar el contenido de cada una.
       const tabLabel=(event.target as Element).closest('label[data-wc-tab]');
@@ -780,6 +824,11 @@ export function WebWorkspace({onClose}:BrowserEditorProps={}){
     const clamp=(n:number)=>Math.max(-6000,Math.min(6000,Math.round(n)));
     // El navegador (sobre todo Firefox) inicia su propio «arrastre nativo» de enlaces e imágenes: lo bloqueamos dentro de la vista.
     doc.addEventListener('dragstart',event=>event.preventDefault(),true);
+    // Rueda pulsada o espacio + arrastrar: desplazarse por la página (antes que cualquier otra herramienta).
+    doc.addEventListener('pointerdown',event=>{if(isPanStart(event)){startPan(event);event.stopImmediatePropagation();}},true);
+    doc.addEventListener('mousedown',event=>{if(event.button===1)event.preventDefault();},true);
+    doc.addEventListener('auxclick',event=>{if(event.button===1)event.preventDefault();},true);
+    doc.addEventListener('keyup',event=>{if(event.code==='Space'){spaceHeldRef.current=false;if(doc.body)doc.body.style.cursor=toolRef.current==='move'?'grab':'';}},true);
     // Mayús + clic sirve para seleccionar varios: que no seleccione texto a la vez.
     doc.addEventListener('mousedown',event=>{if(event.shiftKey)event.preventDefault();},true);
     doc.addEventListener('mousedown',event=>{if(toolRef.current==='move')event.preventDefault();},true);
